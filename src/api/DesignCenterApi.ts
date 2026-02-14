@@ -52,7 +52,7 @@ export class DesignCenterApi {
     constructor(
         private readonly http: HttpClient,
         private readonly cache: Cache,
-    ) {}
+    ) { }
 
     /**
      * Build the required headers for Design Center API calls.
@@ -158,7 +158,7 @@ export class DesignCenterApi {
      */
     async acquireLock(orgId: string, projectId: string, branch = 'master'): Promise<void> {
         const ownerId = await this.getOwnerId();
-        await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/acquireLock`, null, {
+        await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/acquireLock`, {}, {
             headers: this.dcHeaders(orgId, ownerId),
         });
     }
@@ -168,7 +168,7 @@ export class DesignCenterApi {
      */
     async releaseLock(orgId: string, projectId: string, branch = 'master'): Promise<void> {
         const ownerId = await this.getOwnerId();
-        await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/releaseLock`, null, {
+        await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/releaseLock`, {}, {
             headers: this.dcHeaders(orgId, ownerId),
         });
     }
