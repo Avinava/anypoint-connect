@@ -44,9 +44,7 @@ describe('AccessManagementApi', () => {
             mockGet.mockResolvedValue({ data: envs });
 
             const result = await api.getEnvironments('org-1');
-            expect(mockGet).toHaveBeenCalledWith(
-                expect.stringContaining('/org-1/environments')
-            );
+            expect(mockGet).toHaveBeenCalledWith(expect.stringContaining('/org-1/environments'));
             expect(result).toHaveLength(2);
             expect(result[0].name).toBe('Sandbox');
             expect(result[1].isProduction).toBe(true);
@@ -66,20 +64,14 @@ describe('AccessManagementApi', () => {
         });
 
         it('should throw for unknown environment', async () => {
-            const envs = [
-                { id: 'e1', name: 'Sandbox', organizationId: 'org-1', type: 'sandbox', isProduction: false },
-            ];
+            const envs = [{ id: 'e1', name: 'Sandbox', organizationId: 'org-1', type: 'sandbox', isProduction: false }];
             mockGet.mockResolvedValue({ data: envs });
 
-            await expect(
-                api.resolveEnvironment('org-1', 'staging')
-            ).rejects.toThrow('not found');
+            await expect(api.resolveEnvironment('org-1', 'staging')).rejects.toThrow('not found');
         });
 
         it('should find environment by ID', async () => {
-            const envs = [
-                { id: 'e1', name: 'Sandbox', organizationId: 'org-1', type: 'sandbox', isProduction: false },
-            ];
+            const envs = [{ id: 'e1', name: 'Sandbox', organizationId: 'org-1', type: 'sandbox', isProduction: false }];
             mockGet.mockResolvedValue({ data: envs });
 
             const env = await api.resolveEnvironment('org-1', 'e1');

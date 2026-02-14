@@ -144,7 +144,7 @@ export function createDeployCommand(): Command {
                         (status, replicas) => {
                             const replicaStates = replicas?.map((r) => r.state).join(', ') || 'unknown';
                             spinner.text = `Status: ${status} (replicas: ${replicaStates})`;
-                        }
+                        },
                     );
 
                     spinner.succeed(`Deployed ${chalk.bold(opts.app)} v${version} → ${chalk.green(final.status)}`);

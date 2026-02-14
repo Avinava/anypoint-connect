@@ -30,9 +30,12 @@ function parseDate(dateStr: string): number {
         const unit = relativeMatch[2];
         const now = Date.now();
         switch (unit) {
-            case 'm': return now - amount * 60 * 1000;
-            case 'h': return now - amount * 60 * 60 * 1000;
-            case 'd': return now - amount * 24 * 60 * 60 * 1000;
+            case 'm':
+                return now - amount * 60 * 1000;
+            case 'h':
+                return now - amount * 60 * 60 * 1000;
+            case 'd':
+                return now - amount * 24 * 60 * 60 * 1000;
         }
     }
 
@@ -42,9 +45,11 @@ function parseDate(dateStr: string): number {
 }
 
 function metricsToCSV(metrics: AppMetricsSummary[]): string {
-    const header = 'App Name,Requests,Avg Response Time (ms),Errors,Error Rate (%),Outbound Requests,Outbound Avg Response Time (ms)';
-    const rows = metrics.map((m) =>
-        `${m.appName},${m.requestCount},${m.avgResponseTime.toFixed(1)},${m.errorCount},${m.errorRate.toFixed(2)},${m.outboundCount},${m.outboundAvgResponseTime.toFixed(1)}`
+    const header =
+        'App Name,Requests,Avg Response Time (ms),Errors,Error Rate (%),Outbound Requests,Outbound Avg Response Time (ms)';
+    const rows = metrics.map(
+        (m) =>
+            `${m.appName},${m.requestCount},${m.avgResponseTime.toFixed(1)},${m.errorCount},${m.errorRate.toFixed(2)},${m.outboundCount},${m.outboundAvgResponseTime.toFixed(1)}`,
     );
     return [header, ...rows].join('\n');
 }
@@ -75,7 +80,9 @@ export function createMonitorCommand(): Command {
                     return;
                 }
 
-                log.header(`Metrics for ${env.name} (${new Date(from).toLocaleDateString()} → ${new Date(to).toLocaleDateString()})`);
+                log.header(
+                    `Metrics for ${env.name} (${new Date(from).toLocaleDateString()} → ${new Date(to).toLocaleDateString()})`,
+                );
 
                 printTable(
                     ['Application', 'Requests', 'Avg Response', 'Errors', 'Outbound', 'Outbound Avg'],
@@ -86,7 +93,7 @@ export function createMonitorCommand(): Command {
                         String(m.errorCount),
                         String(m.outboundCount),
                         formatMs(m.outboundAvgResponseTime),
-                    ])
+                    ]),
                 );
 
                 // Summary
@@ -135,7 +142,8 @@ export function createMonitorCommand(): Command {
                     ext = 'json';
                 }
 
-                const output = opts.output || `metrics-${env.name.toLowerCase()}-${new Date().toISOString().split('T')[0]}.${ext}`;
+                const output =
+                    opts.output || `metrics-${env.name.toLowerCase()}-${new Date().toISOString().split('T')[0]}.${ext}`;
 
                 fs.writeFileSync(output, content, 'utf-8');
                 log.success(`Exported ${exported.apps.length} apps metrics → ${chalk.bold(output)}`);

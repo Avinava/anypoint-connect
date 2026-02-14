@@ -1,11 +1,11 @@
 /**
  * Config utility
- * 
+ *
  * Resolution chain (highest priority wins):
  * 1. Environment variables (ANYPOINT_CLIENT_ID, etc.)
  * 2. Global config file (~/.anypoint-connect/config.json)
  * 3. Project-local .env (cwd fallback)
- * 
+ *
  * Persistent config lives at ~/.anypoint-connect/config.json
  * Tokens live at ~/.anypoint-connect/tokens.enc
  */
@@ -23,10 +23,7 @@ const CONFIG_FILE_NAME = 'config.json';
  * Get config directory path (~/.anypoint-connect/)
  */
 export function getConfigDir(): string {
-    const dir = path.join(
-        process.env.HOME || process.env.USERPROFILE || '/tmp',
-        CONFIG_DIR_NAME
-    );
+    const dir = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', CONFIG_DIR_NAME);
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
@@ -67,11 +64,7 @@ export function readSavedConfig(): SavedConfig | null {
  */
 export function writeSavedConfig(config: SavedConfig): void {
     const configPath = getConfigFilePath();
-    fs.writeFileSync(
-        configPath,
-        JSON.stringify(config, null, 2) + '\n',
-        { mode: 0o600 }
-    );
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
 }
 
 /**
@@ -135,28 +128,20 @@ export function getConfig(): Config {
     if (!clientId || !clientSecret) {
         throw new Error(
             'Anypoint Connect is not configured.\n\n' +
-            'Run this first:\n' +
-            '  anc config init\n\n' +
-            'Or set environment variables:\n' +
-            '  export ANYPOINT_CLIENT_ID=...\n' +
-            '  export ANYPOINT_CLIENT_SECRET=...\n'
+                'Run this first:\n' +
+                '  anc config init\n\n' +
+                'Or set environment variables:\n' +
+                '  export ANYPOINT_CLIENT_ID=...\n' +
+                '  export ANYPOINT_CLIENT_SECRET=...\n',
         );
     }
 
     cachedConfig = {
         clientId,
         clientSecret,
-        callbackUrl:
-            process.env.ANYPOINT_CALLBACK_URL ||
-            saved?.callbackUrl ||
-            'http://localhost:3000/api/callback',
-        baseUrl:
-            process.env.ANYPOINT_BASE_URL ||
-            saved?.baseUrl ||
-            'https://anypoint.mulesoft.com',
-        defaultEnv:
-            process.env.ANYPOINT_DEFAULT_ENV ||
-            saved?.defaultEnv,
+        callbackUrl: process.env.ANYPOINT_CALLBACK_URL || saved?.callbackUrl || 'http://localhost:3000/api/callback',
+        baseUrl: process.env.ANYPOINT_BASE_URL || saved?.baseUrl || 'https://anypoint.mulesoft.com',
+        defaultEnv: process.env.ANYPOINT_DEFAULT_ENV || saved?.defaultEnv,
     };
 
     return cachedConfig;

@@ -2,11 +2,7 @@
  * Tests for Safety Guards
  */
 import { describe, it, expect } from 'vitest';
-import {
-    isProductionEnv,
-    validateJarFile,
-    buildDeploySummary,
-} from '../../src/safety/guards.js';
+import { isProductionEnv, validateJarFile, buildDeploySummary } from '../../src/safety/guards.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';

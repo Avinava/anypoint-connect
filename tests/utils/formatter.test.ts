@@ -2,12 +2,7 @@
  * Tests for Formatter utilities
  */
 import { describe, it, expect, vi } from 'vitest';
-import {
-    formatDate,
-    formatMs,
-    formatBytes,
-    printTable,
-} from '../../src/utils/formatter.js';
+import { formatDate, formatMs, formatBytes, printTable } from '../../src/utils/formatter.js';
 
 describe('formatDate', () => {
     it('should format a timestamp into a readable date string', () => {
@@ -76,7 +71,7 @@ describe('formatBytes', () => {
 
 describe('printTable', () => {
     it('should print table output to console', () => {
-        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
+        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
         const headers = ['Name', 'Status'];
         const rows = [
@@ -98,7 +93,7 @@ describe('printTable', () => {
     });
 
     it('should handle empty rows', () => {
-        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
+        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
         printTable(['Col1'], []);
 

@@ -18,7 +18,9 @@ describe('RateLimiter', () => {
     it('should propagate errors from executed functions', async () => {
         const limiter = new RateLimiter({ requestsPerMinute: 6000 });
         await expect(
-            limiter.execute(async () => { throw new Error('boom'); })
+            limiter.execute(async () => {
+                throw new Error('boom');
+            }),
         ).rejects.toThrow('boom');
     });
 
@@ -27,9 +29,15 @@ describe('RateLimiter', () => {
         const results: number[] = [];
 
         await Promise.all([
-            limiter.execute(async () => { results.push(1); }),
-            limiter.execute(async () => { results.push(2); }),
-            limiter.execute(async () => { results.push(3); }),
+            limiter.execute(async () => {
+                results.push(1);
+            }),
+            limiter.execute(async () => {
+                results.push(2);
+            }),
+            limiter.execute(async () => {
+                results.push(3);
+            }),
         ]);
 
         expect(results).toHaveLength(3);

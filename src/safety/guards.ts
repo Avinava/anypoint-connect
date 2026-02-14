@@ -24,7 +24,7 @@ export function buildDeploySummary(
     appName: string,
     envName: string,
     existing: CH2Deployment | null,
-    newVersion?: string
+    newVersion?: string,
 ): string {
     const lines: string[] = [];
 
@@ -40,7 +40,9 @@ export function buildDeploySummary(
         const version = existing.application?.ref?.version || 'unknown';
         const status = existing.status || 'unknown';
         const replicas = existing.target?.replicas?.length || 0;
-        lines.push(`  ${chalk.dim('Current:')}     v${version} (${status}, ${replicas} replica${replicas !== 1 ? 's' : ''})`);
+        lines.push(
+            `  ${chalk.dim('Current:')}     v${version} (${status}, ${replicas} replica${replicas !== 1 ? 's' : ''})`,
+        );
     } else {
         lines.push(`  ${chalk.dim('Current:')}     ${chalk.yellow('New deployment')}`);
     }
@@ -98,12 +100,9 @@ export async function confirmProductionDeploy(envName: string): Promise<boolean>
     });
 
     return new Promise((resolve) => {
-        rl.question(
-            chalk.red.bold(`  Type 'deploy to production' to confirm: `),
-            (answer) => {
-                rl.close();
-                resolve(answer.trim().toLowerCase() === 'deploy to production');
-            }
-        );
+        rl.question(chalk.red.bold(`  Type 'deploy to production' to confirm: `), (answer) => {
+            rl.close();
+            resolve(answer.trim().toLowerCase() === 'deploy to production');
+        });
     });
 }

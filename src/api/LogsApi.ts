@@ -29,19 +29,14 @@ export class LogsApi {
     constructor(
         private readonly http: HttpClient,
         private readonly _cache: Cache,
-        private readonly ch2?: CloudHub2Api
-    ) { }
+        private readonly ch2?: CloudHub2Api,
+    ) {}
 
     /**
      * Download the full log file for a CH2 deployment.
      * Returns raw log text.
      */
-    async downloadLogFile(
-        orgId: string,
-        envId: string,
-        deploymentId: string,
-        specId: string
-    ): Promise<Buffer> {
+    async downloadLogFile(orgId: string, envId: string, deploymentId: string, specId: string): Promise<Buffer> {
         return this.http.download(
             `${AMC_BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/specs/${specId}/logs/file`,
             {
@@ -49,7 +44,7 @@ export class LogsApi {
                     'X-ANYPNT-ORG-ID': orgId,
                     'X-ANYPNT-ENV-ID': envId,
                 },
-            }
+            },
         );
     }
 
@@ -59,7 +54,7 @@ export class LogsApi {
     private async resolveDeployment(
         orgId: string,
         envId: string,
-        appName: string
+        appName: string,
     ): Promise<{ deploymentId: string; specId: string }> {
         if (!this.ch2) {
             throw new Error('CloudHub2Api required for log operations');
@@ -91,7 +86,7 @@ export class LogsApi {
 
         // Match: timestamp LEVEL [instance] rest
         const match = line.match(
-            /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s+\[([^\]]*)\]\s+(.*)$/
+            /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s+\[([^\]]*)\]\s+(.*)$/,
         );
 
         if (match) {
@@ -125,7 +120,7 @@ export class LogsApi {
             level?: string;
             limit?: number;
             search?: string;
-        } = {}
+        } = {},
     ): Promise<LogEntry[]> {
         const { deploymentId, specId } = await this.resolveDeployment(orgId, envId, appName);
         const buffer = await this.downloadLogFile(orgId, envId, deploymentId, specId);
@@ -133,7 +128,12 @@ export class LogsApi {
         const lines = text.split('\n');
 
         const levelPriority: Record<string, number> = {
-            TRACE: 0, DEBUG: 1, INFO: 2, WARN: 3, ERROR: 4, FATAL: 5,
+            TRACE: 0,
+            DEBUG: 1,
+            INFO: 2,
+            WARN: 3,
+            ERROR: 4,
+            FATAL: 5,
         };
         const minLevel = options.level ? (levelPriority[options.level.toUpperCase()] ?? 0) : 0;
 
@@ -176,7 +176,7 @@ export class LogsApi {
             level?: string;
             intervalMs?: number;
             search?: string;
-        } = {}
+        } = {},
     ): AsyncGenerator<LogEntry[], void, unknown> {
         const intervalMs = options.intervalMs || 5000;
         const { deploymentId, specId } = await this.resolveDeployment(orgId, envId, appName);
@@ -192,7 +192,12 @@ export class LogsApi {
                 const lines = tail.split('\n');
 
                 const levelPriority: Record<string, number> = {
-                    TRACE: 0, DEBUG: 1, INFO: 2, WARN: 3, ERROR: 4, FATAL: 5,
+                    TRACE: 0,
+                    DEBUG: 1,
+                    INFO: 2,
+                    WARN: 3,
+                    ERROR: 4,
+                    FATAL: 5,
                 };
                 const minLevel = options.level ? (levelPriority[options.level.toUpperCase()] ?? 0) : 0;
 
@@ -228,7 +233,7 @@ export class LogsApi {
         appName: string,
         startTime: number,
         endTime: number,
-        level?: string
+        level?: string,
     ): Promise<LogEntry[]> {
         return this.getLogs(orgId, envId, appName, {
             startTime,

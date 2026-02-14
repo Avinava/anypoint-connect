@@ -53,7 +53,7 @@ export class OAuthFlow {
     async waitForCallback(
         port: number = 3000,
         callbackPath: string = '/api/callback',
-        timeoutMs: number = 120000
+        timeoutMs: number = 120000,
     ): Promise<{ code: string; state: string }> {
         return new Promise((resolve, reject) => {
             const server = http.createServer((req, res) => {
@@ -148,7 +148,7 @@ export class OAuthFlow {
             throw new Error(`Token exchange failed: ${error}`);
         }
 
-        const data = await response.json() as TokenResponse;
+        const data = (await response.json()) as TokenResponse;
 
         return {
             accessToken: data.access_token,
@@ -184,7 +184,7 @@ export class OAuthFlow {
             throw new Error(`Token refresh failed: ${error}`);
         }
 
-        const data = await response.json() as TokenResponse;
+        const data = (await response.json()) as TokenResponse;
 
         return {
             accessToken: data.access_token,

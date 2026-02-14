@@ -22,8 +22,7 @@ function createClient(): AnypointClient {
 export function createApiCommand(): Command {
     const api = new Command('api').description('Manage API instances, policies, and SLA tiers');
 
-    api
-        .command('list')
+    api.command('list')
         .description('List API instances in an environment')
         .requiredOption('-e, --env <name>', 'Environment name or ID')
         .action(async (opts) => {
@@ -55,18 +54,14 @@ export function createApiCommand(): Command {
                     }
                 }
 
-                printTable(
-                    ['API Name', 'ID', 'Status', 'Version', 'Technology', 'Endpoint'],
-                    rows
-                );
+                printTable(['API Name', 'ID', 'Status', 'Version', 'Technology', 'Endpoint'], rows);
             } catch (error) {
                 log.error(`Failed: ${error instanceof Error ? error.message : error}`);
                 process.exit(1);
             }
         });
 
-    api
-        .command('policies')
+    api.command('policies')
         .description('List policies applied to an API')
         .argument('<apiName>', 'API name or ID')
         .requiredOption('-e, --env <name>', 'Environment name or ID')
@@ -100,7 +95,10 @@ export function createApiCommand(): Command {
 
                 log.header(`Policies (${policies.length})`);
                 for (const p of policies) {
-                    log.kv('Policy', `${p.template?.assetId || p.policyTemplateId || 'unknown'} v${p.template?.assetVersion || '?'}`);
+                    log.kv(
+                        'Policy',
+                        `${p.template?.assetId || p.policyTemplateId || 'unknown'} v${p.template?.assetVersion || '?'}`,
+                    );
                     log.kv('  Order', String(p.order ?? '-'));
                     log.kv('  Disabled', String(p.disabled ?? false));
                     if (p.configurationData) {
@@ -114,8 +112,7 @@ export function createApiCommand(): Command {
             }
         });
 
-    api
-        .command('sla-tiers')
+    api.command('sla-tiers')
         .description('List SLA tiers for an API')
         .argument('<apiName>', 'API name or ID')
         .requiredOption('-e, --env <name>', 'Environment name or ID')
@@ -151,9 +148,11 @@ export function createApiCommand(): Command {
                         t.name,
                         t.status,
                         t.autoApprove ? 'Yes' : 'No',
-                        t.limits.map((l) => `${l.maximumRequests} req/${l.timePeriodInMilliseconds / 1000}s`).join(', '),
+                        t.limits
+                            .map((l) => `${l.maximumRequests} req/${l.timePeriodInMilliseconds / 1000}s`)
+                            .join(', '),
                         String(t.applicationCount),
-                    ])
+                    ]),
                 );
             } catch (error) {
                 log.error(`Failed: ${error instanceof Error ? error.message : error}`);
