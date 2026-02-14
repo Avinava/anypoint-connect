@@ -96,8 +96,8 @@ const BASE = '/amc/application-manager/api/v2';
 export class CloudHub2Api {
     constructor(
         private readonly http: HttpClient,
-        private readonly cache: Cache
-    ) { }
+        private readonly cache: Cache,
+    ) {}
 
     /**
      * List all CH2 deployments in an environment
@@ -111,7 +111,7 @@ export class CloudHub2Api {
                         'X-ANYPNT-ORG-ID': orgId,
                         'X-ANYPNT-ENV-ID': envId,
                     },
-                }
+                },
             );
             return response.items || [];
         });
@@ -128,18 +128,14 @@ export class CloudHub2Api {
                     'X-ANYPNT-ORG-ID': orgId,
                     'X-ANYPNT-ENV-ID': envId,
                 },
-            }
+            },
         );
     }
 
     /**
      * Create a new deployment
      */
-    async createDeployment(
-        orgId: string,
-        envId: string,
-        payload: CreateDeploymentPayload
-    ): Promise<CH2Deployment> {
+    async createDeployment(orgId: string, envId: string, payload: CreateDeploymentPayload): Promise<CH2Deployment> {
         this.cache.delete(`ch2:${orgId}:${envId}`);
         return this.http.post<CH2Deployment>(
             `${BASE}/organizations/${orgId}/environments/${envId}/deployments`,
@@ -149,7 +145,7 @@ export class CloudHub2Api {
                     'X-ANYPNT-ORG-ID': orgId,
                     'X-ANYPNT-ENV-ID': envId,
                 },
-            }
+            },
         );
     }
 
@@ -160,7 +156,7 @@ export class CloudHub2Api {
         orgId: string,
         envId: string,
         deploymentId: string,
-        payload: Partial<CreateDeploymentPayload>
+        payload: Partial<CreateDeploymentPayload>,
     ): Promise<CH2Deployment> {
         this.cache.delete(`ch2:${orgId}:${envId}`);
         return this.http.patch<CH2Deployment>(
@@ -171,7 +167,7 @@ export class CloudHub2Api {
                     'X-ANYPNT-ORG-ID': orgId,
                     'X-ANYPNT-ENV-ID': envId,
                 },
-            }
+            },
         );
     }
 
@@ -180,15 +176,12 @@ export class CloudHub2Api {
      */
     async deleteDeployment(orgId: string, envId: string, deploymentId: string): Promise<void> {
         this.cache.delete(`ch2:${orgId}:${envId}`);
-        await this.http.delete(
-            `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
-            }
-        );
+        await this.http.delete(`${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`, {
+            headers: {
+                'X-ANYPNT-ORG-ID': orgId,
+                'X-ANYPNT-ENV-ID': envId,
+            },
+        });
     }
 
     /**
@@ -207,7 +200,7 @@ export class CloudHub2Api {
         envId: string,
         deploymentId: string,
         onStatus?: (status: string, replicas: CH2Deployment['target']['replicas']) => void,
-        timeoutMs: number = 300000
+        timeoutMs: number = 300000,
     ): Promise<CH2Deployment> {
         const startTime = Date.now();
         const pollIntervalMs = 5000;
@@ -249,19 +242,14 @@ export class CloudHub2Api {
                     'X-ANYPNT-ORG-ID': orgId,
                     'X-ANYPNT-ENV-ID': envId,
                 },
-            }
+            },
         );
     }
 
     /**
      * Scale an application to the specified number of replicas
      */
-    async scaleApp(
-        orgId: string,
-        envId: string,
-        deploymentId: string,
-        replicas: number
-    ): Promise<CH2Deployment> {
+    async scaleApp(orgId: string, envId: string, deploymentId: string, replicas: number): Promise<CH2Deployment> {
         this.cache.delete(`ch2:${orgId}:${envId}`);
         return this.http.patch<CH2Deployment>(
             `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
@@ -273,7 +261,7 @@ export class CloudHub2Api {
                     'X-ANYPNT-ORG-ID': orgId,
                     'X-ANYPNT-ENV-ID': envId,
                 },
-            }
+            },
         );
     }
 }

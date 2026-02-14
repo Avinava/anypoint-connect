@@ -13,8 +13,7 @@ import { AnypointClient } from '../client/AnypointClient.js';
 export function createAuthCommand(): Command {
     const auth = new Command('auth').description('Manage Anypoint Platform authentication');
 
-    auth
-        .command('login')
+    auth.command('login')
         .description('Authenticate with Anypoint Platform via OAuth')
         .action(async () => {
             try {
@@ -51,8 +50,7 @@ export function createAuthCommand(): Command {
             }
         });
 
-    auth
-        .command('logout')
+    auth.command('logout')
         .description('Clear stored credentials')
         .action(async () => {
             try {
@@ -72,8 +70,7 @@ export function createAuthCommand(): Command {
             }
         });
 
-    auth
-        .command('status')
+    auth.command('status')
         .description('Show current authentication status')
         .action(async () => {
             try {

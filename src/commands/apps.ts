@@ -23,8 +23,7 @@ function createClient(): AnypointClient {
 export function createAppsCommand(): Command {
     const apps = new Command('apps').description('Manage deployed applications');
 
-    apps
-        .command('list')
+    apps.command('list')
         .description('List deployed applications')
         .requiredOption('-e, --env <name>', 'Environment name or ID')
         .action(async (opts) => {
@@ -50,7 +49,7 @@ export function createAppsCommand(): Command {
                         d.application?.ref?.version || '-',
                         d.target?.deploymentSettings?.runtime?.version || '-',
                         String(d.target?.replicas?.length || 0),
-                    ])
+                    ]),
                 );
             } catch (error) {
                 log.error(`Failed to list apps: ${error instanceof Error ? error.message : error}`);
@@ -58,8 +57,7 @@ export function createAppsCommand(): Command {
             }
         });
 
-    apps
-        .command('status')
+    apps.command('status')
         .description('Get detailed status of an application')
         .argument('<appName>', 'Application name')
         .requiredOption('-e, --env <name>', 'Environment name or ID')
@@ -101,8 +99,7 @@ export function createAppsCommand(): Command {
             }
         });
 
-    apps
-        .command('restart')
+    apps.command('restart')
         .description('Restart an application')
         .argument('<appName>', 'Application name')
         .requiredOption('-e, --env <name>', 'Environment name or ID')
@@ -136,8 +133,7 @@ export function createAppsCommand(): Command {
             }
         });
 
-    apps
-        .command('scale')
+    apps.command('scale')
         .description('Scale application replicas')
         .argument('<appName>', 'Application name')
         .requiredOption('-e, --env <name>', 'Environment name or ID')

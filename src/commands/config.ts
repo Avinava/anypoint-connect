@@ -52,43 +52,29 @@ export function createConfigCommand(): Command {
                 log.dim('  Tokens are saved to ~/.anypoint-connect/tokens.enc (AES-256-GCM)');
                 console.log();
 
-                const clientId = await ask(
-                    rl,
-                    '  Client ID:',
-                    existing?.clientId
-                );
+                const clientId = await ask(rl, '  Client ID:', existing?.clientId);
 
                 const clientSecret = await ask(
                     rl,
                     '  Client Secret:',
-                    existing?.clientSecret ? '••••••' + existing.clientSecret.slice(-4) : undefined
+                    existing?.clientSecret ? '••••••' + existing.clientSecret.slice(-4) : undefined,
                 );
 
                 const callbackUrl = await ask(
                     rl,
                     '  Callback URL:',
-                    existing?.callbackUrl || 'http://localhost:3000/api/callback'
+                    existing?.callbackUrl || 'http://localhost:3000/api/callback',
                 );
 
-                const baseUrl = await ask(
-                    rl,
-                    '  Base URL:',
-                    existing?.baseUrl || 'https://anypoint.mulesoft.com'
-                );
+                const baseUrl = await ask(rl, '  Base URL:', existing?.baseUrl || 'https://anypoint.mulesoft.com');
 
-                const defaultEnv = await ask(
-                    rl,
-                    '  Default Environment (optional):',
-                    existing?.defaultEnv
-                );
+                const defaultEnv = await ask(rl, '  Default Environment (optional):', existing?.defaultEnv);
 
                 rl.close();
 
                 // If user entered the masked secret, keep the original
                 const resolvedSecret =
-                    clientSecret.startsWith('••••••') && existing?.clientSecret
-                        ? existing.clientSecret
-                        : clientSecret;
+                    clientSecret.startsWith('••••••') && existing?.clientSecret ? existing.clientSecret : clientSecret;
 
                 if (!clientId || !resolvedSecret) {
                     log.error('Client ID and Client Secret are required');

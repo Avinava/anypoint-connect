@@ -42,7 +42,7 @@ describe('CloudHub2Api', () => {
                         'X-ANYPNT-ORG-ID': 'org-1',
                         'X-ANYPNT-ENV-ID': 'env-1',
                     }),
-                })
+                }),
             );
             expect(result).toEqual(items);
         });
@@ -60,7 +60,7 @@ describe('CloudHub2Api', () => {
                     headers: expect.objectContaining({
                         'X-ANYPNT-ORG-ID': 'org-1',
                     }),
-                })
+                }),
             );
             expect(result.id).toBe('dep-1');
         });
@@ -80,7 +80,7 @@ describe('CloudHub2Api', () => {
                     headers: expect.objectContaining({
                         'X-ANYPNT-ORG-ID': 'org-1',
                     }),
-                })
+                }),
             );
             expect(result.id).toBe('new-dep');
         });
@@ -96,7 +96,7 @@ describe('CloudHub2Api', () => {
                     headers: expect.objectContaining({
                         'X-ANYPNT-ENV-ID': 'env-1',
                     }),
-                })
+                }),
             );
         });
     });

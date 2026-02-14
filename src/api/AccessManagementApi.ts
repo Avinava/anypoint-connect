@@ -44,8 +44,8 @@ export interface Environment {
 export class AccessManagementApi {
     constructor(
         private readonly http: HttpClient,
-        private readonly cache: Cache
-    ) { }
+        private readonly cache: Cache,
+    ) {}
 
     async getMe(): Promise<UserProfile> {
         return this.cache.getOrCompute('me', async () => {
@@ -70,7 +70,7 @@ export class AccessManagementApi {
     async getEnvironments(orgId: string): Promise<Environment[]> {
         return this.cache.getOrCompute(`envs:${orgId}`, async () => {
             const response = await this.http.get<{ data: Environment[] }>(
-                `/accounts/api/organizations/${orgId}/environments`
+                `/accounts/api/organizations/${orgId}/environments`,
             );
             return response.data || [];
         });
@@ -81,11 +81,7 @@ export class AccessManagementApi {
      */
     async resolveEnvironment(orgId: string, nameOrId: string): Promise<Environment> {
         const envs = await this.getEnvironments(orgId);
-        const env = envs.find(
-            (e) =>
-                e.id === nameOrId ||
-                e.name.toLowerCase() === nameOrId.toLowerCase()
-        );
+        const env = envs.find((e) => e.id === nameOrId || e.name.toLowerCase() === nameOrId.toLowerCase());
 
         if (!env) {
             const available = envs.map((e) => e.name).join(', ');

@@ -67,8 +67,8 @@ const BASE = '/apimanager/api/v1';
 export class ApiManagerApi {
     constructor(
         private readonly http: HttpClient,
-        private readonly cache: Cache
-    ) { }
+        private readonly cache: Cache,
+    ) {}
 
     /**
      * List all API assets/instances in an environment
@@ -83,7 +83,7 @@ export class ApiManagerApi {
                         'X-ANYPNT-ORG-ID': orgId,
                         'X-ANYPNT-ENV-ID': envId,
                     },
-                }
+                },
             );
             return response.assets || [];
         });
@@ -100,7 +100,7 @@ export class ApiManagerApi {
                     'X-ANYPNT-ORG-ID': orgId,
                     'X-ANYPNT-ENV-ID': envId,
                 },
-            }
+            },
         );
         return response.policies || [];
     }
@@ -116,7 +116,7 @@ export class ApiManagerApi {
                     'X-ANYPNT-ORG-ID': orgId,
                     'X-ANYPNT-ENV-ID': envId,
                 },
-            }
+            },
         );
         return response.tiers || [];
     }
@@ -125,21 +125,22 @@ export class ApiManagerApi {
      * Get alerts for an API instance
      */
     async getAlerts(orgId: string, envId: string, apiId: number): Promise<unknown[]> {
-        return this.http.get<unknown[]>(
-            `${BASE}/organizations/${orgId}/environments/${envId}/apis/${apiId}/alerts`,
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
-            }
-        );
+        return this.http.get<unknown[]>(`${BASE}/organizations/${orgId}/environments/${envId}/apis/${apiId}/alerts`, {
+            headers: {
+                'X-ANYPNT-ORG-ID': orgId,
+                'X-ANYPNT-ENV-ID': envId,
+            },
+        });
     }
 
     /**
      * Find an API instance by name
      */
-    async findByName(orgId: string, envId: string, name: string): Promise<{ asset: ApiAsset; instance: ApiInstance } | null> {
+    async findByName(
+        orgId: string,
+        envId: string,
+        name: string,
+    ): Promise<{ asset: ApiAsset; instance: ApiInstance } | null> {
         const assets = await this.getApis(orgId, envId);
         const lower = name.toLowerCase();
         for (const asset of assets) {

@@ -71,9 +71,7 @@ describe('OAuthFlow', () => {
             const flow = new OAuthFlow(config);
             const port = 4456 + Math.floor(Math.random() * 1000);
 
-            await expect(
-                flow.waitForCallback(port, '/api/callback', 500)
-            ).rejects.toThrow('timed out');
+            await expect(flow.waitForCallback(port, '/api/callback', 500)).rejects.toThrow('timed out');
         });
     });
 });

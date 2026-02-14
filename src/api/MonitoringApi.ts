@@ -38,8 +38,8 @@ export class MonitoringApi {
 
     constructor(
         private readonly http: HttpClient,
-        private readonly cache: Cache
-    ) { }
+        private readonly cache: Cache,
+    ) {}
 
     /**
      * Execute an AMQL query
@@ -48,7 +48,7 @@ export class MonitoringApi {
         try {
             const response = await this.http.post<{ data: MetricDataPoint[] }>(
                 `${this.baseUrl}/metrics:search?limit=${limit}&offset=0`,
-                { query }
+                { query },
             );
             return response.data || [];
         } catch {
@@ -63,7 +63,7 @@ export class MonitoringApi {
         orgId: string,
         envId: string,
         from: number,
-        to: number
+        to: number,
     ): Promise<Array<{ appName: string; requestCount: number; avgResponseTime: number }>> {
         const cacheKey = `mon:inbound:${orgId}:${envId}:${from}:${to}`;
         return this.cache.getOrCompute(cacheKey, async () => {
@@ -85,7 +85,7 @@ export class MonitoringApi {
         orgId: string,
         envId: string,
         from: number,
-        to: number
+        to: number,
     ): Promise<Array<{ appName: string; requestCount: number; avgResponseTime: number }>> {
         const cacheKey = `mon:outbound:${orgId}:${envId}:${from}:${to}`;
         return this.cache.getOrCompute(cacheKey, async () => {
@@ -108,7 +108,7 @@ export class MonitoringApi {
         envId: string,
         from: number,
         to: number,
-        appName?: string
+        appName?: string,
     ): Promise<AppMetricsSummary[]> {
         const [inbound, outbound] = await Promise.all([
             this.getInboundMetrics(orgId, envId, from, to),
@@ -146,9 +146,7 @@ export class MonitoringApi {
         }
 
         if (appName) {
-            results = results.filter(
-                (r) => r.appName.toLowerCase() === appName.toLowerCase()
-            );
+            results = results.filter((r) => r.appName.toLowerCase() === appName.toLowerCase());
         }
 
         return results;
@@ -162,7 +160,7 @@ export class MonitoringApi {
         envId: string,
         envName: string,
         from: number,
-        to: number
+        to: number,
     ): Promise<MetricsExport> {
         const apps = await this.getAppMetrics(orgId, envId, from, to);
 
@@ -194,9 +192,7 @@ export class MonitoringApi {
      */
     async isAvailable(): Promise<boolean> {
         try {
-            const data = await this.search(
-                'SELECT COUNT(requests) FROM "mulesoft.app.inbound" LIMIT 1'
-            );
+            const data = await this.search('SELECT COUNT(requests) FROM "mulesoft.app.inbound" LIMIT 1');
             return data.length >= 0; // Even empty result means API is accessible
         } catch {
             return false;

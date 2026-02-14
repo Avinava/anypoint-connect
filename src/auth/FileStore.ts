@@ -54,11 +54,7 @@ export class FileStore implements TokenStore {
             const content = fs.readFileSync(this.filePath, 'utf8');
             const { iv, authTag, data } = JSON.parse(content);
 
-            const decipher = crypto.createDecipheriv(
-                ENCRYPTION_ALGORITHM,
-                this.encryptionKey,
-                Buffer.from(iv, 'hex')
-            );
+            const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, this.encryptionKey, Buffer.from(iv, 'hex'));
             decipher.setAuthTag(Buffer.from(authTag, 'hex'));
 
             let decrypted = decipher.update(data, 'hex', 'utf8');

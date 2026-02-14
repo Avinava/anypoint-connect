@@ -16,10 +16,7 @@ import { createApiCommand } from './commands/api.js';
 
 const program = new Command();
 
-program
-    .name('anc')
-    .description('Anypoint Connect — CLI for Anypoint Platform')
-    .version('0.1.0');
+program.name('anc').description('Anypoint Connect — CLI for Anypoint Platform').version('0.1.0');
 
 program.addCommand(createConfigCommand());
 program.addCommand(createAuthCommand());

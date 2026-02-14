@@ -1,41 +1,44 @@
 {
-  "name": "anypoint-connect",
-  "version": "0.1.0",
-  "description": "CLI + MCP library for Anypoint Platform — deploy, logs, monitoring with production safety nets",
-  "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "bin": {
-    "anc": "./dist/cli.js"
-  },
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "clean": "rm -rf dist",
-    "start:mcp": "node dist/mcp.js",
-    "test": "vitest run --passWithNoTests",
-    "test:coverage": "vitest run --coverage",
-    "lint": "tsc --noEmit"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "axios": "^1.6.0",
-    "chalk": "^5.3.0",
-    "commander": "^12.0.0",
-    "dotenv": "^16.3.0",
-    "open": "^10.0.0",
-    "ora": "^8.0.0",
-    "zod": "^3.22.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.10.0",
-    "@vitest/coverage-v8": "^1.6.1",
-    "typescript": "^5.3.3",
-    "vitest": "^1.0.0"
-  },
-  "author": "Avinava",
-  "license": "MIT"
+    "name": "anypoint-connect",
+    "version": "0.1.0",
+    "description": "CLI + MCP library for Anypoint Platform — deploy, logs, monitoring with production safety nets",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "bin": {
+        "anc": "./dist/cli.js"
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "clean": "rm -rf dist",
+        "start:mcp": "node dist/mcp.js",
+        "test": "vitest run --passWithNoTests",
+        "test:coverage": "vitest run --coverage",
+        "lint": "tsc --noEmit",
+        "format": "prettier --write .",
+        "format:check": "prettier --check ."
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.12.1",
+        "axios": "^1.6.0",
+        "chalk": "^5.3.0",
+        "commander": "^12.0.0",
+        "dotenv": "^16.3.0",
+        "open": "^10.0.0",
+        "ora": "^8.0.0",
+        "zod": "^3.22.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "@vitest/coverage-v8": "^1.6.1",
+        "prettier": "^3.8.1",
+        "typescript": "^5.3.3",
+        "vitest": "^1.0.0"
+    },
+    "author": "Avinava",
+    "license": "MIT"
 }

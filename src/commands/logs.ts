@@ -29,9 +29,12 @@ function parseDate(dateStr: string): number {
         const unit = relativeMatch[2];
         const now = Date.now();
         switch (unit) {
-            case 'm': return now - amount * 60 * 1000;
-            case 'h': return now - amount * 60 * 60 * 1000;
-            case 'd': return now - amount * 24 * 60 * 60 * 1000;
+            case 'm':
+                return now - amount * 60 * 1000;
+            case 'h':
+                return now - amount * 60 * 60 * 1000;
+            case 'd':
+                return now - amount * 24 * 60 * 60 * 1000;
         }
     }
 
@@ -45,8 +48,7 @@ function parseDate(dateStr: string): number {
 export function createLogsCommand(): Command {
     const logs = new Command('logs').description('View and download application logs');
 
-    logs
-        .command('tail')
+    logs.command('tail')
         .description('Stream logs in real-time')
         .argument('<appName>', 'Application name')
         .requiredOption('-e, --env <name>', 'Environment name')
@@ -80,8 +82,7 @@ export function createLogsCommand(): Command {
             }
         });
 
-    logs
-        .command('download')
+    logs.command('download')
         .description('Download logs for a time period')
         .argument('<appName>', 'Application name')
         .requiredOption('-e, --env <name>', 'Environment name')
@@ -101,14 +102,7 @@ export function createLogsCommand(): Command {
                 log.info(`Downloading logs for ${chalk.bold(appName)} in ${env.name}`);
                 log.kv('Period', `${new Date(from).toISOString()} → ${new Date(to).toISOString()}`);
 
-                const entries = await client.logs.getLogsForPeriod(
-                    orgId,
-                    env.id,
-                    appName,
-                    from,
-                    to,
-                    opts.level
-                );
+                const entries = await client.logs.getLogsForPeriod(orgId, env.id, appName, from, to, opts.level);
 
                 if (entries.length === 0) {
                     log.warn('No log entries found for the specified period');

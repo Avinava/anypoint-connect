@@ -53,7 +53,7 @@ export function createExchangeCommand(): Command {
                         a.type || '-',
                         a.version || '-',
                         `${a.groupId}/${a.assetId}`,
-                    ])
+                    ]),
                 );
             } catch (error) {
                 log.error(`Search failed: ${error instanceof Error ? error.message : error}`);

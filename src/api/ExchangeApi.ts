@@ -49,7 +49,7 @@ export interface ExchangeAssetDetail extends ExchangeAsset {
 
 export interface ExchangeSearchOptions {
     search?: string;
-    type?: string;       // 'rest-api' | 'soap-api' | 'http-api' | 'app' | 'connector' | 'template' | 'example' | 'policy'
+    type?: string; // 'rest-api' | 'soap-api' | 'http-api' | 'app' | 'connector' | 'template' | 'example' | 'policy'
     limit?: number;
     offset?: number;
     organizationId?: string;
@@ -60,16 +60,13 @@ const BASE = '/exchange/api/v2';
 export class ExchangeApi {
     constructor(
         private readonly http: HttpClient,
-        private readonly cache: Cache
-    ) { }
+        private readonly cache: Cache,
+    ) {}
 
     /**
      * Search assets in Exchange
      */
-    async searchAssets(
-        orgId: string,
-        options: ExchangeSearchOptions = {}
-    ): Promise<ExchangeAsset[]> {
+    async searchAssets(orgId: string, options: ExchangeSearchOptions = {}): Promise<ExchangeAsset[]> {
         const params = new URLSearchParams();
         params.set('organizationId', orgId);
         if (options.search) params.set('search', options.search);
@@ -77,19 +74,13 @@ export class ExchangeApi {
         params.set('limit', String(options.limit || 20));
         if (options.offset) params.set('offset', String(options.offset));
 
-        return this.http.get<ExchangeAsset[]>(
-            `${BASE}/assets?${params.toString()}`
-        );
+        return this.http.get<ExchangeAsset[]>(`${BASE}/assets?${params.toString()}`);
     }
 
     /**
      * Get detailed asset info
      */
-    async getAsset(
-        groupId: string,
-        assetId: string,
-        version?: string
-    ): Promise<ExchangeAssetDetail> {
+    async getAsset(groupId: string, assetId: string, version?: string): Promise<ExchangeAssetDetail> {
         const cacheKey = `exchange:${groupId}:${assetId}:${version || 'latest'}`;
         return this.cache.getOrCompute(cacheKey, async () => {
             const path = version
@@ -102,10 +93,7 @@ export class ExchangeApi {
     /**
      * Get all versions of an asset
      */
-    async getAssetVersions(
-        groupId: string,
-        assetId: string
-    ): Promise<Array<{ version: string; status: string }>> {
+    async getAssetVersions(groupId: string, assetId: string): Promise<Array<{ version: string; status: string }>> {
         const detail = await this.getAsset(groupId, assetId);
         return detail.versions || [];
     }
@@ -117,7 +105,7 @@ export class ExchangeApi {
     async downloadSpec(
         groupId: string,
         assetId: string,
-        version?: string
+        version?: string,
     ): Promise<{ content: string; classifier: string; fileName: string }> {
         const detail = await this.getAsset(groupId, assetId, version);
 
@@ -129,13 +117,13 @@ export class ExchangeApi {
                 f.classifier === 'oas3' ||
                 f.classifier === 'fat-raml' ||
                 f.classifier === 'fat-oas' ||
-                f.classifier === 'wsdl'
+                f.classifier === 'wsdl',
         );
 
         if (!specFile) {
             throw new Error(
                 `No API spec found for ${groupId}/${assetId}. Asset type: ${detail.type}. ` +
-                `Available files: ${(detail.files || []).map((f) => f.classifier).join(', ') || 'none'}`
+                    `Available files: ${(detail.files || []).map((f) => f.classifier).join(', ') || 'none'}`,
             );
         }
 
