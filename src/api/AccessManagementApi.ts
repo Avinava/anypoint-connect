@@ -23,6 +23,15 @@ export interface UserProfile {
     }>;
 }
 
+/** Raw response shape from /accounts/api/me */
+interface MeApiResponse {
+    user: UserProfile & {
+        organization?: { id: string; name: string; domain: string };
+        memberOfOrganizations?: Array<{ id: string; name: string }>;
+    };
+    organization?: { id: string; name: string; domain: string };
+}
+
 export interface Environment {
     id: string;
     name: string;
@@ -39,9 +48,23 @@ export class AccessManagementApi {
     ) { }
 
     async getMe(): Promise<UserProfile> {
-        return this.cache.getOrCompute('me', () =>
-            this.http.get<UserProfile>('/accounts/api/me')
-        );
+        return this.cache.getOrCompute('me', async () => {
+            const raw = await this.http.get<MeApiResponse>('/accounts/api/me');
+
+            // /accounts/api/me returns { user: {...}, organization: {...} }
+            const user = raw.user ?? (raw as unknown as UserProfile);
+            const org = raw.organization ?? (user as any).organization;
+
+            return {
+                id: user.id,
+                username: user.username,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                organization: org ?? { id: '', name: 'Unknown', domain: '' },
+                memberOfOrganizations: user.memberOfOrganizations,
+            };
+        });
     }
 
     async getEnvironments(orgId: string): Promise<Environment[]> {

@@ -4,7 +4,6 @@
  */
 
 import * as http from 'http';
-import * as url from 'url';
 import type { AnypointTokens } from './TokenStore.js';
 
 interface TokenResponse {
@@ -58,10 +57,13 @@ export class OAuthFlow {
     ): Promise<{ code: string; state: string }> {
         return new Promise((resolve, reject) => {
             const server = http.createServer((req, res) => {
-                const parsedUrl = url.parse(req.url || '', true);
+                const parsedUrl = new URL(req.url || '', `http://localhost`);
 
                 if (parsedUrl.pathname === callbackPath) {
-                    const { code, state, error, error_description } = parsedUrl.query;
+                    const code = parsedUrl.searchParams.get('code');
+                    const state = parsedUrl.searchParams.get('state');
+                    const error = parsedUrl.searchParams.get('error');
+                    const error_description = parsedUrl.searchParams.get('error_description');
 
                     if (error) {
                         res.writeHead(400, { 'Content-Type': 'text/html' });
