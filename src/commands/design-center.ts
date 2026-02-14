@@ -131,7 +131,7 @@ export function createDesignCenterCommand(): Command {
         .description('Push a local file to Design Center (lock → save → unlock)')
         .argument('<project>', 'Project name or ID')
         .argument('<localFile>', 'Local file to upload')
-        .option('-p, --path <path>', 'Remote file path (defaults to local filename)')
+        .option('-p, --path <path>', 'Remote file path (overrides auto-detection)')
         .option('-b, --branch <branch>', 'Branch name', 'master')
         .option('-m, --message <msg>', 'Commit message')
         .action(async (project: string, localFile: string, opts) => {
@@ -146,9 +146,19 @@ export function createDesignCenterCommand(): Command {
                 }
 
                 const content = fs.readFileSync(localFile, 'utf-8');
-                const remotePath = opts.path || localFile.split('/').pop() || localFile;
 
+                // Smart path resolution: verify the file exists in the project
+                let remotePath: string;
+                if (opts.path) {
+                    remotePath = opts.path;
+                } else {
+                    const basename = localFile.split('/').pop() || localFile;
+                    remotePath = await client.designCenter.resolveFilePath(orgId, proj.id, basename, opts.branch);
+                }
+
+                const lines = content.split('\n').length;
                 log.info(`Pushing ${localFile} → ${proj.name}/${remotePath} [${opts.branch}]`);
+                log.dim(`  ${lines} lines, ${content.length} bytes`);
                 log.dim('  Acquiring lock...');
 
                 await client.designCenter.updateFile(orgId, proj.id, remotePath, content, opts.branch, opts.message);

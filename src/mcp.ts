@@ -613,17 +613,17 @@ class AnypointConnectMcpServer {
                                 name,
                                 [e1.name]: a1
                                     ? {
-                                          status: a1.status,
-                                          version: a1.application?.ref?.version || '-',
-                                          replicas: a1.target?.replicas?.length || 0,
-                                      }
+                                        status: a1.status,
+                                        version: a1.application?.ref?.version || '-',
+                                        replicas: a1.target?.replicas?.length || 0,
+                                    }
                                     : 'NOT DEPLOYED',
                                 [e2.name]: a2
                                     ? {
-                                          status: a2.status,
-                                          version: a2.application?.ref?.version || '-',
-                                          replicas: a2.target?.replicas?.length || 0,
-                                      }
+                                        status: a2.status,
+                                        version: a2.application?.ref?.version || '-',
+                                        replicas: a2.target?.replicas?.length || 0,
+                                    }
                                     : 'NOT DEPLOYED',
                                 versionMatch:
                                     a1 && a2 ? a1.application?.ref?.version === a2.application?.ref?.version : null,
@@ -936,20 +936,29 @@ class AnypointConnectMcpServer {
                         };
                     }
 
-                    await this.client.designCenter.updateFile(
+                    // Verify the file path exists in the project (with suggestions on mismatch)
+                    const resolvedPath = await this.client.designCenter.resolveFilePath(
                         orgId,
                         proj.id,
                         filePath,
+                        branch || 'master',
+                    );
+
+                    await this.client.designCenter.updateFile(
+                        orgId,
+                        proj.id,
+                        resolvedPath,
                         content,
                         branch || 'master',
                         commitMessage,
                     );
 
+                    const lines = content.split('\n').length;
                     return {
                         content: [
                             {
                                 type: 'text',
-                                text: `✅ Updated "${filePath}" in ${proj.name} [${branch || 'master'}]. The file has been saved to Design Center.`,
+                                text: `✅ Updated "${resolvedPath}" in ${proj.name} [${branch || 'master'}] (${lines} lines, ${content.length} bytes).`,
                             },
                         ],
                     };
@@ -1196,6 +1205,53 @@ Format the report with clear sections and emojis for quick scanning:
 - 🟢 Healthy (no errors, good response times)
 - 🟡 Warning (elevated errors or latency)
 - 🔴 Critical (failures, high error rate)`,
+                        },
+                    },
+                ],
+            }),
+        );
+
+        // ── Improve API Spec ────────────────────────────────
+
+        this.server.registerPrompt(
+            'improve-api-spec',
+            {
+                title: 'Improve API Specification',
+                description:
+                    'Reads an API specification from Design Center, analyzes its quality (descriptions, types, examples), suggests improvements, and pushes the updated spec back. Automates the full pull → analyze → improve → push workflow.',
+                argsSchema: {
+                    project: z.string().describe('Design Center project name (e.g. "order-api")'),
+                },
+            },
+            async ({ project }) => ({
+                messages: [
+                    {
+                        role: 'user',
+                        content: {
+                            type: 'text',
+                            text: `Improve the API specification for the Design Center project "${project}". Follow this workflow:
+
+1. **Discover**: Use get_design_center_files to list all files in the "${project}" project. Identify the main spec file (usually the .raml or .yaml file matching the project name).
+
+2. **Read**: Use read_design_center_file to read the main spec file. Also read any referenced data type files, examples, or fragments.
+
+3. **Analyze**: Evaluate the spec quality against these criteria:
+   - **Descriptions**: Are all endpoints, parameters, and types described? Are descriptions detailed enough (purpose, return data, use cases)?
+   - **Types**: Are response/request types defined, or are they using \"any\"?
+   - **Examples**: Are there inline examples or !include references?
+   - **Parameters**: Do query parameters have descriptions, types, and display names?
+   - **Security**: Are endpoints secured appropriately?
+   - **Consistency**: Are naming conventions consistent across endpoints?
+
+4. **Improve**: Rewrite the spec with:
+   - Multi-line descriptions using YAML block scalar (|) that explain purpose, return data, and common use cases
+   - Specific parameter descriptions mentioning format (e.g., "18-character Salesforce record ID")
+   - Consistent naming and formatting
+   - Keep all !include references, examples, and types unchanged
+
+5. **Push**: Use update_design_center_file to save the improved spec back to Design Center. Use a commit message like "Improved API descriptions and documentation".
+
+6. **Report**: Summarize what was changed — how many descriptions were improved, what patterns were fixed, and any remaining gaps.`,
                         },
                     },
                 ],
