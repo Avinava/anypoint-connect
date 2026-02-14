@@ -8,6 +8,7 @@ import { getConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
 import { printTable } from '../utils/formatter.js';
 import { AnypointClient } from '../client/AnypointClient.js';
+import { isProductionEnv, confirmProductionDeploy } from '../safety/guards.js';
 
 function createClient(): AnypointClient {
     const config = getConfig();
@@ -96,6 +97,83 @@ export function createAppsCommand(): Command {
                 }
             } catch (error) {
                 log.error(`Failed to get status: ${error instanceof Error ? error.message : error}`);
+                process.exit(1);
+            }
+        });
+
+    apps
+        .command('restart')
+        .description('Restart an application')
+        .argument('<appName>', 'Application name')
+        .requiredOption('-e, --env <name>', 'Environment name or ID')
+        .option('--force', 'Skip production confirmation', false)
+        .action(async (appName: string, opts) => {
+            try {
+                const client = createClient();
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
+
+                if (!deployment) {
+                    log.error(`Application "${appName}" not found in ${env.name}`);
+                    process.exit(1);
+                }
+
+                if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
+                    const confirmed = await confirmProductionDeploy(env.name);
+                    if (!confirmed) {
+                        log.warn('Restart cancelled');
+                        return;
+                    }
+                }
+
+                log.info(`Restarting ${appName} in ${env.name}...`);
+                await client.cloudHub2.restartApp(orgId, env.id, deployment.id);
+                log.success(`Restart initiated for ${appName}`);
+            } catch (error) {
+                log.error(`Restart failed: ${error instanceof Error ? error.message : error}`);
+                process.exit(1);
+            }
+        });
+
+    apps
+        .command('scale')
+        .description('Scale application replicas')
+        .argument('<appName>', 'Application name')
+        .requiredOption('-e, --env <name>', 'Environment name or ID')
+        .requiredOption('--replicas <n>', 'Number of replicas')
+        .option('--force', 'Skip production confirmation', false)
+        .action(async (appName: string, opts) => {
+            try {
+                const client = createClient();
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
+
+                if (!deployment) {
+                    log.error(`Application "${appName}" not found in ${env.name}`);
+                    process.exit(1);
+                }
+
+                const replicas = parseInt(opts.replicas);
+                if (isNaN(replicas) || replicas < 1) {
+                    log.error('Replicas must be a positive integer');
+                    process.exit(1);
+                }
+
+                if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
+                    const confirmed = await confirmProductionDeploy(env.name);
+                    if (!confirmed) {
+                        log.warn('Scale cancelled');
+                        return;
+                    }
+                }
+
+                log.info(`Scaling ${appName} to ${replicas} replica(s) in ${env.name}...`);
+                await client.cloudHub2.scaleApp(orgId, env.id, deployment.id, replicas);
+                log.success(`Scaled ${appName} to ${replicas} replica(s)`);
+            } catch (error) {
+                log.error(`Scale failed: ${error instanceof Error ? error.message : error}`);
                 process.exit(1);
             }
         });

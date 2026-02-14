@@ -233,4 +233,47 @@ export class CloudHub2Api {
 
         throw new Error(`Deployment timed out after ${timeoutMs / 1000}s`);
     }
+
+    /**
+     * Restart an application (triggers rolling restart)
+     */
+    async restartApp(orgId: string, envId: string, deploymentId: string): Promise<CH2Deployment> {
+        this.cache.delete(`ch2:${orgId}:${envId}`);
+        return this.http.patch<CH2Deployment>(
+            `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
+            {
+                application: { desiredState: 'STARTED' },
+            },
+            {
+                headers: {
+                    'X-ANYPNT-ORG-ID': orgId,
+                    'X-ANYPNT-ENV-ID': envId,
+                },
+            }
+        );
+    }
+
+    /**
+     * Scale an application to the specified number of replicas
+     */
+    async scaleApp(
+        orgId: string,
+        envId: string,
+        deploymentId: string,
+        replicas: number
+    ): Promise<CH2Deployment> {
+        this.cache.delete(`ch2:${orgId}:${envId}`);
+        return this.http.patch<CH2Deployment>(
+            `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
+            {
+                target: { replicas },
+            },
+            {
+                headers: {
+                    'X-ANYPNT-ORG-ID': orgId,
+                    'X-ANYPNT-ENV-ID': envId,
+                },
+            }
+        );
+    }
 }

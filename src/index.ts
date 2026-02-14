@@ -16,6 +16,8 @@ export { AccessManagementApi, type UserProfile, type Environment } from './api/A
 export { CloudHub2Api, type CH2Deployment, type CreateDeploymentPayload } from './api/CloudHub2Api.js';
 export { LogsApi, type LogEntry } from './api/LogsApi.js';
 export { MonitoringApi, type AppMetricsSummary, type MetricsExport } from './api/MonitoringApi.js';
+export { ExchangeApi, type ExchangeAsset, type ExchangeAssetDetail } from './api/ExchangeApi.js';
+export { ApiManagerApi, type ApiInstance, type ApiAsset, type ApiPolicy, type SlaTier } from './api/ApiManagerApi.js';
 
 // Utils
 export { HttpClient, type HttpClientConfig } from './client/HttpClient.js';

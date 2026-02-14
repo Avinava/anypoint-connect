@@ -11,6 +11,8 @@ import { createAppsCommand } from './commands/apps.js';
 import { createDeployCommand } from './commands/deploy.js';
 import { createLogsCommand } from './commands/logs.js';
 import { createMonitorCommand } from './commands/monitor.js';
+import { createExchangeCommand } from './commands/exchange.js';
+import { createApiCommand } from './commands/api.js';
 
 const program = new Command();
 
@@ -25,5 +27,7 @@ program.addCommand(createAppsCommand());
 program.addCommand(createDeployCommand());
 program.addCommand(createLogsCommand());
 program.addCommand(createMonitorCommand());
+program.addCommand(createExchangeCommand());
+program.addCommand(createApiCommand());
 
 program.parse();
