@@ -1,6 +1,6 @@
 # Anypoint Connect
 
-> CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, with production safety nets.
+> CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets.
 
 ```
 npm install
@@ -39,6 +39,7 @@ graph TB
         MON["MonitoringApi<br/>AMQL Queries"]
         EX["ExchangeApi<br/>Search, Download Spec"]
         APIM["ApiManagerApi<br/>Instances, Policies"]
+        DC["DesignCenterApi<br/>Pull, Push, Publish"]
     end
 
     subgraph Safety["Safety"]
@@ -60,6 +61,7 @@ graph TB
     AC --> MON
     AC --> EX
     AC --> APIM
+    AC --> DC
     CLI --> GUARD
 
     OAUTH -->|"callback :3000/api/callback"| AP["Anypoint Platform API"]
@@ -292,6 +294,27 @@ anc api policies 18888853 --env Production
 anc api sla-tiers "order-api" --env Production
 ```
 
+### Design Center
+
+```bash
+# List API spec projects
+anc dc list
+
+# List files in a project
+anc dc files my-api-spec
+anc dc files my-api-spec --branch develop
+
+# Download a RAML/OAS file
+anc dc pull my-api-spec api.raml -o local-spec.raml
+
+# Push an edited file back (lock → save → unlock)
+anc dc push my-api-spec local-spec.raml --path api.raml --message "Add new endpoint"
+
+# Publish to Exchange
+anc dc publish my-api-spec --version 1.2.0 --classifier raml
+anc dc publish my-api-spec --version 2.0.0 --classifier oas3 --api-version v2
+```
+
 ### Deploy
 
 ```bash
@@ -451,9 +474,13 @@ Once configured, you can ask your AI assistant things like:
 - *"Download 24 hours of logs for my-api in Production"*
 - *"Search Exchange for REST API specs related to orders"*
 - *"Compare Development and Production environments"*
-- *"What policies are applied to the Order Processing API?"*
+- *"What policies are applied to the Order API?"*
 - *"Restart my-api in the Development environment"*
 - *"Scale order-service to 3 replicas in Production"*
+- *"List all Design Center projects"*
+- *"Show me the RAML spec for the order-api project"*
+- *"Add a /health endpoint to the order-api RAML and push it back"*
+- *"Publish the order-api spec to Exchange as version 2.0.0"*
 
 ---
 
@@ -490,6 +517,14 @@ const metrics = await client.monitoring.getAppMetrics(
   Date.now() - 24 * 60 * 60 * 1000, // from: 24h ago
   Date.now()                          // to: now
 );
+
+// Design Center: list projects, read spec, update file
+const projects = await client.designCenter.getProjects(orgId);
+const spec = await client.designCenter.getFileContent(orgId, projects[0].id, 'api.raml');
+await client.designCenter.updateFile(orgId, projects[0].id, 'api.raml', updatedContent);
+await client.designCenter.publishToExchange(orgId, projects[0].id, {
+  name: 'My API', apiVersion: 'v1', version: '1.0.0', classifier: 'raml'
+});
 ```
 
 ---
