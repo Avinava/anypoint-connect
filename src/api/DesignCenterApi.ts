@@ -48,6 +48,22 @@ export interface PublishToExchangeOptions {
 
 const BASE = '/designcenter/api-designer';
 
+/**
+ * Extract meaningful error details from Design Center API errors.
+ * The DC API often returns descriptive messages in the response body
+ * that are far more useful than the generic HTTP status.
+ */
+function extractError(e: unknown): string {
+    if (e instanceof Error && 'response' in e) {
+        const axiosErr = e as { response?: { status?: number; data?: unknown } };
+        const data = axiosErr.response?.data;
+        if (typeof data === 'string' && data.length > 0) return data;
+        if (data && typeof data === 'object' && 'message' in data) return String((data as { message: string }).message);
+        return `HTTP ${axiosErr.response?.status || 'unknown'}`;
+    }
+    return e instanceof Error ? e.message : String(e);
+}
+
 export class DesignCenterApi {
     constructor(
         private readonly http: HttpClient,
@@ -136,19 +152,68 @@ export class DesignCenterApi {
 
     /**
      * Read a file's content from a project branch.
-     * The filePath should be URI-encoded if it contains special characters.
+     * Automatically decodes JSON-wrapped responses from the DC API
+     * so callers always receive clean, human-readable text.
      */
     async getFileContent(orgId: string, projectId: string, filePath: string, branch = 'master'): Promise<string> {
         const ownerId = await this.getOwnerId();
         const encodedPath = encodeURIComponent(filePath);
-        const content = await this.http.get<string>(
+        const raw = await this.http.get<string>(
             `${BASE}/projects/${projectId}/branches/${branch}/files/${encodedPath}`,
             {
                 headers: this.dcHeaders(orgId, ownerId, { Accept: 'text/plain' }),
                 responseType: 'text',
             },
         );
-        return content;
+        // The DC API returns file content as a JSON string literal
+        // (quoted with escaped newlines). Decode it to clean text.
+        if (typeof raw === 'string' && raw.startsWith('"') && raw.endsWith('"')) {
+            try {
+                return JSON.parse(raw);
+            } catch {
+                return raw;
+            }
+        }
+        return raw;
+    }
+
+    /**
+     * Resolve a local filename to its matching remote path in the project.
+     * Returns the matched remote path, or throws with helpful suggestions.
+     */
+    async resolveFilePath(
+        orgId: string,
+        projectId: string,
+        localName: string,
+        branch = 'master',
+    ): Promise<string> {
+        const files = await this.getFiles(orgId, projectId, branch);
+        const fileList = files.filter((f) => f.type.toLowerCase() === 'file');
+
+        // Exact match
+        const exact = fileList.find((f) => f.path === localName);
+        if (exact) return exact.path;
+
+        // Basename match (e.g., '/tmp/api.raml' → 'api.raml')
+        const basename = localName.includes('/') ? localName.split('/').pop()! : localName;
+        const byBasename = fileList.filter((f) => f.path.endsWith(basename));
+        if (byBasename.length === 1) return byBasename[0].path;
+
+        // Multiple matches or no match — build helpful error
+        if (byBasename.length > 1) {
+            const candidates = byBasename.map((f) => `  - ${f.path}`).join('\n');
+            throw new Error(`Multiple files match "${basename}":\n${candidates}\nUse --path to specify the exact remote path.`);
+        }
+
+        // No match — suggest similar files
+        const suggestions = fileList
+            .filter((f) => f.path.endsWith('.raml') || f.path.endsWith('.yaml') || f.path.endsWith('.json'))
+            .slice(0, 5)
+            .map((f) => `  - ${f.path}`)
+            .join('\n');
+        throw new Error(
+            `"${basename}" not found in project. Available spec files:\n${suggestions || '  (none)'}\nUse --path to specify the exact remote path.`,
+        );
     }
 
     // ── Lock / Save / Unlock ──────────────────────
@@ -158,9 +223,13 @@ export class DesignCenterApi {
      */
     async acquireLock(orgId: string, projectId: string, branch = 'master'): Promise<void> {
         const ownerId = await this.getOwnerId();
-        await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/acquireLock`, {}, {
-            headers: this.dcHeaders(orgId, ownerId),
-        });
+        try {
+            await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/acquireLock`, {}, {
+                headers: this.dcHeaders(orgId, ownerId),
+            });
+        } catch (e) {
+            throw new Error(`Failed to acquire lock: ${extractError(e)}`);
+        }
     }
 
     /**
@@ -168,9 +237,13 @@ export class DesignCenterApi {
      */
     async releaseLock(orgId: string, projectId: string, branch = 'master'): Promise<void> {
         const ownerId = await this.getOwnerId();
-        await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/releaseLock`, {}, {
-            headers: this.dcHeaders(orgId, ownerId),
-        });
+        try {
+            await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/releaseLock`, {}, {
+                headers: this.dcHeaders(orgId, ownerId),
+            });
+        } catch (e) {
+            throw new Error(`Failed to release lock: ${extractError(e)}`);
+        }
     }
 
     /**
@@ -185,19 +258,23 @@ export class DesignCenterApi {
         commitMessage?: string,
     ): Promise<void> {
         const ownerId = await this.getOwnerId();
-        await this.http.post<void>(
-            `${BASE}/projects/${projectId}/branches/${branch}/save`,
-            [
+        try {
+            await this.http.post<void>(
+                `${BASE}/projects/${projectId}/branches/${branch}/save`,
+                [
+                    {
+                        path: filePath,
+                        content,
+                        type: 'file',
+                    },
+                ],
                 {
-                    path: filePath,
-                    content,
-                    type: 'file',
+                    headers: this.dcHeaders(orgId, ownerId, commitMessage ? { 'x-commit-message': commitMessage } : {}),
                 },
-            ],
-            {
-                headers: this.dcHeaders(orgId, ownerId, commitMessage ? { 'x-commit-message': commitMessage } : {}),
-            },
-        );
+            );
+        } catch (e) {
+            throw new Error(`Failed to save file: ${extractError(e)}`);
+        }
     }
 
     /**
