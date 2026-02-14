@@ -180,13 +180,12 @@ class AnypointConnectMcpServer {
                     const orgId = await this.client.getDefaultOrgId();
                     const env = await this.client.accessManagement.resolveEnvironment(orgId, environment);
 
-                    const result = await this.client.logs.searchLogs(orgId, env.id, appName, {
+                    const entries = await this.client.logs.getLogs(orgId, env.id, appName, {
                         limit: lines || 100,
-                        priority: level,
-                        descending: true,
+                        level,
                     });
 
-                    const formatted = result.data.map(e => ({
+                    const formatted = entries.map((e: any) => ({
                         timestamp: new Date(e.timestamp).toISOString(),
                         level: e.priority,
                         message: e.message,
@@ -195,7 +194,7 @@ class AnypointConnectMcpServer {
                     return {
                         content: [{
                             type: 'text',
-                            text: JSON.stringify({ total: result.total, entries: formatted }, null, 2),
+                            text: JSON.stringify({ total: entries.length, entries: formatted }, null, 2),
                         }],
                     };
                 } catch (error) {

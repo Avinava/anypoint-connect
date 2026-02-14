@@ -14,7 +14,7 @@ export type { TokenStore, AnypointTokens } from './auth/TokenStore.js';
 // APIs
 export { AccessManagementApi, type UserProfile, type Environment } from './api/AccessManagementApi.js';
 export { CloudHub2Api, type CH2Deployment, type CreateDeploymentPayload } from './api/CloudHub2Api.js';
-export { LogsApi, type LogEntry, type LogSearchParams } from './api/LogsApi.js';
+export { LogsApi, type LogEntry } from './api/LogsApi.js';
 export { MonitoringApi, type AppMetricsSummary, type MetricsExport } from './api/MonitoringApi.js';
 
 // Utils
