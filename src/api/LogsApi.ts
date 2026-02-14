@@ -1,10 +1,11 @@
 /**
  * Logs API
- * Log tailing, fetching, and downloading
+ * Log tailing, fetching, and downloading for CloudHub 2.0
  */
 
 import type { HttpClient } from '../client/HttpClient.js';
 import type { Cache } from '../client/Cache.js';
+import type { CloudHub2Api } from './CloudHub2Api.js';
 
 export interface LogEntry {
     loggerName?: string;
@@ -33,23 +34,26 @@ export interface LogSearchResponse {
     data: LogEntry[];
 }
 
+const AMC_BASE = '/amc/application-manager/api/v2';
+
 export class LogsApi {
     constructor(
         private readonly http: HttpClient,
-        private readonly _cache: Cache
+        private readonly _cache: Cache,
+        private readonly ch2?: CloudHub2Api
     ) { }
 
     /**
-     * Search logs via CloudHub API
+     * Search logs via Anypoint Monitoring API (works for CH2)
      */
     async searchLogs(
         orgId: string,
         envId: string,
-        domain: string,
+        deploymentId: string,
         params: LogSearchParams = {}
     ): Promise<LogSearchResponse> {
         const body: Record<string, unknown> = {
-            deploymentId: params.deploymentId || domain,
+            deploymentId,
             limit: params.limit || 200,
             descending: params.descending ?? true,
         };
@@ -59,18 +63,37 @@ export class LogsApi {
         if (params.priority) body.priority = params.priority;
         if (params.search) body.search = params.search;
 
-        const response = await this.http.post<LogSearchResponse>(
-            `/cloudhub/api/v2/applications/${domain}/logs`,
-            body,
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
+        try {
+            // Try Anypoint Monitoring API first
+            const response = await this.http.post<LogSearchResponse>(
+                `/monitoring/archive/api/v1/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/logs`,
+                body,
+                {
+                    headers: {
+                        'X-ANYPNT-ORG-ID': orgId,
+                        'X-ANYPNT-ENV-ID': envId,
+                    },
+                }
+            );
+            return response;
+        } catch {
+            // Fallback: try the Runtime Manager v2 logs endpoint
+            try {
+                const response = await this.http.post<LogSearchResponse>(
+                    `${AMC_BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/logs/search`,
+                    body,
+                    {
+                        headers: {
+                            'X-ANYPNT-ORG-ID': orgId,
+                            'X-ANYPNT-ENV-ID': envId,
+                        },
+                    }
+                );
+                return response;
+            } catch {
+                return { total: 0, data: [] };
             }
-        );
-
-        return response;
+        }
     }
 
     /**
@@ -83,7 +106,7 @@ export class LogsApi {
         specificationId: string
     ): Promise<Buffer> {
         return this.http.download(
-            `/amc/application-manager/api/v2/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/specs/${specificationId}/logs/file`,
+            `${AMC_BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/specs/${specificationId}/logs/file`,
             {
                 headers: {
                     'X-ANYPNT-ORG-ID': orgId,
@@ -94,13 +117,28 @@ export class LogsApi {
     }
 
     /**
+     * Resolve app name to deployment ID using CH2 API
+     */
+    async resolveDeploymentId(orgId: string, envId: string, appName: string): Promise<string> {
+        if (!this.ch2) {
+            return appName; // fallback to using appName as deploymentId
+        }
+
+        const deployment = await this.ch2.findByName(orgId, envId, appName);
+        if (!deployment) {
+            throw new Error(`Application "${appName}" not found in environment`);
+        }
+        return deployment.id;
+    }
+
+    /**
      * Tail logs — generator that yields new log entries
      * Polls every `intervalMs` and yields entries newer than the cursor
      */
     async *tailLogs(
         orgId: string,
         envId: string,
-        domain: string,
+        appName: string,
         options: {
             level?: string;
             intervalMs?: number;
@@ -108,12 +146,13 @@ export class LogsApi {
         } = {}
     ): AsyncGenerator<LogEntry[], void, unknown> {
         const intervalMs = options.intervalMs || 3000;
+        const deploymentId = await this.resolveDeploymentId(orgId, envId, appName);
         let cursor = Date.now();
         const seenIds = new Set<string>();
 
         while (true) {
             try {
-                const result = await this.searchLogs(orgId, envId, domain, {
+                const result = await this.searchLogs(orgId, envId, deploymentId, {
                     startTime: cursor,
                     priority: options.level,
                     search: options.search,
@@ -155,17 +194,18 @@ export class LogsApi {
     async getLogsForPeriod(
         orgId: string,
         envId: string,
-        domain: string,
+        appName: string,
         startTime: number,
         endTime: number,
         level?: string
     ): Promise<LogEntry[]> {
+        const deploymentId = await this.resolveDeploymentId(orgId, envId, appName);
         const allLogs: LogEntry[] = [];
         let offset = 0;
         const limit = 500;
 
         while (true) {
-            const result = await this.searchLogs(orgId, envId, domain, {
+            const result = await this.searchLogs(orgId, envId, deploymentId, {
                 startTime,
                 endTime,
                 priority: level,
