@@ -66,9 +66,10 @@ export class OAuthFlow {
                     const error_description = parsedUrl.searchParams.get('error_description');
 
                     if (error) {
-                        res.writeHead(400, { 'Content-Type': 'text/html' });
+                        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
                         res.end(`
               <html>
+                <head><meta charset="utf-8"></head>
                 <body style="font-family: system-ui; padding: 40px; text-align: center; background: #1a1a2e; color: #e0e0e0;">
                   <h1 style="color: #ff6b6b;">❌ Authentication Failed</h1>
                   <p>${error_description || error}</p>
@@ -82,9 +83,10 @@ export class OAuthFlow {
                     }
 
                     if (code && state) {
-                        res.writeHead(200, { 'Content-Type': 'text/html' });
+                        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
                         res.end(`
               <html>
+                <head><meta charset="utf-8"></head>
                 <body style="font-family: system-ui; padding: 40px; text-align: center; background: #1a1a2e; color: #e0e0e0;">
                   <h1 style="color: #4ecdc4;">✅ Authentication Successful!</h1>
                   <p>You can close this window and return to the terminal.</p>
