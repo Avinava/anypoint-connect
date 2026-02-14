@@ -18,6 +18,12 @@ export { LogsApi, type LogEntry } from './api/LogsApi.js';
 export { MonitoringApi, type AppMetricsSummary, type MetricsExport } from './api/MonitoringApi.js';
 export { ExchangeApi, type ExchangeAsset, type ExchangeAssetDetail } from './api/ExchangeApi.js';
 export { ApiManagerApi, type ApiInstance, type ApiAsset, type ApiPolicy, type SlaTier } from './api/ApiManagerApi.js';
+export {
+    DesignCenterApi,
+    type DesignCenterProject,
+    type DesignCenterFile,
+    type PublishToExchangeOptions,
+} from './api/DesignCenterApi.js';
 
 // Utils
 export { HttpClient, type HttpClientConfig } from './client/HttpClient.js';

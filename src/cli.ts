@@ -13,6 +13,7 @@ import { createLogsCommand } from './commands/logs.js';
 import { createMonitorCommand } from './commands/monitor.js';
 import { createExchangeCommand } from './commands/exchange.js';
 import { createApiCommand } from './commands/api.js';
+import { createDesignCenterCommand } from './commands/design-center.js';
 
 const program = new Command();
 
@@ -26,5 +27,6 @@ program.addCommand(createLogsCommand());
 program.addCommand(createMonitorCommand());
 program.addCommand(createExchangeCommand());
 program.addCommand(createApiCommand());
+program.addCommand(createDesignCenterCommand());
 
 program.parse();
