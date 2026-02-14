@@ -12,6 +12,7 @@ import { LogsApi } from '../api/LogsApi.js';
 import { MonitoringApi } from '../api/MonitoringApi.js';
 import { ExchangeApi } from '../api/ExchangeApi.js';
 import { ApiManagerApi } from '../api/ApiManagerApi.js';
+import { DesignCenterApi } from '../api/DesignCenterApi.js';
 
 export interface AnypointClientConfig {
     clientId: string;
@@ -33,6 +34,7 @@ export class AnypointClient {
     public readonly monitoring: MonitoringApi;
     public readonly exchange: ExchangeApi;
     public readonly apiManager: ApiManagerApi;
+    public readonly designCenter: DesignCenterApi;
 
     constructor(config: AnypointClientConfig) {
         this.tokenManager = new TokenManager({
@@ -55,6 +57,7 @@ export class AnypointClient {
         this.monitoring = new MonitoringApi(this.httpClient, this.cache);
         this.exchange = new ExchangeApi(this.httpClient, this.cache);
         this.apiManager = new ApiManagerApi(this.httpClient, this.cache);
+        this.designCenter = new DesignCenterApi(this.httpClient, this.cache);
     }
 
     // ── Auth ──────────────────────────────────────────

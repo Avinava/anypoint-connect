@@ -9,3 +9,10 @@ export { LogsApi, type LogEntry, type LogSearchResponse } from './LogsApi.js';
 export { MonitoringApi, type AppMetricsSummary, type MetricsExport, type MetricDataPoint } from './MonitoringApi.js';
 export { ExchangeApi, type ExchangeAsset, type ExchangeAssetDetail } from './ExchangeApi.js';
 export { ApiManagerApi, type ApiInstance, type ApiAsset, type ApiPolicy, type SlaTier } from './ApiManagerApi.js';
+export {
+    DesignCenterApi,
+    type DesignCenterProject,
+    type DesignCenterFile,
+    type DesignCenterBranch,
+    type PublishToExchangeOptions,
+} from './DesignCenterApi.js';

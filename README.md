@@ -91,6 +91,7 @@ src/
 │   ├── MonitoringApi.ts     AMQL queries, JSON/CSV export
 │   ├── ExchangeApi.ts       Search assets, download specs
 │   ├── ApiManagerApi.ts     API instances, policies, SLA tiers
+│   ├── DesignCenterApi.ts   Projects, files, lock/save, publish
 │   └── AccessManagementApi.ts
 ├── commands/          CLI commands
 │   ├── config.ts      init | show | set | path
@@ -100,7 +101,8 @@ src/
 │   ├── logs.ts        tail | download
 │   ├── monitor.ts     view | download
 │   ├── exchange.ts    search | info | download-spec
-│   └── api.ts         list | policies | sla-tiers
+│   ├── api.ts         list | policies | sla-tiers
+│   └── design-center.ts  list | files | pull | push | publish
 ├── safety/            Production guards
 │   └── guards.ts      Env detection, JAR validation, confirmation
 ├── utils/
@@ -417,6 +419,11 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 | `compare_environments` | Side-by-side diff of apps across two environments |
 | `list_api_instances` | List managed API instances with governance info |
 | `get_api_policies` | Get policies and SLA tiers for an API |
+| `list_design_center_projects` | List all API spec projects in Design Center |
+| `get_design_center_files` | List files in a Design Center project |
+| `read_design_center_file` | Read RAML/OAS file content from Design Center |
+| `update_design_center_file` | ⚠️ Push updated file to Design Center (lock/save/unlock) |
+| `publish_to_exchange` | ⚠️ Publish Design Center project to Exchange |
 
 ### Available MCP Prompts
 
