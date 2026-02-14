@@ -422,8 +422,10 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 
 | Prompt | Description |
 |--------|-------------|
-| `check-app-health` | Composite health check: status + logs + metrics |
-| `troubleshoot-app` | Guided troubleshooting with error log analysis |
+| `pre-deploy-check` | Readiness check before promoting an app between environments |
+| `troubleshoot-app` | Systematic diagnosis: replica health, error patterns, metrics anomalies |
+| `api-governance-audit` | Review policies, SLA tiers, and security gaps across all APIs |
+| `environment-overview` | Full health report: app status, error rates, performance rankings |
 
 ### MCP Resource
 
