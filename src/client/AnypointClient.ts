@@ -10,6 +10,8 @@ import { AccessManagementApi, type UserProfile } from '../api/AccessManagementAp
 import { CloudHub2Api } from '../api/CloudHub2Api.js';
 import { LogsApi } from '../api/LogsApi.js';
 import { MonitoringApi } from '../api/MonitoringApi.js';
+import { ExchangeApi } from '../api/ExchangeApi.js';
+import { ApiManagerApi } from '../api/ApiManagerApi.js';
 
 export interface AnypointClientConfig {
     clientId: string;
@@ -29,6 +31,8 @@ export class AnypointClient {
     public readonly cloudHub2: CloudHub2Api;
     public readonly logs: LogsApi;
     public readonly monitoring: MonitoringApi;
+    public readonly exchange: ExchangeApi;
+    public readonly apiManager: ApiManagerApi;
 
     constructor(config: AnypointClientConfig) {
         this.tokenManager = new TokenManager({
@@ -49,6 +53,8 @@ export class AnypointClient {
         this.cloudHub2 = new CloudHub2Api(this.httpClient, this.cache);
         this.logs = new LogsApi(this.httpClient, this.cache, this.cloudHub2);
         this.monitoring = new MonitoringApi(this.httpClient, this.cache);
+        this.exchange = new ExchangeApi(this.httpClient, this.cache);
+        this.apiManager = new ApiManagerApi(this.httpClient, this.cache);
     }
 
     // ── Auth ──────────────────────────────────────────

@@ -34,9 +34,11 @@ graph TB
 
     subgraph APIs["Domain APIs"]
         AM["AccessManagement<br/>Users, Environments"]
-        CH2["CloudHub2<br/>Deploy, Poll"]
+        CH2["CloudHub2<br/>Deploy, Restart, Scale"]
         LOGS["LogsApi<br/>Tail, Download"]
         MON["MonitoringApi<br/>AMQL Queries"]
+        EX["ExchangeApi<br/>Search, Download Spec"]
+        APIM["ApiManagerApi<br/>Instances, Policies"]
     end
 
     subgraph Safety["Safety"]
@@ -56,6 +58,8 @@ graph TB
     AC --> CH2
     AC --> LOGS
     AC --> MON
+    AC --> EX
+    AC --> APIM
     CLI --> GUARD
 
     OAUTH -->|"callback :3000/api/callback"| AP["Anypoint Platform API"]
@@ -82,17 +86,21 @@ src/
 │   ├── RateLimiter.ts       Token bucket throttling
 │   └── Cache.ts             TTL in-memory cache
 ├── api/               Domain API clients
-│   ├── CloudHub2Api.ts      Deploy, redeploy, delete, poll
-│   ├── LogsApi.ts           Search, tail, period download
+│   ├── CloudHub2Api.ts      Deploy, redeploy, restart, scale, poll
+│   ├── LogsApi.ts           Tail, download (CH2 native)
 │   ├── MonitoringApi.ts     AMQL queries, JSON/CSV export
+│   ├── ExchangeApi.ts       Search assets, download specs
+│   ├── ApiManagerApi.ts     API instances, policies, SLA tiers
 │   └── AccessManagementApi.ts
 ├── commands/          CLI commands
 │   ├── config.ts      init | show | set | path
 │   ├── auth.ts        login | logout | status
-│   ├── apps.ts        list | status
+│   ├── apps.ts        list | status | restart | scale
 │   ├── deploy.ts      deploy with prod safety net
 │   ├── logs.ts        tail | download
-│   └── monitor.ts     view | download
+│   ├── monitor.ts     view | download
+│   ├── exchange.ts    search | info | download-spec
+│   └── api.ts         list | policies | sla-tiers
 ├── safety/            Production guards
 │   └── guards.ts      Env detection, JAR validation, confirmation
 ├── utils/
@@ -244,18 +252,42 @@ Tokens auto-refresh using the stored refresh token. No need to re-login unless y
 
 ## CLI Usage
 
-### List Applications
+### Applications
 
 ```bash
 anc apps list --env Sandbox
-# ┌─────────────────────┬─────────┬────────┬────────┬──────────┐
-# │ Name                │ Status  │ Version│ Runtime│ Replicas │
-# ├─────────────────────┼─────────┼────────┼────────┼──────────┤
-# │ my-api              │ APPLIED │ 1.2.0  │ 4.8.0  │ 1        │
-# │ order-service       │ APPLIED │ 3.1.0  │ 4.7.0  │ 2        │
-# └─────────────────────┴─────────┴────────┴────────┴──────────┘
-
 anc apps status my-api --env Sandbox
+anc apps restart my-api --env Production      # prod confirmation prompt
+anc apps scale my-api --env Sandbox --replicas 2
+anc apps scale my-api --env Production --replicas 3 --force  # skip confirmation
+```
+
+### Exchange
+
+```bash
+# Search assets
+anc exchange search "order" --type rest-api --limit 10
+
+# Get asset details
+anc exchange info my-api-spec
+anc exchange info org-id/my-api-spec --version 1.2.0
+
+# Download API spec (RAML/OAS)
+anc exchange download-spec my-api-spec -o spec.json
+```
+
+### API Manager
+
+```bash
+# List managed API instances
+anc api list --env Production
+
+# View policies on an API (by name or ID)
+anc api policies "order-api" --env Production
+anc api policies 18888853 --env Production
+
+# View SLA tiers
+anc api sla-tiers "order-api" --env Production
 ```
 
 ### Deploy
@@ -378,6 +410,13 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 | `get_logs` | Fetch recent log entries |
 | `download_logs` | Download logs for a time range |
 | `get_metrics` | Fetch monitoring metrics (AMQL) |
+| `search_exchange` | Search assets in Exchange (APIs, connectors, templates) |
+| `download_api_spec` | Download RAML/OAS spec from Exchange |
+| `restart_app` | ⚠️ Restart an application (rolling restart) |
+| `scale_app` | ⚠️ Scale application replicas |
+| `compare_environments` | Side-by-side diff of apps across two environments |
+| `list_api_instances` | List managed API instances with governance info |
+| `get_api_policies` | Get policies and SLA tiers for an API |
 
 ### Available MCP Prompts
 
@@ -401,6 +440,11 @@ Once configured, you can ask your AI assistant things like:
 - *"Check the health of order-service in Sandbox"*
 - *"What are the metrics for all apps in Production over the last 7 days?"*
 - *"Download 24 hours of logs for my-api in Production"*
+- *"Search Exchange for REST API specs related to orders"*
+- *"Compare Development and Production environments"*
+- *"What policies are applied to the Order Processing API?"*
+- *"Restart my-api in the Development environment"*
+- *"Scale order-service to 3 replicas in Production"*
 
 ---
 
