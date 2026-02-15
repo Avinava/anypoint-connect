@@ -14,6 +14,7 @@ import {
     updateSavedConfig,
     hasSavedConfig,
     getConfigDir,
+    DEFAULT_CALLBACK_URL,
     type SavedConfig,
 } from '../utils/config.js';
 
@@ -61,11 +62,7 @@ export function createConfigCommand(): Command {
                     existing?.clientSecret ? '••••••' + existing.clientSecret.slice(-4) : undefined,
                 );
 
-                const callbackUrl = await ask(
-                    rl,
-                    '  Callback URL:',
-                    existing?.callbackUrl || 'http://localhost:3000/api/callback',
-                );
+                const callbackUrl = await ask(rl, '  Callback URL:', existing?.callbackUrl || DEFAULT_CALLBACK_URL);
 
                 const baseUrl = await ask(rl, '  Base URL:', existing?.baseUrl || 'https://anypoint.mulesoft.com');
 

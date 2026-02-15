@@ -150,14 +150,7 @@ export class OAuthFlow {
 
         const data = (await response.json()) as TokenResponse;
 
-        return {
-            accessToken: data.access_token,
-            refreshToken: data.refresh_token,
-            tokenType: data.token_type || 'Bearer',
-            expiresIn: data.expires_in || 3600,
-            expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
-            scope: data.scope,
-        };
+        return this.mapTokenResponse(data);
     }
 
     /**
@@ -186,9 +179,17 @@ export class OAuthFlow {
 
         const data = (await response.json()) as TokenResponse;
 
+        return this.mapTokenResponse(data, refreshToken);
+    }
+
+    /**
+     * Convert a raw OAuth token response to our internal AnypointTokens shape.
+     * Falls back to the provided refreshToken when the response omits one (common on refresh).
+     */
+    private mapTokenResponse(data: TokenResponse, fallbackRefreshToken?: string): AnypointTokens {
         return {
             accessToken: data.access_token,
-            refreshToken: data.refresh_token || refreshToken,
+            refreshToken: data.refresh_token || fallbackRefreshToken,
             tokenType: data.token_type || 'Bearer',
             expiresIn: data.expires_in || 3600,
             expiresAt: Date.now() + (data.expires_in || 3600) * 1000,

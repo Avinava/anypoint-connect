@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { errorMessage } from '../../utils/errors.js';
+import { mcpError } from './shared.js';
 
 export function registerApplicationTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -48,10 +48,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     ],
                 };
             } catch (error) {
-                return {
-                    content: [{ type: 'text', text: `Error: ${errorMessage(error)}` }],
-                    isError: true,
-                };
+                return mcpError(error);
             }
         },
     );
@@ -107,10 +104,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     ],
                 };
             } catch (error) {
-                return {
-                    content: [{ type: 'text', text: `Error: ${errorMessage(error)}` }],
-                    isError: true,
-                };
+                return mcpError(error);
             }
         },
     );
@@ -150,10 +144,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     ],
                 };
             } catch (error) {
-                return {
-                    content: [{ type: 'text', text: `Error: ${errorMessage(error)}` }],
-                    isError: true,
-                };
+                return mcpError(error);
             }
         },
     );
@@ -194,10 +185,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     ],
                 };
             } catch (error) {
-                return {
-                    content: [{ type: 'text', text: `Error: ${errorMessage(error)}` }],
-                    isError: true,
-                };
+                return mcpError(error);
             }
         },
     );
