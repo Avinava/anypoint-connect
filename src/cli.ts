@@ -30,4 +30,13 @@ program.addCommand(createExchangeCommand());
 program.addCommand(createApiCommand());
 program.addCommand(createDesignCenterCommand());
 
+program
+    .command('mcp')
+    .description('Start the MCP (Model Context Protocol) server over stdio')
+    .action(async () => {
+        const { AnypointConnectMcpServer } = await import('./mcp.js');
+        const server = new AnypointConnectMcpServer();
+        await server.start();
+    });
+
 program.parse();
