@@ -4,20 +4,10 @@
  */
 
 import { Command } from 'commander';
-import { getConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
+import { errorMessage } from '../utils/errors.js';
 import { printTable } from '../utils/formatter.js';
-import { AnypointClient } from '../client/AnypointClient.js';
-
-function createClient(): AnypointClient {
-    const config = getConfig();
-    return new AnypointClient({
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        redirectUri: config.callbackUrl,
-        baseUrl: config.baseUrl,
-    });
-}
+import { createClient } from './shared.js';
 
 export function createApiCommand(): Command {
     const api = new Command('api').description('Manage API instances, policies, and SLA tiers');
@@ -56,7 +46,7 @@ export function createApiCommand(): Command {
 
                 printTable(['API Name', 'ID', 'Status', 'Version', 'Technology', 'Endpoint'], rows);
             } catch (error) {
-                log.error(`Failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -107,7 +97,7 @@ export function createApiCommand(): Command {
                     console.log();
                 }
             } catch (error) {
-                log.error(`Failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -155,7 +145,7 @@ export function createApiCommand(): Command {
                     ]),
                 );
             } catch (error) {
-                log.error(`Failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });

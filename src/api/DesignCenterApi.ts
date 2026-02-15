@@ -7,6 +7,7 @@
  * The owner ID is the authenticated user's ID (from /accounts/api/me).
  */
 
+import { AxiosError } from 'axios';
 import type { HttpClient } from '../client/HttpClient.js';
 import type { Cache } from '../client/Cache.js';
 
@@ -54,12 +55,11 @@ const BASE = '/designcenter/api-designer';
  * that are far more useful than the generic HTTP status.
  */
 function extractError(e: unknown): string {
-    if (e instanceof Error && 'response' in e) {
-        const axiosErr = e as { response?: { status?: number; data?: unknown } };
-        const data = axiosErr.response?.data;
+    if (e instanceof AxiosError && e.response) {
+        const data = e.response.data;
         if (typeof data === 'string' && data.length > 0) return data;
         if (data && typeof data === 'object' && 'message' in data) return String((data as { message: string }).message);
-        return `HTTP ${axiosErr.response?.status || 'unknown'}`;
+        return `HTTP ${e.response.status || 'unknown'}`;
     }
     return e instanceof Error ? e.message : String(e);
 }

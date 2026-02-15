@@ -5,20 +5,11 @@
 
 import { Command } from 'commander';
 import * as fs from 'fs';
-import { getConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
+import { errorMessage } from '../utils/errors.js';
 import { printTable } from '../utils/formatter.js';
-import { AnypointClient } from '../client/AnypointClient.js';
-
-function createClient(): AnypointClient {
-    const config = getConfig();
-    return new AnypointClient({
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        redirectUri: config.callbackUrl,
-        baseUrl: config.baseUrl,
-    });
-}
+import { createClient } from './shared.js';
+import type { AnypointClient } from '../client/AnypointClient.js';
 
 async function resolveProject(client: AnypointClient, orgId: string, nameOrId: string) {
     const project = await client.designCenter.findByName(orgId, nameOrId);
@@ -57,7 +48,7 @@ export function createDesignCenterCommand(): Command {
                     projects.map((p) => [p.name, p.type || '-', p.id]),
                 );
             } catch (error) {
-                log.error(`Failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -84,7 +75,7 @@ export function createDesignCenterCommand(): Command {
                     files.map((f) => [f.path, f.type]),
                 );
             } catch (error) {
-                log.error(`Failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -120,7 +111,7 @@ export function createDesignCenterCommand(): Command {
                 fs.writeFileSync(outputPath, content);
                 log.success(`Downloaded → ${outputPath} (${content.length} bytes)`);
             } catch (error) {
-                log.error(`Download failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Download failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -165,7 +156,7 @@ export function createDesignCenterCommand(): Command {
 
                 log.success(`Pushed to Design Center: ${remotePath}`);
             } catch (error) {
-                log.error(`Push failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Push failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -209,7 +200,7 @@ export function createDesignCenterCommand(): Command {
                 log.kv('Asset ID', result.assetId);
                 log.kv('Version', result.version);
             } catch (error) {
-                log.error(`Publish failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Publish failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });

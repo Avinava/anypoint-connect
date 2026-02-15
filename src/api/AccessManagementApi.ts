@@ -53,7 +53,7 @@ export class AccessManagementApi {
 
             // /accounts/api/me returns { user: {...}, organization: {...} }
             const user = raw.user ?? (raw as unknown as UserProfile);
-            const org = raw.organization ?? (user as any).organization;
+            const org = raw.organization ?? user.organization;
 
             return {
                 id: user.id,
