@@ -14,10 +14,11 @@ import { createMonitorCommand } from './commands/monitor.js';
 import { createExchangeCommand } from './commands/exchange.js';
 import { createApiCommand } from './commands/api.js';
 import { createDesignCenterCommand } from './commands/design-center.js';
+import { VERSION } from './version.js';
 
 const program = new Command();
 
-program.name('anc').description('Anypoint Connect — CLI for Anypoint Platform').version('0.1.0');
+program.name('anc').description('Anypoint Connect — CLI for Anypoint Platform').version(VERSION);
 
 program.addCommand(createConfigCommand());
 program.addCommand(createAuthCommand());

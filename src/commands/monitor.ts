@@ -7,42 +7,12 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import chalk from 'chalk';
-import { getConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
+import { errorMessage } from '../utils/errors.js';
+import { parseDate } from '../utils/dates.js';
 import { printTable, formatMs } from '../utils/formatter.js';
-import { AnypointClient } from '../client/AnypointClient.js';
+import { createClient } from './shared.js';
 import type { AppMetricsSummary } from '../api/MonitoringApi.js';
-
-function createClient(): AnypointClient {
-    const config = getConfig();
-    return new AnypointClient({
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        redirectUri: config.callbackUrl,
-        baseUrl: config.baseUrl,
-    });
-}
-
-function parseDate(dateStr: string): number {
-    const relativeMatch = dateStr.match(/^(\d+)(m|h|d)$/);
-    if (relativeMatch) {
-        const amount = parseInt(relativeMatch[1]);
-        const unit = relativeMatch[2];
-        const now = Date.now();
-        switch (unit) {
-            case 'm':
-                return now - amount * 60 * 1000;
-            case 'h':
-                return now - amount * 60 * 60 * 1000;
-            case 'd':
-                return now - amount * 24 * 60 * 60 * 1000;
-        }
-    }
-
-    const ts = Date.parse(dateStr);
-    if (isNaN(ts)) throw new Error(`Invalid date: "${dateStr}"`);
-    return ts;
-}
 
 function metricsToCSV(metrics: AppMetricsSummary[]): string {
     const header =
@@ -104,7 +74,7 @@ export function createMonitorCommand(): Command {
                 log.kv('Total Errors', totalErrors);
                 log.kv('Apps', metrics.length);
             } catch (error) {
-                log.error(`Metrics failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Metrics failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -148,7 +118,7 @@ export function createMonitorCommand(): Command {
                 fs.writeFileSync(output, content, 'utf-8');
                 log.success(`Exported ${exported.apps.length} apps metrics → ${chalk.bold(output)}`);
             } catch (error) {
-                log.error(`Export failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Export failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });

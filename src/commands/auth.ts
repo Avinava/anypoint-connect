@@ -6,9 +6,9 @@
 import { Command } from 'commander';
 import open from 'open';
 import ora from 'ora';
-import { getConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
-import { AnypointClient } from '../client/AnypointClient.js';
+import { errorMessage } from '../utils/errors.js';
+import { createClient } from './shared.js';
 
 export function createAuthCommand(): Command {
     const auth = new Command('auth').description('Manage Anypoint Platform authentication');
@@ -17,14 +17,7 @@ export function createAuthCommand(): Command {
         .description('Authenticate with Anypoint Platform via OAuth')
         .action(async () => {
             try {
-                const config = getConfig();
-                const client = new AnypointClient({
-                    clientId: config.clientId,
-                    clientSecret: config.clientSecret,
-                    redirectUri: config.callbackUrl,
-                    baseUrl: config.baseUrl,
-                });
-
+                const client = createClient();
                 const authUrl = client.getAuthorizeUrl();
                 log.info('Opening browser for authentication...');
                 log.dim(`  ${authUrl}`);
@@ -45,7 +38,7 @@ export function createAuthCommand(): Command {
                 log.success(`Authenticated as ${me.firstName} ${me.lastName} (${me.username})`);
                 log.kv('Organization', me.organization.name);
             } catch (error) {
-                log.error(`Authentication failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Authentication failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -54,18 +47,11 @@ export function createAuthCommand(): Command {
         .description('Clear stored credentials')
         .action(async () => {
             try {
-                const config = getConfig();
-                const client = new AnypointClient({
-                    clientId: config.clientId,
-                    clientSecret: config.clientSecret,
-                    redirectUri: config.callbackUrl,
-                    baseUrl: config.baseUrl,
-                });
-
+                const client = createClient();
                 await client.logout();
                 log.success('Logged out successfully');
             } catch (error) {
-                log.error(`Logout failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Logout failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -74,14 +60,7 @@ export function createAuthCommand(): Command {
         .description('Show current authentication status')
         .action(async () => {
             try {
-                const config = getConfig();
-                const client = new AnypointClient({
-                    clientId: config.clientId,
-                    clientSecret: config.clientSecret,
-                    redirectUri: config.callbackUrl,
-                    baseUrl: config.baseUrl,
-                });
-
+                const client = createClient();
                 const status = await client.getAuthStatus();
 
                 if (!status.authenticated) {
@@ -106,7 +85,7 @@ export function createAuthCommand(): Command {
                     log.dim('  Could not fetch user details (token may need refresh)');
                 }
             } catch (error) {
-                log.error(`Status check failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Status check failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });

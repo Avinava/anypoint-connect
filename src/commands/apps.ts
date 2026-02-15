@@ -4,21 +4,11 @@
  */
 
 import { Command } from 'commander';
-import { getConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
+import { errorMessage } from '../utils/errors.js';
 import { printTable } from '../utils/formatter.js';
-import { AnypointClient } from '../client/AnypointClient.js';
 import { isProductionEnv, confirmProductionDeploy } from '../safety/guards.js';
-
-function createClient(): AnypointClient {
-    const config = getConfig();
-    return new AnypointClient({
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        redirectUri: config.callbackUrl,
-        baseUrl: config.baseUrl,
-    });
-}
+import { createClient } from './shared.js';
 
 export function createAppsCommand(): Command {
     const apps = new Command('apps').description('Manage deployed applications');
@@ -52,7 +42,7 @@ export function createAppsCommand(): Command {
                     ]),
                 );
             } catch (error) {
-                log.error(`Failed to list apps: ${error instanceof Error ? error.message : error}`);
+                log.error(`Failed to list apps: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -94,7 +84,7 @@ export function createAppsCommand(): Command {
                     log.kv('Public URL', deployment.target.deploymentSettings.http.inbound.publicUrl);
                 }
             } catch (error) {
-                log.error(`Failed to get status: ${error instanceof Error ? error.message : error}`);
+                log.error(`Failed to get status: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -128,7 +118,7 @@ export function createAppsCommand(): Command {
                 await client.cloudHub2.restartApp(orgId, env.id, deployment.id);
                 log.success(`Restart initiated for ${appName}`);
             } catch (error) {
-                log.error(`Restart failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Restart failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -169,7 +159,7 @@ export function createAppsCommand(): Command {
                 await client.cloudHub2.scaleApp(orgId, env.id, deployment.id, replicas);
                 log.success(`Scaled ${appName} to ${replicas} replica(s)`);
             } catch (error) {
-                log.error(`Scale failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Scale failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });

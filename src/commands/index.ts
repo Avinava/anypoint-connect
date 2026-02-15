@@ -4,3 +4,6 @@ export { createAppsCommand } from './apps.js';
 export { createDeployCommand } from './deploy.js';
 export { createLogsCommand } from './logs.js';
 export { createMonitorCommand } from './monitor.js';
+export { createExchangeCommand } from './exchange.js';
+export { createApiCommand } from './api.js';
+export { createDesignCenterCommand } from './design-center.js';

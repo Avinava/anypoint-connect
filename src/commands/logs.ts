@@ -7,43 +7,10 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import chalk from 'chalk';
-import { getConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
-import { AnypointClient } from '../client/AnypointClient.js';
-
-function createClient(): AnypointClient {
-    const config = getConfig();
-    return new AnypointClient({
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        redirectUri: config.callbackUrl,
-        baseUrl: config.baseUrl,
-    });
-}
-
-function parseDate(dateStr: string): number {
-    // Support relative dates like "1h", "30m", "2d"
-    const relativeMatch = dateStr.match(/^(\d+)(m|h|d)$/);
-    if (relativeMatch) {
-        const amount = parseInt(relativeMatch[1]);
-        const unit = relativeMatch[2];
-        const now = Date.now();
-        switch (unit) {
-            case 'm':
-                return now - amount * 60 * 1000;
-            case 'h':
-                return now - amount * 60 * 60 * 1000;
-            case 'd':
-                return now - amount * 24 * 60 * 60 * 1000;
-        }
-    }
-
-    const ts = Date.parse(dateStr);
-    if (isNaN(ts)) {
-        throw new Error(`Invalid date: "${dateStr}". Use ISO format or relative (e.g., 1h, 30m, 2d)`);
-    }
-    return ts;
-}
+import { errorMessage } from '../utils/errors.js';
+import { parseDate } from '../utils/dates.js';
+import { createClient } from './shared.js';
 
 export function createLogsCommand(): Command {
     const logs = new Command('logs').description('View and download application logs');
@@ -77,7 +44,7 @@ export function createLogsCommand(): Command {
                     // Normal exit via Ctrl+C
                     return;
                 }
-                log.error(`Log tailing failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Log tailing failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -120,7 +87,7 @@ export function createLogsCommand(): Command {
                 fs.writeFileSync(output, lines.join('\n'), 'utf-8');
                 log.success(`Downloaded ${entries.length} log entries → ${chalk.bold(output)}`);
             } catch (error) {
-                log.error(`Log download failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Log download failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
