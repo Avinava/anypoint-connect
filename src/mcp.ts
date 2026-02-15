@@ -8,7 +8,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { getConfig } from './utils/config.js';
+import { errorMessage } from './utils/errors.js';
 import { AnypointClient } from './client/AnypointClient.js';
+import { VERSION } from './version.js';
 
 class AnypointConnectMcpServer {
     private server: McpServer;
@@ -17,7 +19,7 @@ class AnypointConnectMcpServer {
     constructor() {
         this.server = new McpServer({
             name: 'anypoint-connect',
-            version: '0.1.0',
+            version: VERSION,
         });
 
         const config = getConfig();

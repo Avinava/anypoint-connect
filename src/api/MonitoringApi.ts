@@ -64,16 +64,17 @@ export class MonitoringApi {
         envId: string,
         from: number,
         to: number,
-    ): Promise<Array<{ appName: string; requestCount: number; avgResponseTime: number }>> {
+    ): Promise<Array<{ appName: string; requestCount: number; avgResponseTime: number; errorCount: number }>> {
         const cacheKey = `mon:inbound:${orgId}:${envId}:${from}:${to}`;
         return this.cache.getOrCompute(cacheKey, async () => {
-            const query = `SELECT COUNT(requests) AS "request_count", AVG(response_time) AS "avg_response_time", "app.name" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = '${orgId}' AND "env.id" = '${envId}' AND timestamp BETWEEN ${from} AND ${to} GROUP BY "app.name"`;
+            const query = `SELECT COUNT(requests) AS "request_count", AVG(response_time) AS "avg_response_time", COUNT(errors) AS "error_count", "app.name" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = '${orgId}' AND "env.id" = '${envId}' AND timestamp BETWEEN ${from} AND ${to} GROUP BY "app.name"`;
 
             const data = await this.search(query);
             return data.map((row) => ({
                 appName: String(row['app.name'] || 'Unknown'),
                 requestCount: Number(row['request_count'] || 0),
                 avgResponseTime: Number(row['avg_response_time'] || 0),
+                errorCount: Number(row['error_count'] || 0),
             }));
         });
     }
@@ -119,12 +120,13 @@ export class MonitoringApi {
 
         let results = inbound.map((row) => {
             const ob = outboundByApp.get(row.appName);
+            const errorRate = row.requestCount > 0 ? (row.errorCount / row.requestCount) * 100 : 0;
             return {
                 appName: row.appName,
                 requestCount: row.requestCount,
                 avgResponseTime: row.avgResponseTime,
-                errorCount: 0,
-                errorRate: 0,
+                errorCount: row.errorCount,
+                errorRate,
                 outboundCount: ob?.requestCount || 0,
                 outboundAvgResponseTime: ob?.avgResponseTime || 0,
             };
@@ -192,8 +194,8 @@ export class MonitoringApi {
      */
     async isAvailable(): Promise<boolean> {
         try {
-            const data = await this.search('SELECT COUNT(requests) FROM "mulesoft.app.inbound" LIMIT 1');
-            return data.length >= 0; // Even empty result means API is accessible
+            await this.search('SELECT COUNT(requests) FROM "mulesoft.app.inbound" LIMIT 1');
+            return true;
         } catch {
             return false;
         }

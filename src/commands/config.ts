@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import * as readline from 'readline';
 import chalk from 'chalk';
 import { log } from '../utils/logger.js';
+import { errorMessage } from '../utils/errors.js';
 import {
     readSavedConfig,
     writeSavedConfig,
@@ -99,7 +100,7 @@ export function createConfigCommand(): Command {
                 log.dim('  anc auth login');
             } catch (error) {
                 rl.close();
-                log.error(`Setup failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Setup failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });

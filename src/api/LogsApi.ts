@@ -5,8 +5,8 @@
  */
 
 import type { HttpClient } from '../client/HttpClient.js';
-import type { Cache } from '../client/Cache.js';
 import type { CloudHub2Api, CH2Deployment } from './CloudHub2Api.js';
+import { errorMessage } from '../utils/errors.js';
 
 export interface LogEntry {
     timestamp: number;
@@ -25,10 +25,19 @@ export interface LogSearchResponse {
 
 const AMC_BASE = '/amc/application-manager/api/v2';
 
+/** Numeric priority for log level filtering */
+const LEVEL_PRIORITY: Record<string, number> = {
+    TRACE: 0,
+    DEBUG: 1,
+    INFO: 2,
+    WARN: 3,
+    ERROR: 4,
+    FATAL: 5,
+};
+
 export class LogsApi {
     constructor(
         private readonly http: HttpClient,
-        private readonly _cache: Cache,
         private readonly ch2?: CloudHub2Api,
     ) {}
 
@@ -68,7 +77,8 @@ export class LogsApi {
 
         // Get detailed deployment info with desiredVersion
         const detail = await this.ch2.getDeployment(orgId, envId, deployment.id);
-        const specId = (detail as any).desiredVersion || (detail as any).lastSuccessfulVersion;
+        const detailRecord = detail as unknown as Record<string, unknown>;
+        const specId = (detailRecord.desiredVersion || detailRecord.lastSuccessfulVersion) as string | undefined;
 
         if (!specId) {
             throw new Error(`No spec version found for "${appName}" — app may not be fully deployed`);
@@ -127,15 +137,7 @@ export class LogsApi {
         const text = buffer.toString('utf-8');
         const lines = text.split('\n');
 
-        const levelPriority: Record<string, number> = {
-            TRACE: 0,
-            DEBUG: 1,
-            INFO: 2,
-            WARN: 3,
-            ERROR: 4,
-            FATAL: 5,
-        };
-        const minLevel = options.level ? (levelPriority[options.level.toUpperCase()] ?? 0) : 0;
+        const minLevel = options.level ? (LEVEL_PRIORITY[options.level.toUpperCase()] ?? 0) : 0;
 
         let entries: LogEntry[] = [];
         for (const line of lines) {
@@ -147,7 +149,7 @@ export class LogsApi {
             if (options.endTime && entry.timestamp > options.endTime) continue;
 
             // Filter by level
-            if ((levelPriority[entry.priority] ?? 0) < minLevel) continue;
+            if ((LEVEL_PRIORITY[entry.priority] ?? 0) < minLevel) continue;
 
             // Filter by search
             if (options.search && !entry.message.toLowerCase().includes(options.search.toLowerCase())) continue;
@@ -191,14 +193,7 @@ export class LogsApi {
                 const tail = text.length > 100000 ? text.substring(text.length - 100000) : text;
                 const lines = tail.split('\n');
 
-                const levelPriority: Record<string, number> = {
-                    TRACE: 0,
-                    DEBUG: 1,
-                    INFO: 2,
-                    WARN: 3,
-                    ERROR: 4,
-                    FATAL: 5,
-                };
+                const levelPriority = LEVEL_PRIORITY;
                 const minLevel = options.level ? (levelPriority[options.level.toUpperCase()] ?? 0) : 0;
 
                 const newEntries: LogEntry[] = [];
@@ -217,7 +212,7 @@ export class LogsApi {
                     yield newEntries;
                 }
             } catch (err) {
-                console.error(`Log poll error: ${err instanceof Error ? err.message : err}`);
+                console.error(`Log poll error: ${errorMessage(err)}`);
             }
 
             await new Promise((resolve) => setTimeout(resolve, intervalMs));
