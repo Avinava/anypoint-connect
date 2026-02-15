@@ -68,7 +68,7 @@ export class DesignCenterApi {
     constructor(
         private readonly http: HttpClient,
         private readonly cache: Cache,
-    ) { }
+    ) {}
 
     /**
      * Build the required headers for Design Center API calls.
@@ -193,12 +193,7 @@ export class DesignCenterApi {
      * Resolve a local filename to its matching remote path in the project.
      * Returns the matched remote path, or throws with helpful suggestions.
      */
-    async resolveFilePath(
-        orgId: string,
-        projectId: string,
-        localName: string,
-        branch = 'master',
-    ): Promise<string> {
+    async resolveFilePath(orgId: string, projectId: string, localName: string, branch = 'master'): Promise<string> {
         const files = await this.getFiles(orgId, projectId, branch);
         const fileList = files.filter((f) => f.type.toLowerCase() === 'file');
 
@@ -217,7 +212,9 @@ export class DesignCenterApi {
         // Multiple matches or no match — build helpful error
         if (byBasename.length > 1) {
             const candidates = byBasename.map((f) => `  - ${f.path}`).join('\n');
-            throw new Error(`Multiple files match "${basename}":\n${candidates}\nUse --path to specify the exact remote path.`);
+            throw new Error(
+                `Multiple files match "${basename}":\n${candidates}\nUse --path to specify the exact remote path.`,
+            );
         }
 
         // No match — suggest similar files
@@ -239,9 +236,13 @@ export class DesignCenterApi {
     async acquireLock(orgId: string, projectId: string, branch = 'master'): Promise<void> {
         const ownerId = await this.getOwnerId();
         try {
-            await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/acquireLock`, {}, {
-                headers: this.dcHeaders(orgId, ownerId),
-            });
+            await this.http.post<void>(
+                `${BASE}/projects/${projectId}/branches/${branch}/acquireLock`,
+                {},
+                {
+                    headers: this.dcHeaders(orgId, ownerId),
+                },
+            );
         } catch (e) {
             throw new Error(`Failed to acquire lock: ${extractError(e)}`);
         }
@@ -253,9 +254,13 @@ export class DesignCenterApi {
     async releaseLock(orgId: string, projectId: string, branch = 'master'): Promise<void> {
         const ownerId = await this.getOwnerId();
         try {
-            await this.http.post<void>(`${BASE}/projects/${projectId}/branches/${branch}/releaseLock`, {}, {
-                headers: this.dcHeaders(orgId, ownerId),
-            });
+            await this.http.post<void>(
+                `${BASE}/projects/${projectId}/branches/${branch}/releaseLock`,
+                {},
+                {
+                    headers: this.dcHeaders(orgId, ownerId),
+                },
+            );
         } catch (e) {
             throw new Error(`Failed to release lock: ${extractError(e)}`);
         }
@@ -330,20 +335,22 @@ export class DesignCenterApi {
         const groupId = options.groupId || orgId;
         const assetId = options.assetId || projectId;
 
-        const response = await this.http.post<{ groupId: string; assetId: string; version: string }>(
-            `${BASE}/projects/${projectId}/branches/${branch}/publish/exchange/${groupId}/${assetId}/${options.version}`,
-            {
-                name: options.name,
-                apiVersion: options.apiVersion,
-                classifier: options.classifier,
-                main: options.main,
-            },
-            {
-                headers: this.dcHeaders(orgId, ownerId),
-            },
-        ).catch((e) => {
-            throw new Error(`Failed to publish: ${extractError(e)}`);
-        });
+        const response = await this.http
+            .post<{ groupId: string; assetId: string; version: string }>(
+                `${BASE}/projects/${projectId}/branches/${branch}/publish/exchange/${groupId}/${assetId}/${options.version}`,
+                {
+                    name: options.name,
+                    apiVersion: options.apiVersion,
+                    classifier: options.classifier,
+                    main: options.main,
+                },
+                {
+                    headers: this.dcHeaders(orgId, ownerId),
+                },
+            )
+            .catch((e) => {
+                throw new Error(`Failed to publish: ${extractError(e)}`);
+            });
 
         return response;
     }

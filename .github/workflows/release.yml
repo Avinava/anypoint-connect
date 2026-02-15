@@ -1,79 +1,79 @@
 name: Release & Publish
 
 on:
-  push:
-    tags:
-      - 'v*'
+    push:
+        tags:
+            - 'v*'
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+    release:
+        runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-      id-token: write
+        permissions:
+            contents: write
+            id-token: write
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '20'
+                  registry-url: 'https://registry.npmjs.org'
 
-      - name: Install dependencies
-        run: npm ci
+            - name: Install dependencies
+              run: npm ci
 
-      - name: Build
-        run: npm run build
+            - name: Build
+              run: npm run build
 
-      - name: Run tests
-        run: npm test
+            - name: Run tests
+              run: npm test
 
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+            - name: Get version from tag
+              id: version
+              run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Verify package version matches tag
-        run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if [ "$PKG_VERSION" != "${{ steps.version.outputs.VERSION }}" ]; then
-            echo "❌ package.json version ($PKG_VERSION) doesn't match tag (v${{ steps.version.outputs.VERSION }})"
-            exit 1
-          fi
-          echo "✅ Version verified: $PKG_VERSION"
+            - name: Verify package version matches tag
+              run: |
+                  PKG_VERSION=$(node -p "require('./package.json').version")
+                  if [ "$PKG_VERSION" != "${{ steps.version.outputs.VERSION }}" ]; then
+                    echo "❌ package.json version ($PKG_VERSION) doesn't match tag (v${{ steps.version.outputs.VERSION }})"
+                    exit 1
+                  fi
+                  echo "✅ Version verified: $PKG_VERSION"
 
-      - name: Publish to npm
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+            - name: Publish to npm
+              run: npm publish --access public --provenance
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          generate_release_notes: true
-          body: |
-            ## Install
-            ```bash
-            npm install -g @sfdxy/anypoint-connect@${{ steps.version.outputs.VERSION }}
-            ```
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v1
+              with:
+                  generate_release_notes: true
+                  body: |
+                      ## Install
+                      ```bash
+                      npm install -g @sfdxy/anypoint-connect@${{ steps.version.outputs.VERSION }}
+                      ```
 
-            ## Quick Start
-            ```bash
-            # Setup
-            anc config init
-            anc auth login
+                      ## Quick Start
+                      ```bash
+                      # Setup
+                      anc config init
+                      anc auth login
 
-            # Use
-            anc apps list --env Sandbox
-            anc dc list
-            anc logs tail my-api --env Development
-            ```
+                      # Use
+                      anc apps list --env Sandbox
+                      anc dc list
+                      anc logs tail my-api --env Development
+                      ```
 
-            See [README.md](https://github.com/Avinava/anypoint-connect/blob/main/README.md) for full documentation.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                      See [README.md](https://github.com/Avinava/anypoint-connect/blob/main/README.md) for full documentation.
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
