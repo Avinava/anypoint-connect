@@ -613,17 +613,17 @@ class AnypointConnectMcpServer {
                                 name,
                                 [e1.name]: a1
                                     ? {
-                                        status: a1.status,
-                                        version: a1.application?.ref?.version || '-',
-                                        replicas: a1.target?.replicas?.length || 0,
-                                    }
+                                          status: a1.status,
+                                          version: a1.application?.ref?.version || '-',
+                                          replicas: a1.target?.replicas?.length || 0,
+                                      }
                                     : 'NOT DEPLOYED',
                                 [e2.name]: a2
                                     ? {
-                                        status: a2.status,
-                                        version: a2.application?.ref?.version || '-',
-                                        replicas: a2.target?.replicas?.length || 0,
-                                    }
+                                          status: a2.status,
+                                          version: a2.application?.ref?.version || '-',
+                                          replicas: a2.target?.replicas?.length || 0,
+                                      }
                                     : 'NOT DEPLOYED',
                                 versionMatch:
                                     a1 && a2 ? a1.application?.ref?.version === a2.application?.ref?.version : null,
