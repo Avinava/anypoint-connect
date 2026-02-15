@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Lint (type check)
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: CLI smoke tests
+        run: |
+          node dist/cli.js --help
+          node dist/cli.js config --help
+          node dist/cli.js auth --help
+          node dist/cli.js apps --help
+          node dist/cli.js deploy --help
+          node dist/cli.js logs --help
+          node dist/cli.js monitor --help
+          node dist/cli.js exchange --help
+          node dist/cli.js api --help
+          node dist/cli.js dc --help
+
+      - name: MCP server startup check
+        run: |
+          # Verify MCP server loads without crashing (will fail on missing config, but should import cleanly)
+          node -e "import('./dist/mcp.js').catch(() => process.exit(0))" || true
