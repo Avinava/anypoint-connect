@@ -8,21 +8,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import ora from 'ora';
 import chalk from 'chalk';
-import { getConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
-import { AnypointClient } from '../client/AnypointClient.js';
+import { errorMessage } from '../utils/errors.js';
 import { isProductionEnv, buildDeploySummary, confirmProductionDeploy } from '../safety/guards.js';
+import { createClient } from './shared.js';
 import type { CreateDeploymentPayload } from '../api/CloudHub2Api.js';
-
-function createClient(): AnypointClient {
-    const config = getConfig();
-    return new AnypointClient({
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        redirectUri: config.callbackUrl,
-        baseUrl: config.baseUrl,
-    });
-}
 
 export function createDeployCommand(): Command {
     const deploy = new Command('deploy')
@@ -149,7 +139,7 @@ export function createDeployCommand(): Command {
 
                     spinner.succeed(`Deployed ${chalk.bold(opts.app)} v${version} → ${chalk.green(final.status)}`);
                 } catch (err) {
-                    spinner.fail(`Deployment issue: ${err instanceof Error ? err.message : err}`);
+                    spinner.fail(`Deployment issue: ${errorMessage(err)}`);
                     log.dim(`  Deployment ID: ${deployment.id}`);
                     log.dim(`  Check status: anc apps status ${opts.app} --env ${opts.env}`);
                     if (existing) {
@@ -157,7 +147,7 @@ export function createDeployCommand(): Command {
                     }
                 }
             } catch (error) {
-                log.error(`Deploy failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Deploy failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });

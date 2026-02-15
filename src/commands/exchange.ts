@@ -5,20 +5,10 @@
 
 import { Command } from 'commander';
 import * as fs from 'fs';
-import { getConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
+import { errorMessage } from '../utils/errors.js';
 import { printTable } from '../utils/formatter.js';
-import { AnypointClient } from '../client/AnypointClient.js';
-
-function createClient(): AnypointClient {
-    const config = getConfig();
-    return new AnypointClient({
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        redirectUri: config.callbackUrl,
-        baseUrl: config.baseUrl,
-    });
-}
+import { createClient } from './shared.js';
 
 export function createExchangeCommand(): Command {
     const exchange = new Command('exchange').description('Search and download assets from Anypoint Exchange');
@@ -56,7 +46,7 @@ export function createExchangeCommand(): Command {
                     ]),
                 );
             } catch (error) {
-                log.error(`Search failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Search failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -108,7 +98,7 @@ export function createExchangeCommand(): Command {
                     }
                 }
             } catch (error) {
-                log.error(`Failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
@@ -140,7 +130,7 @@ export function createExchangeCommand(): Command {
                 fs.writeFileSync(outputPath, spec.content);
                 log.success(`Downloaded ${spec.classifier} spec → ${outputPath}`);
             } catch (error) {
-                log.error(`Download failed: ${error instanceof Error ? error.message : error}`);
+                log.error(`Download failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });

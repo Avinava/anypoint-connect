@@ -53,7 +53,7 @@ export class AnypointClient {
 
         this.accessManagement = new AccessManagementApi(this.httpClient, this.cache);
         this.cloudHub2 = new CloudHub2Api(this.httpClient, this.cache);
-        this.logs = new LogsApi(this.httpClient, this.cache, this.cloudHub2);
+        this.logs = new LogsApi(this.httpClient, this.cloudHub2);
         this.monitoring = new MonitoringApi(this.httpClient, this.cache);
         this.exchange = new ExchangeApi(this.httpClient, this.cache);
         this.apiManager = new ApiManagerApi(this.httpClient, this.cache);
