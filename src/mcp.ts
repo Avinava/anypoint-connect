@@ -66,8 +66,7 @@ export class AnypointConnectMcpServer {
 
 // Auto-start only when run directly (node dist/mcp.js), not when imported
 const isDirectRun =
-    import.meta.url === `file://${process.argv[1]}` ||
-    import.meta.url === `file://${process.argv[1]}.js`;
+    import.meta.url === `file://${process.argv[1]}` || import.meta.url === `file://${process.argv[1]}.js`;
 
 if (isDirectRun) {
     const server = new AnypointConnectMcpServer();
