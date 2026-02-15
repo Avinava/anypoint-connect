@@ -13,6 +13,7 @@ import { MonitoringApi } from '../api/MonitoringApi.js';
 import { ExchangeApi } from '../api/ExchangeApi.js';
 import { ApiManagerApi } from '../api/ApiManagerApi.js';
 import { DesignCenterApi } from '../api/DesignCenterApi.js';
+import { DEFAULT_CALLBACK_URL } from '../utils/config.js';
 
 export interface AnypointClientConfig {
     clientId: string;
@@ -40,7 +41,7 @@ export class AnypointClient {
         this.tokenManager = new TokenManager({
             clientId: config.clientId,
             clientSecret: config.clientSecret,
-            redirectUri: config.redirectUri || 'http://localhost:3000/api/callback',
+            redirectUri: config.redirectUri || DEFAULT_CALLBACK_URL,
             baseUrl: config.baseUrl,
         });
 

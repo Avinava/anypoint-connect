@@ -100,18 +100,20 @@ export class CloudHub2Api {
     ) {}
 
     /**
+     * Build the required Anypoint environment-scoped headers.
+     */
+    private envHeaders(orgId: string, envId: string) {
+        return { 'X-ANYPNT-ORG-ID': orgId, 'X-ANYPNT-ENV-ID': envId };
+    }
+
+    /**
      * List all CH2 deployments in an environment
      */
     async getDeployments(orgId: string, envId: string): Promise<CH2Deployment[]> {
         return this.cache.getOrCompute(`ch2:${orgId}:${envId}`, async () => {
             const response = await this.http.get<CH2DeploymentResponse>(
                 `${BASE}/organizations/${orgId}/environments/${envId}/deployments`,
-                {
-                    headers: {
-                        'X-ANYPNT-ORG-ID': orgId,
-                        'X-ANYPNT-ENV-ID': envId,
-                    },
-                },
+                { headers: this.envHeaders(orgId, envId) },
             );
             return response.items || [];
         });
@@ -123,12 +125,7 @@ export class CloudHub2Api {
     async getDeployment(orgId: string, envId: string, deploymentId: string): Promise<CH2Deployment> {
         return this.http.get<CH2Deployment>(
             `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
-            },
+            { headers: this.envHeaders(orgId, envId) },
         );
     }
 
@@ -140,12 +137,7 @@ export class CloudHub2Api {
         return this.http.post<CH2Deployment>(
             `${BASE}/organizations/${orgId}/environments/${envId}/deployments`,
             payload,
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
-            },
+            { headers: this.envHeaders(orgId, envId) },
         );
     }
 
@@ -162,12 +154,7 @@ export class CloudHub2Api {
         return this.http.patch<CH2Deployment>(
             `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
             payload,
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
-            },
+            { headers: this.envHeaders(orgId, envId) },
         );
     }
 
@@ -177,10 +164,7 @@ export class CloudHub2Api {
     async deleteDeployment(orgId: string, envId: string, deploymentId: string): Promise<void> {
         this.cache.delete(`ch2:${orgId}:${envId}`);
         await this.http.delete(`${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`, {
-            headers: {
-                'X-ANYPNT-ORG-ID': orgId,
-                'X-ANYPNT-ENV-ID': envId,
-            },
+            headers: this.envHeaders(orgId, envId),
         });
     }
 
@@ -237,12 +221,7 @@ export class CloudHub2Api {
             {
                 application: { desiredState: 'STARTED' },
             },
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
-            },
+            { headers: this.envHeaders(orgId, envId) },
         );
     }
 
@@ -256,12 +235,7 @@ export class CloudHub2Api {
             {
                 target: { replicas },
             },
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
-            },
+            { headers: this.envHeaders(orgId, envId) },
         );
     }
 }

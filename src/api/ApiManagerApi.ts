@@ -71,6 +71,13 @@ export class ApiManagerApi {
     ) {}
 
     /**
+     * Build the required Anypoint environment-scoped headers.
+     */
+    private envHeaders(orgId: string, envId: string) {
+        return { 'X-ANYPNT-ORG-ID': orgId, 'X-ANYPNT-ENV-ID': envId };
+    }
+
+    /**
      * List all API assets/instances in an environment
      */
     async getApis(orgId: string, envId: string): Promise<ApiAsset[]> {
@@ -78,12 +85,7 @@ export class ApiManagerApi {
         return this.cache.getOrCompute(cacheKey, async () => {
             const response = await this.http.get<{ total: number; assets: ApiAsset[] }>(
                 `${BASE}/organizations/${orgId}/environments/${envId}/apis?limit=100`,
-                {
-                    headers: {
-                        'X-ANYPNT-ORG-ID': orgId,
-                        'X-ANYPNT-ENV-ID': envId,
-                    },
-                },
+                { headers: this.envHeaders(orgId, envId) },
             );
             return response.assets || [];
         });
@@ -95,12 +97,7 @@ export class ApiManagerApi {
     async getPolicies(orgId: string, envId: string, apiId: number): Promise<ApiPolicy[]> {
         const response = await this.http.get<{ policies: ApiPolicy[] }>(
             `${BASE}/organizations/${orgId}/environments/${envId}/apis/${apiId}/policies`,
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
-            },
+            { headers: this.envHeaders(orgId, envId) },
         );
         return response.policies || [];
     }
@@ -111,12 +108,7 @@ export class ApiManagerApi {
     async getSlaTiers(orgId: string, envId: string, apiId: number): Promise<SlaTier[]> {
         const response = await this.http.get<{ total: number; tiers: SlaTier[] }>(
             `${BASE}/organizations/${orgId}/environments/${envId}/apis/${apiId}/tiers`,
-            {
-                headers: {
-                    'X-ANYPNT-ORG-ID': orgId,
-                    'X-ANYPNT-ENV-ID': envId,
-                },
-            },
+            { headers: this.envHeaders(orgId, envId) },
         );
         return response.tiers || [];
     }
@@ -126,10 +118,7 @@ export class ApiManagerApi {
      */
     async getAlerts(orgId: string, envId: string, apiId: number): Promise<unknown[]> {
         return this.http.get<unknown[]>(`${BASE}/organizations/${orgId}/environments/${envId}/apis/${apiId}/alerts`, {
-            headers: {
-                'X-ANYPNT-ORG-ID': orgId,
-                'X-ANYPNT-ENV-ID': envId,
-            },
+            headers: this.envHeaders(orgId, envId),
         });
     }
 

@@ -7,9 +7,9 @@
  * The owner ID is the authenticated user's ID (from /accounts/api/me).
  */
 
-import { AxiosError } from 'axios';
 import type { HttpClient } from '../client/HttpClient.js';
 import type { Cache } from '../client/Cache.js';
+import { errorMessage } from '../utils/errors.js';
 
 // ── Interfaces ─────────────────────────────────────
 
@@ -48,21 +48,6 @@ export interface PublishToExchangeOptions {
 // ── API ────────────────────────────────────────────
 
 const BASE = '/designcenter/api-designer';
-
-/**
- * Extract meaningful error details from Design Center API errors.
- * The DC API often returns descriptive messages in the response body
- * that are far more useful than the generic HTTP status.
- */
-function extractError(e: unknown): string {
-    if (e instanceof AxiosError && e.response) {
-        const data = e.response.data;
-        if (typeof data === 'string' && data.length > 0) return data;
-        if (data && typeof data === 'object' && 'message' in data) return String((data as { message: string }).message);
-        return `HTTP ${e.response.status || 'unknown'}`;
-    }
-    return e instanceof Error ? e.message : String(e);
-}
 
 export class DesignCenterApi {
     constructor(
@@ -244,7 +229,7 @@ export class DesignCenterApi {
                 },
             );
         } catch (e) {
-            throw new Error(`Failed to acquire lock: ${extractError(e)}`);
+            throw new Error(`Failed to acquire lock: ${errorMessage(e)}`);
         }
     }
 
@@ -262,7 +247,7 @@ export class DesignCenterApi {
                 },
             );
         } catch (e) {
-            throw new Error(`Failed to release lock: ${extractError(e)}`);
+            throw new Error(`Failed to release lock: ${errorMessage(e)}`);
         }
     }
 
@@ -293,7 +278,7 @@ export class DesignCenterApi {
                 },
             );
         } catch (e) {
-            throw new Error(`Failed to save file: ${extractError(e)}`);
+            throw new Error(`Failed to save file: ${errorMessage(e)}`);
         }
     }
 
@@ -349,7 +334,7 @@ export class DesignCenterApi {
                 },
             )
             .catch((e) => {
-                throw new Error(`Failed to publish: ${extractError(e)}`);
+                throw new Error(`Failed to publish: ${errorMessage(e)}`);
             });
 
         return response;

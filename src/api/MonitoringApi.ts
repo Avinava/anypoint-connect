@@ -57,7 +57,9 @@ export class MonitoringApi {
     }
 
     /**
-     * Get inbound metrics for a time range
+     * Get inbound metrics for a time range.
+     * Note: orgId, envId, and timestamps are system-controlled values from the
+     * Anypoint Platform API — not user input — so string interpolation is safe here.
      */
     async getInboundMetrics(
         orgId: string,

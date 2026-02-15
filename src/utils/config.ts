@@ -19,6 +19,9 @@ import * as fs from 'fs';
 const CONFIG_DIR_NAME = '.anypoint-connect';
 const CONFIG_FILE_NAME = 'config.json';
 
+/** Default OAuth callback URL for local CLI authentication. */
+export const DEFAULT_CALLBACK_URL = 'http://localhost:3000/api/callback';
+
 /**
  * Get config directory path (~/.anypoint-connect/)
  */
@@ -74,7 +77,7 @@ export function updateSavedConfig(updates: Partial<SavedConfig>): SavedConfig {
     const current = readSavedConfig() || {
         clientId: '',
         clientSecret: '',
-        callbackUrl: 'http://localhost:3000/api/callback',
+        callbackUrl: DEFAULT_CALLBACK_URL,
         baseUrl: 'https://anypoint.mulesoft.com',
     };
 
@@ -139,7 +142,7 @@ export function getConfig(): Config {
     cachedConfig = {
         clientId,
         clientSecret,
-        callbackUrl: process.env.ANYPOINT_CALLBACK_URL || saved?.callbackUrl || 'http://localhost:3000/api/callback',
+        callbackUrl: process.env.ANYPOINT_CALLBACK_URL || saved?.callbackUrl || DEFAULT_CALLBACK_URL,
         baseUrl: process.env.ANYPOINT_BASE_URL || saved?.baseUrl || 'https://anypoint.mulesoft.com',
         defaultEnv: process.env.ANYPOINT_DEFAULT_ENV || saved?.defaultEnv,
     };
