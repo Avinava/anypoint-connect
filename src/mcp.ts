@@ -25,7 +25,7 @@ import {
 import { registerResources } from './mcp/resources.js';
 import { registerPrompts } from './mcp/prompts.js';
 
-class AnypointConnectMcpServer {
+export class AnypointConnectMcpServer {
     private server: McpServer;
     private client: AnypointClient;
 
@@ -64,5 +64,12 @@ class AnypointConnectMcpServer {
     }
 }
 
-const server = new AnypointConnectMcpServer();
-server.start().catch((err) => console.error(`Failed to start: ${err}`));
+// Auto-start only when run directly (node dist/mcp.js), not when imported
+const isDirectRun =
+    import.meta.url === `file://${process.argv[1]}` ||
+    import.meta.url === `file://${process.argv[1]}.js`;
+
+if (isDirectRun) {
+    const server = new AnypointConnectMcpServer();
+    server.start().catch((err) => console.error(`Failed to start: ${err}`));
+}
