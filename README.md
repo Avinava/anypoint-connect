@@ -2,9 +2,11 @@
 
 > CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets.
 
-```
-npm install
-npm run build
+[![CI](https://github.com/Avinava/anypoint-connect/actions/workflows/ci.yml/badge.svg)](https://github.com/Avinava/anypoint-connect/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@sfdxy/anypoint-connect)](https://www.npmjs.com/package/@sfdxy/anypoint-connect)
+
+```bash
+npm install -g @sfdxy/anypoint-connect
 ```
 
 ---
@@ -150,111 +152,67 @@ Everything lives under `~/.anypoint-connect/`:
 
 ## Setup
 
-### 1. Clone & Install
+### 1. Install
 
 ```bash
-git clone <repo-url> anypoint-connect
+# Global install (recommended)
+npm install -g @sfdxy/anypoint-connect
+
+# Or from source
+git clone https://github.com/Avinava/anypoint-connect.git
 cd anypoint-connect
-npm install
-npm run build
+npm install && npm run build
+npm link   # makes "anc" available globally
 ```
 
-### 2. Link CLI globally (optional but recommended)
-
-```bash
-npm link
-# Now "anc" is available from any directory
-```
-
-### Creating a Connected App in Anypoint Platform
-
-Before running `config init`, you need a Connected App (OAuth client) from Anypoint:
+### 2. Create a Connected App in Anypoint Platform
 
 1. Log in to [Anypoint Platform](https://anypoint.mulesoft.com)
 2. Go to **Access Management → Connected Apps**
-3. Click **Create app**
-4. Choose type: **App that acts on a user's behalf**
-5. Set the **Redirect URI** to:
-   ```
-   http://localhost:3000/api/callback
-   ```
-6. Grant at minimum these scopes:
+3. Click **Create app**, choose **App that acts on a user's behalf**
+4. Set the **Redirect URI** to `http://localhost:3000/api/callback`
+5. Grant scopes:
    - `General` → **View Organization**, **View Environment**
-   - `Runtime Manager` → **Read Applications**, **Create/Modify Applications** (if deploying)
-   - `CloudHub` → **Read Applications**, **Manage Applications** (if deploying)
-   - `Monitoring` → **Read Metrics** (if using monitoring)
-7. Save the app and copy the **Client ID** and **Client Secret**
+   - `Runtime Manager` → **Read Applications**, **Create/Modify Applications**
+   - `CloudHub` → **Read Applications**, **Manage Applications**
+   - `Monitoring` → **Read Metrics**
+   - `Design Center` → **Read/Write Designer**
+   - `Exchange` → **Exchange Contributor**
+6. Copy the **Client ID** and **Client Secret**
 
-Now run the setup wizard with those values:
+### 3. Configure
 
 ```bash
 anc config init
-#
-#   Anypoint Connect Setup
-#
-#   Credentials are saved to ~/.anypoint-connect/config.json (chmod 600)
-#   Tokens are saved to ~/.anypoint-connect/tokens.enc (AES-256-GCM)
-#
-#   Client ID: <paste your Client ID>
-#   Client Secret: <paste your Client Secret>
+#   Client ID: <paste>
+#   Client Secret: <paste>
 #   Callback URL: (http://localhost:3000/api/callback)
 #   Base URL: (https://anypoint.mulesoft.com)
 #   Default Environment (optional): Sandbox
-#
 #   ✔ Configuration saved!
 ```
 
 ### 4. Authenticate
 
 ```bash
-anc auth login
-# Opens browser → OAuth consent → callback → tokens stored
+anc auth login    # Opens browser → OAuth consent → tokens stored
+anc auth status   # Verify
 ```
-
-That's it. From here, every `anc` command (and the MCP server) picks up your credentials
-automatically, no matter which directory you're in.
 
 ### Managing Config
 
 ```bash
-# Show current config (secrets masked)
-anc config show
+anc config show                    # Show config (secrets masked)
+anc config set defaultEnv Production  # Update a value
+anc config path                    # Print config directory path
 
-# Update a single value
-anc config set defaultEnv Production
-
-# Print config directory path
-anc config path
-# /Users/you/.anypoint-connect
-
-# Or override per-session with environment variables
+# Override per-session
 ANYPOINT_CLIENT_ID=other-id anc apps list --env Sandbox
 ```
 
 ---
 
-## Authentication
-
-```bash
-# Opens browser for OAuth login
-anc auth login
-
-# Check who you're logged in as
-anc auth status
-# ✔ Authenticated
-#   User: John Doe (jdoe)
-#   Organization: My Org
-#   Org ID: abc-123-def
-
-# Clear stored tokens
-anc auth logout
-```
-
-Tokens auto-refresh using the stored refresh token. No need to re-login unless you explicitly logout.
-
----
-
-## CLI Usage
+## CLI Reference
 
 ### Applications
 
@@ -266,139 +224,104 @@ anc apps scale my-api --env Sandbox --replicas 2
 anc apps scale my-api --env Production --replicas 3 --force  # skip confirmation
 ```
 
+### Deploy
+
+```bash
+# Standard deploy
+anc deploy target/my-api-1.2.0-mule-application.jar \
+  --app my-api --env Sandbox --runtime 4.8.0
+
+# Production deploy — triggers safety confirmation
+anc deploy target/my-api.jar --app my-api --env Production
+#   ⚠️  PRODUCTION DEPLOYMENT
+#   App:         my-api
+#   Environment: Production
+#   Current:     v1.1.0 (APPLIED, 2 replicas)
+#   New Version: v1.2.0
+#   Type 'deploy to production' to confirm: _
+
+# CI/CD (skip confirmation)
+anc deploy app.jar --app my-api --env Production --force
+```
+
+### Logs
+
+```bash
+# Stream logs in real-time
+anc logs tail my-api --env Sandbox
+anc logs tail my-api --env Sandbox --level ERROR --search "NullPointerException"
+
+# Download logs
+anc logs download my-api --env Sandbox --from 24h
+anc logs download my-api --env Production --from 7d --level ERROR
+anc logs download my-api --env Production \
+  --from "2026-02-01T00:00:00Z" --to "2026-02-14T00:00:00Z" --output prod-logs.log
+```
+
+### Monitoring
+
+```bash
+# View metrics table (default: last 24h)
+anc monitor view --env Sandbox
+anc monitor view --env Production --app my-api --from 7d
+
+# Export
+anc monitor download --env Production --from 30d --format json
+anc monitor download --env Sandbox --from 7d --format csv --output metrics.csv
+```
+
 ### Exchange
 
 ```bash
-# Search assets
 anc exchange search "order" --type rest-api --limit 10
-
-# Get asset details
 anc exchange info my-api-spec
 anc exchange info org-id/my-api-spec --version 1.2.0
-
-# Download API spec (RAML/OAS)
 anc exchange download-spec my-api-spec -o spec.json
 ```
 
 ### API Manager
 
 ```bash
-# List managed API instances
 anc api list --env Production
-
-# View policies on an API (by name or ID)
 anc api policies "order-api" --env Production
 anc api policies 18888853 --env Production
-
-# View SLA tiers
 anc api sla-tiers "order-api" --env Production
 ```
 
 ### Design Center
 
 ```bash
-# List API spec projects
+# List projects & files
 anc dc list
-
-# List files in a project
-anc dc files my-api-spec
 anc dc files my-api-spec --branch develop
 
-# Download a RAML/OAS file
+# Pull a spec file (auto-decodes JSON-encoded content)
 anc dc pull my-api-spec api.raml -o local-spec.raml
 
-# Push an edited file back (lock → save → unlock)
-anc dc push my-api-spec local-spec.raml --path api.raml --message "Add new endpoint"
+# Push (smart path resolution: auto-matches local filename to remote)
+anc dc push my-api-spec local-spec.raml --message "Add new endpoint"
+
+# Push with explicit remote path
+anc dc push my-api-spec local-spec.raml --path api.raml
 
 # Publish to Exchange
 anc dc publish my-api-spec --version 1.2.0 --classifier raml
 anc dc publish my-api-spec --version 2.0.0 --classifier oas3 --api-version v2
 ```
 
-### Deploy
+### Authentication
 
 ```bash
-# Standard deploy
-anc deploy target/my-api-1.2.0-mule-application.jar \
-  --app my-api \
-  --env Sandbox \
-  --runtime 4.8.0
-
-# Production deploy — triggers safety confirmation
-anc deploy target/my-api-1.2.0-mule-application.jar \
-  --app my-api \
-  --env Production
-#
-#   ⚠️  PRODUCTION DEPLOYMENT
-#   ════════════════════════════════════
-#
-#   App:         my-api
-#   Environment: Production
-#   Current:     v1.1.0 (APPLIED, 2 replicas)
-#   New Version: v1.2.0
-#
-#   Type 'deploy to production' to confirm: _
-
-# Skip confirmation (CI/CD)
-anc deploy app.jar --app my-api --env Production --force
-```
-
-### Tail Logs
-
-```bash
-# Stream logs in real-time (Ctrl+C to stop)
-anc logs tail my-api --env Sandbox
-
-# Filter by level
-anc logs tail my-api --env Sandbox --level ERROR
-
-# Search in logs
-anc logs tail my-api --env Sandbox --search "NullPointerException"
-```
-
-### Download Logs
-
-```bash
-# Last 24 hours
-anc logs download my-api --env Sandbox --from 24h
-
-# Last 7 days, errors only
-anc logs download my-api --env Sandbox --from 7d --level ERROR
-
-# Specific date range
-anc logs download my-api --env Production \
-  --from "2026-02-01T00:00:00Z" \
-  --to "2026-02-14T00:00:00Z" \
-  --output prod-logs.log
-```
-
-### Monitoring Metrics
-
-```bash
-# View metrics table (default: last 24h)
-anc monitor view --env Sandbox
-# ┌─────────────────┬──────────┬──────────────┬────────┬──────────┬──────────────┐
-# │ Application     │ Requests │ Avg Response │ Errors │ Outbound │ Outbound Avg │
-# ├─────────────────┼──────────┼──────────────┼────────┼──────────┼──────────────┤
-# │ my-api          │ 12,450   │ 234ms        │ 12     │ 8,200    │ 180ms        │
-# └─────────────────┴──────────┴──────────────┴────────┴──────────┴──────────────┘
-
-# Last 7 days for a specific app
-anc monitor view --env Production --app my-api --from 7d
-
-# Export as JSON
-anc monitor download --env Production --from 30d --format json
-
-# Export as CSV
-anc monitor download --env Sandbox --from 7d --format csv --output metrics.csv
+anc auth login     # Opens browser for OAuth login
+anc auth status    # Check current auth
+anc auth logout    # Clear stored tokens
 ```
 
 ---
 
-## MCP Server Setup
+## MCP Server
 
-The MCP server exposes Anypoint operations as tools for AI assistants.
-It reads credentials from the same `~/.anypoint-connect/config.json` — no need to duplicate secrets.
+The MCP server exposes all Anypoint operations as tools for AI assistants (Claude, Cursor, etc.).
 
 ### Prerequisites
 
@@ -409,7 +332,7 @@ anc auth login     # get tokens
 
 ### Configuration
 
-Add to your MCP client config (Claude Desktop, Cursor, etc.):
+Add to your MCP client config:
 
 ```json
 {
@@ -422,33 +345,46 @@ Add to your MCP client config (Claude Desktop, Cursor, etc.):
 }
 ```
 
+Or if installed globally via npm:
+
+```json
+{
+  "mcpServers": {
+    "anypoint-connect": {
+      "command": "npx",
+      "args": ["@sfdxy/anypoint-connect"]
+    }
+  }
+}
+```
+
 No `env` block needed — the MCP server reads from `~/.anypoint-connect/` automatically.
 
-### Available MCP Tools
+### MCP Tools
 
 | Tool | Description |
 |------|-------------|
 | `whoami` | Get authenticated user & org info |
 | `list_environments` | List all environments in the org |
 | `list_apps` | List deployed apps in an environment |
-| `get_app_status` | Detailed deployment status |
+| `get_app_status` | Detailed deployment status with replicas |
+| `restart_app` | ⚠️ Rolling restart of an application |
+| `scale_app` | ⚠️ Scale application replicas (1–8) |
 | `get_logs` | Fetch recent log entries |
 | `download_logs` | Download logs for a time range |
 | `get_metrics` | Fetch monitoring metrics (AMQL) |
-| `search_exchange` | Search assets in Exchange (APIs, connectors, templates) |
+| `search_exchange` | Search assets in Exchange |
 | `download_api_spec` | Download RAML/OAS spec from Exchange |
-| `restart_app` | ⚠️ Restart an application (rolling restart) |
-| `scale_app` | ⚠️ Scale application replicas |
-| `compare_environments` | Side-by-side diff of apps across two environments |
+| `compare_environments` | Side-by-side diff of deployments across environments |
 | `list_api_instances` | List managed API instances with governance info |
 | `get_api_policies` | Get policies and SLA tiers for an API |
-| `list_design_center_projects` | List all API spec projects in Design Center |
+| `list_design_center_projects` | List all API spec projects |
 | `get_design_center_files` | List files in a Design Center project |
-| `read_design_center_file` | Read RAML/OAS file content from Design Center |
-| `update_design_center_file` | ⚠️ Push updated file to Design Center (lock/save/unlock) |
+| `read_design_center_file` | Read file content with smart path resolution |
+| `update_design_center_file` | ⚠️ Push updated file (lock/save/unlock) |
 | `publish_to_exchange` | ⚠️ Publish Design Center project to Exchange |
 
-### Available MCP Prompts
+### MCP Prompts
 
 | Prompt | Description |
 |--------|-------------|
@@ -456,6 +392,7 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 | `troubleshoot-app` | Systematic diagnosis: replica health, error patterns, metrics anomalies |
 | `api-governance-audit` | Review policies, SLA tiers, and security gaps across all APIs |
 | `environment-overview` | Full health report: app status, error rates, performance rankings |
+| `improve-api-spec` | Guided pull→analyze→improve→push workflow for API spec quality |
 
 ### MCP Resource
 
@@ -463,31 +400,22 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 |----------|-----|
 | Environments | `anypoint://environments` |
 
-### Example MCP Interactions
+### Example Interactions
 
-Once configured, you can ask your AI assistant things like:
-
-- *"What apps are running in the Sandbox environment?"*
+- *"What apps are running in Sandbox?"*
 - *"Show me the last 50 error logs for my-api in Production"*
-- *"Check the health of order-service in Sandbox"*
-- *"What are the metrics for all apps in Production over the last 7 days?"*
-- *"Download 24 hours of logs for my-api in Production"*
-- *"Search Exchange for REST API specs related to orders"*
 - *"Compare Development and Production environments"*
 - *"What policies are applied to the Order API?"*
-- *"Restart my-api in the Development environment"*
-- *"Scale order-service to 3 replicas in Production"*
-- *"List all Design Center projects"*
 - *"Show me the RAML spec for the order-api project"*
-- *"Add a /health endpoint to the order-api RAML and push it back"*
-- *"Publish the order-api spec to Exchange as version 2.0.0"*
+- *"Improve the API descriptions for order-api"*
+- *"Scale order-service to 3 replicas in Production"*
 
 ---
 
 ## Programmatic Usage
 
 ```typescript
-import { AnypointClient } from 'anypoint-connect';
+import { AnypointClient } from '@sfdxy/anypoint-connect';
 
 const client = new AnypointClient({
   clientId: process.env.ANYPOINT_CLIENT_ID!,
@@ -514,17 +442,36 @@ for await (const entries of client.logs.tailLogs(orgId, sandbox.id, 'my-api')) {
 // Get metrics
 const metrics = await client.monitoring.getAppMetrics(
   orgId, sandbox.id,
-  Date.now() - 24 * 60 * 60 * 1000, // from: 24h ago
-  Date.now()                          // to: now
+  Date.now() - 24 * 60 * 60 * 1000,
+  Date.now()
 );
 
-// Design Center: list projects, read spec, update file
+// Design Center: pull, edit, push
 const projects = await client.designCenter.getProjects(orgId);
 const spec = await client.designCenter.getFileContent(orgId, projects[0].id, 'api.raml');
 await client.designCenter.updateFile(orgId, projects[0].id, 'api.raml', updatedContent);
 await client.designCenter.publishToExchange(orgId, projects[0].id, {
   name: 'My API', apiVersion: 'v1', version: '1.0.0', classifier: 'raml'
 });
+```
+
+---
+
+## Release Process
+
+Releases are automated via GitHub Actions:
+
+```bash
+# 1. Bump version in package.json
+npm version patch   # or minor / major
+
+# 2. Push the tag
+git push --follow-tags
+
+# 3. GitHub Actions will:
+#    - Run CI (build, test, lint)
+#    - Publish to npm as @sfdxy/anypoint-connect
+#    - Create a GitHub Release with auto-generated notes
 ```
 
 ---

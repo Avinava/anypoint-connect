@@ -1,7 +1,7 @@
 {
-    "name": "anypoint-connect",
+    "name": "@sfdxy/anypoint-connect",
     "version": "0.1.0",
-    "description": "CLI + MCP library for Anypoint Platform — deploy, logs, monitoring with production safety nets",
+    "description": "CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -40,5 +40,32 @@
         "vitest": "^1.0.0"
     },
     "author": "Avinava",
-    "license": "MIT"
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Avinava/anypoint-connect.git"
+    },
+    "homepage": "https://github.com/Avinava/anypoint-connect#readme",
+    "bugs": {
+        "url": "https://github.com/Avinava/anypoint-connect/issues"
+    },
+    "keywords": [
+        "mulesoft",
+        "anypoint",
+        "cloudhub",
+        "mcp",
+        "cli",
+        "deploy",
+        "api-manager",
+        "design-center",
+        "exchange"
+    ],
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "publishConfig": {
+        "access": "public"
+    }
 }
