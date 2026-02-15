@@ -829,13 +829,7 @@ class AnypointConnectMcpServer {
             async ({ project, branch }) => {
                 try {
                     const orgId = await this.client.getDefaultOrgId();
-                    const proj = await this.client.designCenter.findByName(orgId, project);
-                    if (!proj) {
-                        return {
-                            content: [{ type: 'text', text: `Project "${project}" not found` }],
-                            isError: true,
-                        };
-                    }
+                    const proj = await this.client.designCenter.findByNameOrThrow(orgId, project);
 
                     const files = await this.client.designCenter.getFiles(orgId, proj.id, branch || 'master');
 
@@ -878,18 +872,20 @@ class AnypointConnectMcpServer {
             async ({ project, filePath, branch }) => {
                 try {
                     const orgId = await this.client.getDefaultOrgId();
-                    const proj = await this.client.designCenter.findByName(orgId, project);
-                    if (!proj) {
-                        return {
-                            content: [{ type: 'text', text: `Project "${project}" not found` }],
-                            isError: true,
-                        };
-                    }
+                    const proj = await this.client.designCenter.findByNameOrThrow(orgId, project);
+
+                    // Resolve path so partial/basename inputs work
+                    const resolvedPath = await this.client.designCenter.resolveFilePath(
+                        orgId,
+                        proj.id,
+                        filePath,
+                        branch || 'master',
+                    );
 
                     const content = await this.client.designCenter.getFileContent(
                         orgId,
                         proj.id,
-                        filePath,
+                        resolvedPath,
                         branch || 'master',
                     );
 
@@ -897,7 +893,7 @@ class AnypointConnectMcpServer {
                         content: [
                             {
                                 type: 'text',
-                                text: `File: ${filePath}\nProject: ${proj.name}\nBranch: ${branch || 'master'}\n\n${content}`,
+                                text: `File: ${resolvedPath}\nProject: ${proj.name}\nBranch: ${branch || 'master'}\n\n${content}`,
                             },
                         ],
                     };
@@ -928,13 +924,7 @@ class AnypointConnectMcpServer {
             async ({ project, filePath, content, branch, commitMessage }) => {
                 try {
                     const orgId = await this.client.getDefaultOrgId();
-                    const proj = await this.client.designCenter.findByName(orgId, project);
-                    if (!proj) {
-                        return {
-                            content: [{ type: 'text', text: `Project "${project}" not found` }],
-                            isError: true,
-                        };
-                    }
+                    const proj = await this.client.designCenter.findByNameOrThrow(orgId, project);
 
                     // Verify the file path exists in the project (with suggestions on mismatch)
                     const resolvedPath = await this.client.designCenter.resolveFilePath(
@@ -993,13 +983,7 @@ class AnypointConnectMcpServer {
             async ({ project, version, apiVersion, classifier, name, branch }) => {
                 try {
                     const orgId = await this.client.getDefaultOrgId();
-                    const proj = await this.client.designCenter.findByName(orgId, project);
-                    if (!proj) {
-                        return {
-                            content: [{ type: 'text', text: `Project "${project}" not found` }],
-                            isError: true,
-                        };
-                    }
+                    const proj = await this.client.designCenter.findByNameOrThrow(orgId, project);
 
                     const result = await this.client.designCenter.publishToExchange(
                         orgId,

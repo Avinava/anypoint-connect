@@ -107,7 +107,7 @@ export function createDesignCenterCommand(): Command {
                     // List files instead
                     const files = await client.designCenter.getFiles(orgId, proj.id, opts.branch);
                     log.header(`Files in ${proj.name} — specify one to pull:`);
-                    for (const f of files.filter((f) => f.type === 'file')) {
+                    for (const f of files.filter((f) => f.type.toLowerCase() === 'file')) {
                         console.log(`  ${f.path}`);
                     }
                     return;

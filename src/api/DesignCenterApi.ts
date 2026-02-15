@@ -24,7 +24,7 @@ export interface DesignCenterProject {
 
 export interface DesignCenterFile {
     path: string;
-    type: 'file' | 'folder';
+    type: string; // 'FILE' | 'FOLDER' (DC API returns uppercase)
     language?: string;
 }
 
@@ -126,6 +126,18 @@ export class DesignCenterApi {
         return projects.find((p) => p.name.toLowerCase().includes(lower)) || null;
     }
 
+    /**
+     * Find a project by name, throwing if not found.
+     * Preferred over findByName when the project must exist.
+     */
+    async findByNameOrThrow(orgId: string, name: string): Promise<DesignCenterProject> {
+        const project = await this.findByName(orgId, name);
+        if (!project) {
+            throw new Error(`Project "${name}" not found. Use list_design_center_projects to see available projects.`);
+        }
+        return project;
+    }
+
     // ── Branches ───────────────────────────────────
 
     /**
@@ -196,7 +208,10 @@ export class DesignCenterApi {
 
         // Basename match (e.g., '/tmp/api.raml' → 'api.raml')
         const basename = localName.includes('/') ? localName.split('/').pop()! : localName;
-        const byBasename = fileList.filter((f) => f.path.endsWith(basename));
+        const byBasename = fileList.filter((f) => {
+            const remoteName = f.path.includes('/') ? f.path.split('/').pop()! : f.path;
+            return remoteName === basename;
+        });
         if (byBasename.length === 1) return byBasename[0].path;
 
         // Multiple matches or no match — build helpful error
@@ -326,7 +341,9 @@ export class DesignCenterApi {
             {
                 headers: this.dcHeaders(orgId, ownerId),
             },
-        );
+        ).catch((e) => {
+            throw new Error(`Failed to publish: ${extractError(e)}`);
+        });
 
         return response;
     }
