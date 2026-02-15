@@ -1,6 +1,6 @@
 /**
  * Deploy CLI Command
- * anc deploy <jarPath> --app <name> --env <envName> [--runtime <version>] [--replicas <n>] [--force]
+ * anc deploy <jarPath> --app <name> --env <envName> [--runtime <version>] [--replicas <n>] [--region <target>] [--force]
  */
 
 import { Command } from 'commander';
@@ -14,6 +14,24 @@ import { isProductionEnv, buildDeploySummary, confirmProductionDeploy } from '..
 import { createClient } from './shared.js';
 import type { CreateDeploymentPayload } from '../api/CloudHub2Api.js';
 
+/** Map a CloudHub 2.0 target ID to its public URL subdomain */
+function regionToSubdomain(region: string): string {
+    const map: Record<string, string> = {
+        'cloudhub-us-east-1': 'us-e1',
+        'cloudhub-us-east-2': 'us-e2',
+        'cloudhub-us-west-2': 'us-w2',
+        'cloudhub-eu-west-1': 'eu-w1',
+        'cloudhub-eu-west-2': 'eu-w2',
+        'cloudhub-eu-central-1': 'eu-c1',
+        'cloudhub-ap-southeast-1': 'ap-se1',
+        'cloudhub-ap-southeast-2': 'ap-se2',
+        'cloudhub-ap-northeast-1': 'ap-ne1',
+        'cloudhub-sa-east-1': 'sa-e1',
+        'cloudhub-ca-central-1': 'ca-c1',
+    };
+    return map[region] || region.replace('cloudhub-', '').replace(/-/g, '');
+}
+
 export function createDeployCommand(): Command {
     const deploy = new Command('deploy')
         .description('Deploy an application to CloudHub 2.0')
@@ -26,6 +44,11 @@ export function createDeployCommand(): Command {
         .option('--artifact-id <id>', 'Maven artifact ID')
         .option('--version <v>', 'Application version')
         .option('--vcores <size>', 'vCore size (0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 3, 4)', '0.1')
+        .option(
+            '--region <target>',
+            'CloudHub 2.0 target (e.g. "cloudhub-us-east-2", "cloudhub-eu-west-1")',
+            'cloudhub-us-east-2',
+        )
         .option('--force', 'Skip production confirmation prompt', false)
         .action(async (jarPath: string | undefined, opts) => {
             try {
@@ -102,10 +125,14 @@ export function createDeployCommand(): Command {
                     },
                     target: {
                         provider: 'MC',
-                        targetId: 'cloudhub-us-east-2', // Default; could be made configurable
+                        targetId: opts.region,
                         deploymentSettings: {
                             runtime: { version: opts.runtime },
-                            http: { inbound: { publicUrl: `${opts.app}.us-e2.cloudhub.io` } },
+                            http: {
+                                inbound: {
+                                    publicUrl: `${opts.app}.${regionToSubdomain(opts.region)}.cloudhub.io`,
+                                },
+                            },
                             clustered: false,
                             enforceDeployingReplicasAcrossNodes: false,
                             updateStrategy: 'rolling',
