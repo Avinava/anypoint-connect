@@ -332,27 +332,27 @@ anc auth login     # get tokens
 
 ### Configuration
 
-Add to your MCP client config:
-
-```json
-{
-  "mcpServers": {
-    "anypoint-connect": {
-      "command": "node",
-      "args": ["/absolute/path/to/anypoint-connect/dist/mcp.js"]
-    }
-  }
-}
-```
-
-Or if installed globally via npm:
+Add to your MCP client config (Claude Desktop, Gemini, Cursor, etc.):
 
 ```json
 {
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["@sfdxy/anypoint-connect"]
+      "args": ["-y", "@sfdxy/anypoint-connect", "mcp"]
+    }
+  }
+}
+```
+
+Or if installed globally, use the CLI directly:
+
+```json
+{
+  "mcpServers": {
+    "anypoint-connect": {
+      "command": "anc",
+      "args": ["mcp"]
     }
   }
 }
