@@ -27,5 +27,5 @@ export {
 
 // Utils
 export { HttpClient, type HttpClientConfig } from './client/HttpClient.js';
-export { Cache } from './client/Cache.js';
+export { Cache, type CacheStats } from './client/Cache.js';
 export { RateLimiter, type RateLimiterConfig } from './client/RateLimiter.js';

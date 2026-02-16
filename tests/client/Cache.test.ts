@@ -78,4 +78,62 @@ describe('Cache', () => {
         expect(result2).toBe('computed-value');
         expect(compute).toHaveBeenCalledOnce(); // not called again
     });
+
+    describe('stats', () => {
+        it('should start with zero counters', () => {
+            const stats = cache.stats();
+            expect(stats).toEqual({ size: 0, hits: 0, misses: 0, evictions: 0, hitRate: 0 });
+        });
+
+        it('should count hits on successful get', () => {
+            cache.set('a', 1, 60000);
+            cache.get('a');
+            cache.get('a');
+            const stats = cache.stats();
+            expect(stats.hits).toBe(2);
+            expect(stats.misses).toBe(0);
+        });
+
+        it('should count misses on failed get', () => {
+            cache.get('missing');
+            const stats = cache.stats();
+            expect(stats.hits).toBe(0);
+            expect(stats.misses).toBe(1);
+        });
+
+        it('should count evictions on TTL expiry', () => {
+            cache.set('a', 1, 5000);
+            vi.advanceTimersByTime(5001);
+            cache.get('a');
+            const stats = cache.stats();
+            expect(stats.evictions).toBe(1);
+            expect(stats.misses).toBe(1);
+        });
+
+        it('should calculate hit rate correctly', () => {
+            cache.set('a', 1, 60000);
+            cache.get('a'); // hit
+            cache.get('a'); // hit
+            cache.get('missing'); // miss
+            const stats = cache.stats();
+            expect(stats.hitRate).toBeCloseTo(2 / 3);
+        });
+
+        it('should track size correctly', () => {
+            cache.set('a', 1, 60000);
+            cache.set('b', 2, 60000);
+            expect(cache.stats().size).toBe(2);
+            cache.delete('a');
+            expect(cache.stats().size).toBe(1);
+        });
+
+        it('should track stats through getOrCompute', async () => {
+            const compute = vi.fn().mockResolvedValue('val');
+            await cache.getOrCompute('key', compute, 60000); // miss + compute
+            await cache.getOrCompute('key', compute, 60000); // hit
+            const stats = cache.stats();
+            expect(stats.misses).toBe(1);
+            expect(stats.hits).toBe(1);
+        });
+    });
 });

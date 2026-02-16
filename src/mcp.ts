@@ -53,7 +53,7 @@ export class AnypointConnectMcpServer {
         registerDesignCenterTools(this.server, this.client);
 
         // Register resources and prompts
-        registerResources(this.server, this.client);
+        registerResources(this.server, this.client, this.client.getCache());
         registerPrompts(this.server);
     }
 

@@ -25,7 +25,7 @@ graph TB
         AC["AnypointClient<br/>Facade"]
         HTTP["HttpClient<br/>Axios + Bearer"]
         RL["RateLimiter"]
-        CACHE["Cache<br/>TTL"]
+        CACHE["Cache<br/>TTL + Stats"]
     end
 
     subgraph Auth["Auth"]
@@ -88,7 +88,7 @@ src/
 │   ├── AnypointClient.ts    Main facade (single entry point)
 │   ├── HttpClient.ts        Axios with Bearer injection
 │   ├── RateLimiter.ts       Token bucket throttling
-│   └── Cache.ts             TTL in-memory cache
+│   └── Cache.ts             TTL in-memory cache with observability
 ├── api/               Domain API clients
 │   ├── CloudHub2Api.ts      Deploy, redeploy, restart, scale, poll
 │   ├── LogsApi.ts           Tail, download (CH2 native)
@@ -366,8 +366,9 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 |------|-------------|
 | `whoami` | Get authenticated user & org info |
 | `list_environments` | List all environments in the org |
-| `list_apps` | List deployed apps in an environment |
-| `get_app_status` | Detailed deployment status with replicas |
+| `list_apps` | List deployed apps with status, version, vCores, and replica count |
+| `get_app_status` | Detailed deployment status: resources (CPU/memory), autoscaling, JVM, replicas |
+| `get_app_resources` | Consolidated resource allocation view for all apps in an environment |
 | `restart_app` | ⚠️ Rolling restart of an application |
 | `scale_app` | ⚠️ Scale application replicas (1–8) |
 | `get_logs` | Fetch recent log entries |
@@ -399,10 +400,12 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 | Resource | URI |
 |----------|-----|
 | Environments | `anypoint://environments` |
+| Cache Diagnostics | `anypoint://diagnostics/cache` |
 
 ### Example Interactions
 
 - *"What apps are running in Sandbox?"*
+- *"Show me the resource allocation across all Production apps"*
 - *"Show me the last 50 error logs for my-api in Production"*
 - *"Compare Development and Production environments"*
 - *"What policies are applied to the Order API?"*
