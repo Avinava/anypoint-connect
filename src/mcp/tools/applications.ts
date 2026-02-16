@@ -1,6 +1,6 @@
 /**
  * MCP Tool Registrar — Application tools
- * list_apps, get_app_status, restart_app, scale_app
+ * list_apps, get_app_status, get_app_resources, restart_app, scale_app
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -14,7 +14,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
         {
             title: 'List Applications',
             description:
-                'Lists all Mule applications deployed in a CloudHub 2.0 environment. Returns each app\'s name, deployment status (APPLIED, STARTED, FAILED), artifact version, Mule runtime version, and replica count. Accepts environment name (e.g. "Development") or environment ID.',
+                'Lists all Mule applications deployed in a CloudHub 2.0 environment. Returns each app\'s name, deployment status (APPLIED, STARTED, FAILED), artifact version, Mule runtime version, vCores, and replica count. Accepts environment name (e.g. "Development") or environment ID.',
             inputSchema: {
                 environment: z
                     .string()
@@ -38,6 +38,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                                     status: d.status,
                                     version: d.application?.ref?.version,
                                     runtime: d.target?.deploymentSettings?.runtime?.version,
+                                    vCores: d.application?.vCores,
                                     replicas: d.target?.replicas?.length,
                                     id: d.id,
                                 })),
@@ -58,7 +59,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
         {
             title: 'Get Application Status',
             description:
-                "Returns detailed deployment information for a specific Mule application: status, artifact version (groupId:artifactId:version), Mule runtime version, each replica's state and deployment location, the public URL, and last update timestamp. Use this to check if an app is healthy before or after a deployment.",
+                "Returns detailed deployment information for a specific Mule application: status, artifact version (groupId:artifactId:version), Mule runtime version, resource allocation (CPU, memory, vCores), autoscaling config, JVM args, clustering, each replica's state and deployment location, the public URL, and last update timestamp. Use this to check if an app is healthy, review resource allocation, or verify a deployment.",
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
                 environment: z.string().describe('Environment name (e.g. "Production") or environment ID'),
@@ -89,6 +90,15 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                                     groupId: deployment.application?.ref?.groupId,
                                     artifactId: deployment.application?.ref?.artifactId,
                                     runtime: deployment.target?.deploymentSettings?.runtime?.version,
+                                    resources: {
+                                        cpu: deployment.target?.deploymentSettings?.resources?.cpu,
+                                        memory: deployment.target?.deploymentSettings?.resources?.memory,
+                                        vCores: deployment.application?.vCores,
+                                    },
+                                    autoscaling: deployment.target?.deploymentSettings?.autoscaling,
+                                    jvm: deployment.target?.deploymentSettings?.jvm,
+                                    clustered: deployment.target?.deploymentSettings?.clustered,
+                                    updateStrategy: deployment.target?.deploymentSettings?.updateStrategy,
                                     replicas: deployment.target?.replicas?.map((r) => ({
                                         id: r.id,
                                         state: r.state,
@@ -96,6 +106,57 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                                     })),
                                     publicUrl: deployment.target?.deploymentSettings?.http?.inbound?.publicUrl,
                                     updatedAt: deployment.updatedAt,
+                                },
+                                null,
+                                2,
+                            ),
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'get_app_resources',
+        {
+            title: 'Get Application Resources',
+            description:
+                'Returns resource allocation for all apps in an environment: CPU/memory limits and reservations, vCores, replica count, autoscaling config, and JVM args. Use this to identify over-provisioned or under-provisioned applications, compare resource distribution, and optimize costs.',
+            inputSchema: {
+                environment: z.string().describe('Environment name (e.g. "Production") or environment ID'),
+            },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ environment }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const deployments = await client.cloudHub2.getDeployments(orgId, env.id);
+
+                const resources = deployments.map((d) => ({
+                    name: d.name,
+                    status: d.status,
+                    vCores: d.application?.vCores,
+                    cpu: d.target?.deploymentSettings?.resources?.cpu,
+                    memory: d.target?.deploymentSettings?.resources?.memory,
+                    replicas: d.target?.replicas?.length ?? 0,
+                    autoscaling: d.target?.deploymentSettings?.autoscaling,
+                    jvm: d.target?.deploymentSettings?.jvm,
+                    clustered: d.target?.deploymentSettings?.clustered,
+                    updateStrategy: d.target?.deploymentSettings?.updateStrategy,
+                }));
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(
+                                {
+                                    environment: env.name,
+                                    apps: resources,
                                 },
                                 null,
                                 2,

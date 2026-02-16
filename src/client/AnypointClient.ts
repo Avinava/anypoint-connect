@@ -98,4 +98,9 @@ export class AnypointClient {
     clearCache(): void {
         this.cache.clear();
     }
+
+    /** Expose cache instance for diagnostics (read-only stats) */
+    getCache(): Cache {
+        return this.cache;
+    }
 }
