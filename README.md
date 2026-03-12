@@ -97,6 +97,15 @@ src/
 │   ├── ApiManagerApi.ts     API instances, policies, SLA tiers
 │   ├── DesignCenterApi.ts   Projects, files, lock/save, publish
 │   └── AccessManagementApi.ts
+├── analysis/          Log analysis pipeline
+│   ├── LogAnalyzer.ts       Pipeline orchestrator
+│   ├── parser.ts            Multi-line joiner + JSON Logger parser
+│   ├── error-context.ts     Error context windows (before/after)
+│   ├── error-grouper.ts     Clusters similar errors
+│   ├── pattern-detector.ts  Recurring message templates
+│   ├── stats.ts             Level distribution, error spikes
+│   ├── types.ts             Shared type definitions
+│   └── utils.ts             Noise detection, templatization
 ├── commands/          CLI commands
 │   ├── config.ts      init | show | set | path
 │   ├── auth.ts        login | logout | status
@@ -373,6 +382,9 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 | `scale_app` | ⚠️ Scale application replicas (1–8) |
 | `get_logs` | Fetch recent log entries |
 | `download_logs` | Download logs for a time range |
+| `analyze_errors` | Clustered error groups with before/after context windows |
+| `get_log_patterns` | Top recurring message templates with counts |
+| `get_log_stats` | Statistical health summary: error rate, spikes, noise % |
 | `get_metrics` | Fetch monitoring metrics (AMQL) |
 | `search_exchange` | Search assets in Exchange |
 | `download_api_spec` | Download RAML/OAS spec from Exchange |
@@ -407,6 +419,9 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 - *"What apps are running in Sandbox?"*
 - *"Show me the resource allocation across all Production apps"*
 - *"Show me the last 50 error logs for my-api in Production"*
+- *"Analyze the errors in my-api in Production — what's failing and why?"*
+- *"What are the top log patterns for billing-api in Development?"*
+- *"Give me a health summary of external-sapi in Production"*
 - *"Compare Development and Production environments"*
 - *"What policies are applied to the Order API?"*
 - *"Show me the RAML spec for the order-api project"*
