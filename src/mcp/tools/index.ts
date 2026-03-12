@@ -5,6 +5,7 @@
 export { registerIdentityTools } from './identity.js';
 export { registerApplicationTools } from './applications.js';
 export { registerLogTools } from './logs.js';
+export { registerAnalysisTools } from './analysis.js';
 export { registerMonitoringTools } from './monitoring.js';
 export { registerExchangeTools } from './exchange.js';
 export { registerApiManagerTools } from './api-manager.js';

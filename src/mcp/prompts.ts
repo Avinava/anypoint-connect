@@ -70,16 +70,19 @@ Produce a GO / NO-GO recommendation with rationale. If there are concerns, list 
                         text: `The application "${appName}" in ${environment} is experiencing issues${symptom ? `: "${symptom}"` : ''}. Please diagnose:
 
 1. **Deployment health**: Use get_app_status to check replica states — look for FAILED or PARTIAL_STARTED replicas, recent restarts, or version mismatches.
-2. **Error analysis**: Use get_logs with level=ERROR and 200 lines to identify error patterns. Group errors by type (e.g. MULE:CONNECTIVITY, MULE:EXPRESSION, HTTP:TIMEOUT, java.lang.OutOfMemoryError).
-3. **Performance check**: Use get_metrics for the last 4 hours — look for spikes in error count, elevated response times, or sudden drops in request volume.
-4. **Root cause analysis**: Based on the evidence, identify the most likely root cause from common MuleSoft issues:
+2. **Error analysis**: Use analyze_errors to get clustered error groups with full context (what happened before and after each error). Focus on the top 3 error types and their causal chains.
+3. **Log patterns**: Use get_log_patterns to understand normal vs abnormal activity — look for unexpected patterns or missing expected patterns.
+4. **Performance check**: Use get_metrics for the last 4 hours — look for spikes in error count, elevated response times, or sudden drops in request volume.
+5. **Health stats**: Use get_log_stats for a quick statistical summary — check error rate, error spikes, and noise levels.
+6. **Root cause analysis**: Based on the evidence, identify the most likely root cause from common MuleSoft issues:
    - DataWeave transformation errors (MULE:EXPRESSION)
    - Downstream service timeouts (HTTP:TIMEOUT, HTTP:CONNECTIVITY)
    - Memory pressure / ObjectStore issues
    - Configuration property errors (missing secure properties, wrong endpoint URLs)
    - Database connection pool exhaustion
    - API autodiscovery or policy enforcement failures
-5. **Remediation**: Suggest specific fixes. If a restart would help, use restart_app. If scaling is needed, recommend scale_app with a replica count.`,
+   - Salesforce access errors (SALESFORCE_ACCESS_ERROR)
+7. **Remediation**: Suggest specific fixes. If a restart would help, use restart_app. If scaling is needed, recommend scale_app with a replica count.`,
                     },
                 },
             ],
@@ -145,8 +148,9 @@ End with prioritized recommendations for improving governance posture.`,
 1. **App inventory**: Use list_apps to get all deployed applications. Count total apps, how many are APPLIED/RUNNING vs FAILED/DEPLOYING.
 2. **Error landscape**: Use get_metrics for all apps over the last 24 hours. Rank apps by error count (highest first). Flag any app with error rate above 1%.
 3. **Performance**: From the same metrics, identify the 3 slowest apps by average response time. Note any above 1000ms.
-4. **Top errors**: For the app with the most errors, use get_logs with level=ERROR and 50 lines to identify the dominant error pattern.
-5. **Version audit**: Note any apps running on different Mule runtime versions — inconsistent runtimes can indicate missed upgrades.
+4. **Top errors**: For the app with the most errors, use analyze_errors to get clustered error groups with context — identify the dominant error pattern and what causes it.
+5. **Health stats**: Use get_log_stats for the worst-performing app to get error rate, spikes, and noise percentage.
+6. **Version audit**: Note any apps running on different Mule runtime versions — inconsistent runtimes can indicate missed upgrades.
 
 Format the report with clear sections and emojis for quick scanning:
 - 🟢 Healthy (no errors, good response times)
