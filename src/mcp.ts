@@ -17,6 +17,7 @@ import {
     registerIdentityTools,
     registerApplicationTools,
     registerLogTools,
+    registerAnalysisTools,
     registerMonitoringTools,
     registerExchangeTools,
     registerApiManagerTools,
@@ -47,6 +48,7 @@ export class AnypointConnectMcpServer {
         registerIdentityTools(this.server, this.client);
         registerApplicationTools(this.server, this.client);
         registerLogTools(this.server, this.client);
+        registerAnalysisTools(this.server, this.client);
         registerMonitoringTools(this.server, this.client);
         registerExchangeTools(this.server, this.client);
         registerApiManagerTools(this.server, this.client);

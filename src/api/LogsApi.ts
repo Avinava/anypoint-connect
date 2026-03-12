@@ -117,6 +117,16 @@ export class LogsApi {
     }
 
     /**
+     * Get raw log text for a CH2 application (for analysis pipeline).
+     * Returns the full log file as a string without parsing.
+     */
+    async getRawText(orgId: string, envId: string, appName: string): Promise<string> {
+        const { deploymentId, specId } = await this.resolveDeployment(orgId, envId, appName);
+        const buffer = await this.downloadLogFile(orgId, envId, deploymentId, specId);
+        return buffer.toString('utf-8');
+    }
+
+    /**
      * Get parsed log entries for a CH2 application.
      * Fetches the log file and parses it.
      */
