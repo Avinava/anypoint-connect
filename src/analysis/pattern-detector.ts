@@ -16,10 +16,7 @@ export interface PatternDetectorOptions {
 /**
  * Identify recurring log message templates.
  */
-export function detectPatterns(
-    entries: EnrichedLogEntry[],
-    options: PatternDetectorOptions = {},
-): LogPattern[] {
+export function detectPatterns(entries: EnrichedLogEntry[], options: PatternDetectorOptions = {}): LogPattern[] {
     const topN = options.topN ?? 15;
     const excludeNoise = options.excludeNoise ?? true;
 

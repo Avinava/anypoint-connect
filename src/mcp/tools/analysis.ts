@@ -61,18 +61,12 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
         {
             title: 'Analyze Application Errors',
             description:
-                'Analyzes error patterns in a Mule application\'s logs. Groups similar errors, shows occurrence counts, affected flows, and provides full context (what happened before and after each error). Use this to diagnose why an app is failing — it shows the causal chain leading to each error type.',
+                "Analyzes error patterns in a Mule application's logs. Groups similar errors, shows occurrence counts, affected flows, and provides full context (what happened before and after each error). Use this to diagnose why an app is failing — it shows the causal chain leading to each error type.",
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed'),
                 environment: z.string().describe('Environment name or ID'),
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('How many hours of logs to analyze (default: all available)'),
-                limit: z
-                    .number()
-                    .optional()
-                    .describe('Maximum number of error groups to return (default: 10)'),
+                hoursBack: z.number().optional().describe('How many hours of logs to analyze (default: all available)'),
+                limit: z.number().optional().describe('Maximum number of error groups to return (default: 10)'),
             },
             annotations: { readOnlyHint: true },
         },
@@ -142,10 +136,7 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed'),
                 environment: z.string().describe('Environment name or ID'),
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('How many hours of logs to analyze (default: all available)'),
+                hoursBack: z.number().optional().describe('How many hours of logs to analyze (default: all available)'),
                 topN: z.number().optional().describe('Number of top patterns to return (default: 15)'),
             },
             annotations: { readOnlyHint: true },
@@ -189,14 +180,11 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
         {
             title: 'Get Log Statistics',
             description:
-                'Returns a statistical health summary of an application\'s logs: level distribution, error rate, error spikes (time windows with elevated errors), noise percentage, and unique transaction count. Use this for quick health checks without reading individual log lines.',
+                "Returns a statistical health summary of an application's logs: level distribution, error rate, error spikes (time windows with elevated errors), noise percentage, and unique transaction count. Use this for quick health checks without reading individual log lines.",
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed'),
                 environment: z.string().describe('Environment name or ID'),
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('How many hours of logs to analyze (default: all available)'),
+                hoursBack: z.number().optional().describe('How many hours of logs to analyze (default: all available)'),
             },
             annotations: { readOnlyHint: true },
         },
@@ -220,7 +208,10 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
                     '### Level Distribution',
                     ...Object.entries(s.byLevel)
                         .sort((a, b) => b[1] - a[1])
-                        .map(([level, count]) => `- **${level}**: ${count} (${((count / s.totalEntries) * 100).toFixed(1)}%)`),
+                        .map(
+                            ([level, count]) =>
+                                `- **${level}**: ${count} (${((count / s.totalEntries) * 100).toFixed(1)}%)`,
+                        ),
                     '',
                     `**Error rate:** ${s.errorRate}%`,
                 ];

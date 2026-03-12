@@ -18,10 +18,7 @@ export interface ErrorContextOptions {
 /**
  * Build error context for all ERROR entries.
  */
-export function buildErrorContexts(
-    entries: EnrichedLogEntry[],
-    options: ErrorContextOptions = {},
-): ErrorWithContext[] {
+export function buildErrorContexts(entries: EnrichedLogEntry[], options: ErrorContextOptions = {}): ErrorWithContext[] {
     const beforeCount = options.beforeCount ?? 15;
     const afterCount = options.afterCount ?? 10;
     const timeWindowMs = options.timeWindowMs ?? 30000;
