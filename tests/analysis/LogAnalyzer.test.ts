@@ -106,9 +106,7 @@ describe('parseRawLogs', () => {
 
         expect(entries.length).toBeGreaterThanOrEqual(4);
 
-        const correlated = entries.filter(
-            (e) => e.correlationId === 'c0ffee00-0000-4000-8000-000000000001',
-        );
+        const correlated = entries.filter((e) => e.correlationId === 'c0ffee00-0000-4000-8000-000000000001');
         expect(correlated.length).toBeGreaterThanOrEqual(4);
 
         const errors = entries.filter((e) => e.priority === 'ERROR');
@@ -142,7 +140,6 @@ describe('buildErrorContexts', () => {
     it('should use time-window fallback when no correlationId exists', () => {
         const entries = parseRawLogs(SAMPLE_MIXED_LEVELS);
         const contexts = buildErrorContexts(entries);
-
 
         expect(contexts.length).toBeGreaterThan(0);
         // The ForwardingToListenerHandler has no JSON Logger, so may lack correlationId

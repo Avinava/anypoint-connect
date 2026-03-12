@@ -16,10 +16,7 @@ export interface ErrorGrouperOptions {
 /**
  * Group similar errors by error type and message pattern.
  */
-export function groupErrors(
-    contexts: ErrorWithContext[],
-    options: ErrorGrouperOptions = {},
-): ErrorGroup[] {
+export function groupErrors(contexts: ErrorWithContext[], options: ErrorGrouperOptions = {}): ErrorGroup[] {
     const maxSamples = options.maxSamples ?? 3;
     const maxGroups = options.maxGroups ?? 10;
 
