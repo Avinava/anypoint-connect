@@ -74,7 +74,9 @@ export function createAuthCommand(): Command {
                 log.kv('Profile', `${profileName} (resolved via ${source})`);
 
                 if (!status.authenticated) {
-                    log.warn(`Not authenticated. Run: anc auth login${profileName !== 'default' ? ` --profile ${profileName}` : ''}`);
+                    log.warn(
+                        `Not authenticated. Run: anc auth login${profileName !== 'default' ? ` --profile ${profileName}` : ''}`,
+                    );
                     return;
                 }
 

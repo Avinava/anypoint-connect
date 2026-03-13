@@ -118,7 +118,9 @@ export function createConfigCommand(): Command {
             const saved = readSavedConfig(profileName);
 
             if (!saved) {
-                log.warn(`No configuration found for profile "${profileName}". Run: anc config init --profile ${profileName}`);
+                log.warn(
+                    `No configuration found for profile "${profileName}". Run: anc config init --profile ${profileName}`,
+                );
                 return;
             }
 
