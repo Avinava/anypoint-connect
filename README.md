@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="Anypoint Connect Banner" width="100%" />
+</p>
+
 # Anypoint Connect
 
 > CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets.
