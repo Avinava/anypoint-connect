@@ -15,10 +15,45 @@ export interface AppMetricsSummary {
     appName: string;
     requestCount: number;
     avgResponseTime: number;
-    errorCount: number;
-    errorRate: number;
     outboundCount: number;
     outboundAvgResponseTime: number;
+}
+
+export interface PerformanceMetrics {
+    appName: string;
+    requestCount: number;
+    avgResponseTime: number;
+    maxResponseTime: number;
+    minResponseTime: number;
+    p50: number;
+    p95: number;
+    p99: number;
+}
+
+export interface TimeSeriesDataPoint {
+    timestamp: number;
+    appName: string;
+    requestCount: number;
+    avgResponseTime: number;
+    p95: number;
+}
+
+export interface WorkerMetrics {
+    appName: string;
+    workerId: string;
+    requestCount: number;
+    avgResponseTime: number;
+    maxResponseTime: number;
+    p95: number;
+}
+
+export interface CrossEnvMetrics {
+    appName: string;
+    envName: string;
+    requestCount: number;
+    avgResponseTime: number;
+    p95: number;
+    p99: number;
 }
 
 export interface MetricsExport {
@@ -28,10 +63,10 @@ export interface MetricsExport {
     summary: {
         totalRequests: number;
         avgResponseTime: number;
-        totalErrors: number;
-        errorRate: number;
     };
 }
+
+export type TimeSeriesGranularity = 'PT5M' | 'PT15M' | 'PT30M' | 'PT1H' | 'P1D';
 
 export class MonitoringApi {
     private readonly baseUrl = '/observability/api/v1';
@@ -66,17 +101,16 @@ export class MonitoringApi {
         envId: string,
         from: number,
         to: number,
-    ): Promise<Array<{ appName: string; requestCount: number; avgResponseTime: number; errorCount: number }>> {
+    ): Promise<Array<{ appName: string; requestCount: number; avgResponseTime: number }>> {
         const cacheKey = `mon:inbound:${orgId}:${envId}:${from}:${to}`;
         return this.cache.getOrCompute(cacheKey, async () => {
-            const query = `SELECT COUNT(requests) AS "request_count", AVG(response_time) AS "avg_response_time", COUNT(errors) AS "error_count", "app.name" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = '${orgId}' AND "env.id" = '${envId}' AND timestamp BETWEEN ${from} AND ${to} GROUP BY "app.name"`;
+            const query = `SELECT COUNT(requests) AS "request_count", AVG(response_time) AS "avg_response_time", "app.name" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = '${orgId}' AND "env.id" = '${envId}' AND timestamp BETWEEN ${from} AND ${to} GROUP BY "app.name"`;
 
             const data = await this.search(query);
             return data.map((row) => ({
                 appName: String(row['app.name'] || 'Unknown'),
                 requestCount: Number(row['request_count'] || 0),
                 avgResponseTime: Number(row['avg_response_time'] || 0),
-                errorCount: Number(row['error_count'] || 0),
             }));
         });
     }
@@ -122,13 +156,10 @@ export class MonitoringApi {
 
         let results = inbound.map((row) => {
             const ob = outboundByApp.get(row.appName);
-            const errorRate = row.requestCount > 0 ? (row.errorCount / row.requestCount) * 100 : 0;
             return {
                 appName: row.appName,
                 requestCount: row.requestCount,
                 avgResponseTime: row.avgResponseTime,
-                errorCount: row.errorCount,
-                errorRate,
                 outboundCount: ob?.requestCount || 0,
                 outboundAvgResponseTime: ob?.avgResponseTime || 0,
             };
@@ -141,8 +172,6 @@ export class MonitoringApi {
                     appName: ob.appName,
                     requestCount: 0,
                     avgResponseTime: 0,
-                    errorCount: 0,
-                    errorRate: 0,
                     outboundCount: ob.requestCount,
                     outboundAvgResponseTime: ob.avgResponseTime,
                 });
@@ -154,6 +183,121 @@ export class MonitoringApi {
         }
 
         return results;
+    }
+
+    /**
+     * Get percentile-based performance metrics per app
+     */
+    async getPerformanceMetrics(
+        orgId: string,
+        envId: string,
+        from: number,
+        to: number,
+        appName?: string,
+    ): Promise<PerformanceMetrics[]> {
+        const cacheKey = `mon:perf:${orgId}:${envId}:${from}:${to}:${appName || ''}`;
+        return this.cache.getOrCompute(cacheKey, async () => {
+            let query = `SELECT COUNT(requests) AS "request_count", AVG(response_time) AS "avg_response_time", MAX(response_time) AS "max_response_time", MIN(response_time) AS "min_response_time", PERCENTILE(response_time, 0.5) AS "p50", PERCENTILE(response_time, 0.95) AS "p95", PERCENTILE(response_time, 0.99) AS "p99", "app.name" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = '${orgId}' AND "env.id" = '${envId}' AND timestamp BETWEEN ${from} AND ${to}`;
+
+            if (appName) {
+                query += ` AND "app.name" = '${appName}'`;
+            }
+            query += ` GROUP BY "app.name"`;
+
+            const data = await this.search(query);
+            return data.map((row) => ({
+                appName: String(row['app.name'] || 'Unknown'),
+                requestCount: Number(row['request_count'] || 0),
+                avgResponseTime: Number(row['avg_response_time'] || 0),
+                maxResponseTime: Number(row['max_response_time'] || 0),
+                minResponseTime: Number(row['min_response_time'] || 0),
+                p50: Number(row['p50'] || 0),
+                p95: Number(row['p95'] || 0),
+                p99: Number(row['p99'] || 0),
+            }));
+        });
+    }
+
+    /**
+     * Get time-series metrics for trending analysis
+     */
+    async getTimeSeries(
+        orgId: string,
+        envId: string,
+        from: number,
+        to: number,
+        granularity: TimeSeriesGranularity = 'PT1H',
+        appName?: string,
+    ): Promise<TimeSeriesDataPoint[]> {
+        const cacheKey = `mon:ts:${orgId}:${envId}:${from}:${to}:${granularity}:${appName || ''}`;
+        return this.cache.getOrCompute(cacheKey, async () => {
+            let query = `SELECT timestamp, COUNT(requests) AS "request_count", AVG(response_time) AS "avg_response_time", PERCENTILE(response_time, 0.95) AS "p95", "app.name" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = '${orgId}' AND "env.id" = '${envId}' AND timestamp BETWEEN ${from} AND ${to}`;
+
+            if (appName) {
+                query += ` AND "app.name" = '${appName}'`;
+            }
+            query += ` GROUP BY "app.name" TIMESERIES ${granularity}`;
+
+            const data = await this.search(query, 1000);
+            return data.map((row) => ({
+                timestamp: Number(row['timestamp'] || 0),
+                appName: String(row['app.name'] || 'Unknown'),
+                requestCount: Number(row['request_count'] || 0),
+                avgResponseTime: Number(row['avg_response_time'] || 0),
+                p95: Number(row['p95'] || 0),
+            }));
+        });
+    }
+
+    /**
+     * Get per-worker/replica performance metrics
+     */
+    async getWorkerMetrics(
+        orgId: string,
+        envId: string,
+        from: number,
+        to: number,
+        appName?: string,
+    ): Promise<WorkerMetrics[]> {
+        const cacheKey = `mon:workers:${orgId}:${envId}:${from}:${to}:${appName || ''}`;
+        return this.cache.getOrCompute(cacheKey, async () => {
+            let query = `SELECT COUNT(requests) AS "request_count", AVG(response_time) AS "avg_response_time", MAX(response_time) AS "max_response_time", PERCENTILE(response_time, 0.95) AS "p95", "app.name", "worker.id" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = '${orgId}' AND "env.id" = '${envId}' AND timestamp BETWEEN ${from} AND ${to}`;
+
+            if (appName) {
+                query += ` AND "app.name" = '${appName}'`;
+            }
+            query += ` GROUP BY "app.name", "worker.id"`;
+
+            const data = await this.search(query, 500);
+            return data.map((row) => ({
+                appName: String(row['app.name'] || 'Unknown'),
+                workerId: String(row['worker.id'] || 'Unknown'),
+                requestCount: Number(row['request_count'] || 0),
+                avgResponseTime: Number(row['avg_response_time'] || 0),
+                maxResponseTime: Number(row['max_response_time'] || 0),
+                p95: Number(row['p95'] || 0),
+            }));
+        });
+    }
+
+    /**
+     * Get cross-environment metrics comparison (no env filter)
+     */
+    async getCrossEnvMetrics(orgId: string, from: number, to: number): Promise<CrossEnvMetrics[]> {
+        const cacheKey = `mon:crossenv:${orgId}:${from}:${to}`;
+        return this.cache.getOrCompute(cacheKey, async () => {
+            const query = `SELECT COUNT(requests) AS "request_count", AVG(response_time) AS "avg_response_time", PERCENTILE(response_time, 0.95) AS "p95", PERCENTILE(response_time, 0.99) AS "p99", "app.name", "env.name" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = '${orgId}' AND timestamp BETWEEN ${from} AND ${to} GROUP BY "app.name", "env.name"`;
+
+            const data = await this.search(query, 500);
+            return data.map((row) => ({
+                appName: String(row['app.name'] || 'Unknown'),
+                envName: String(row['env.name'] || 'Unknown'),
+                requestCount: Number(row['request_count'] || 0),
+                avgResponseTime: Number(row['avg_response_time'] || 0),
+                p95: Number(row['p95'] || 0),
+                p99: Number(row['p99'] || 0),
+            }));
+        });
     }
 
     /**
@@ -169,7 +313,6 @@ export class MonitoringApi {
         const apps = await this.getAppMetrics(orgId, envId, from, to);
 
         const totalRequests = apps.reduce((sum, m) => sum + m.requestCount, 0);
-        const totalErrors = apps.reduce((sum, m) => sum + m.errorCount, 0);
         const avgResponseTime =
             apps.length > 0
                 ? apps.reduce((sum, m) => sum + m.avgResponseTime * m.requestCount, 0) / (totalRequests || 1)
@@ -185,8 +328,6 @@ export class MonitoringApi {
             summary: {
                 totalRequests,
                 avgResponseTime,
-                totalErrors,
-                errorRate: totalRequests > 0 ? (totalErrors / totalRequests) * 100 : 0,
             },
         };
     }
