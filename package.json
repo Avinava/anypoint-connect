@@ -1,6 +1,6 @@
 {
     "name": "@sfdxy/anypoint-connect",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "description": "CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets",
     "type": "module",
     "main": "./dist/index.js",
