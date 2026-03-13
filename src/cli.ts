@@ -24,7 +24,9 @@ const program = new Command();
 
 program
     .name('anc')
-    .description('Anypoint Connect — CLI for Anypoint Platform\n\nSupports named profiles for multi-org workflows. Use --profile on auth/config commands\nor place .anypoint-connect.json in your project to auto-select a profile.')
+    .description(
+        'Anypoint Connect — CLI for Anypoint Platform\n\nSupports named profiles for multi-org workflows. Use --profile on auth/config commands\nor place .anypoint-connect.json in your project to auto-select a profile.',
+    )
     .version(VERSION);
 
 program.addCommand(createConfigCommand());
