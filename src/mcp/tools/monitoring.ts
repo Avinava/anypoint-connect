@@ -277,4 +277,124 @@ export function registerMonitoringTools(server: McpServer, client: AnypointClien
             }
         },
     );
+
+    server.registerTool(
+        'get_memory_metrics',
+        {
+            title: 'Get JVM Memory Metrics',
+            description:
+                'Fetches JVM memory and infrastructure metrics per application: average heap used/committed, max heap, GC count and time, and thread count. Use this to identify memory pressure, potential leaks, or apps approaching heap limits. Queries the mulesoft.jvm datasource via AMQL.',
+            inputSchema: {
+                environment: z
+                    .string()
+                    .describe('Environment name (e.g. "Development", "Production") or environment ID'),
+                hoursBack: z
+                    .number()
+                    .optional()
+                    .describe('Time window in hours (default: 24). Use 1 for recent, 168 for weekly trends'),
+                appName: z
+                    .string()
+                    .optional()
+                    .describe('Filter to a specific application name. Omit to get memory metrics for all apps'),
+            },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ environment, hoursBack, appName }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+
+                const to = Date.now();
+                const from = to - (hoursBack || 24) * 60 * 60 * 1000;
+
+                const metrics = await client.monitoring.getMemoryMetrics(orgId, env.id, from, to, appName);
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(
+                                {
+                                    environment: env.name,
+                                    period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
+                                    apps: metrics,
+                                },
+                                null,
+                                2,
+                            ),
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'get_memory_timeseries',
+        {
+            title: 'Get Memory Usage Time Series',
+            description:
+                'Fetches time-series JVM memory metrics for trending analysis. Returns timestamped buckets with average heap used, heap committed, and GC count per app. Use this to spot memory growth trends, correlate GC spikes with latency, or detect slow memory leaks over time.',
+            inputSchema: {
+                environment: z
+                    .string()
+                    .describe('Environment name (e.g. "Development", "Production") or environment ID'),
+                hoursBack: z
+                    .number()
+                    .optional()
+                    .describe('Time window in hours (default: 24). Use 1 for recent, 168 for weekly trends'),
+                granularity: z
+                    .enum(['5m', '15m', '30m', '1h', '1d'])
+                    .optional()
+                    .describe('Time bucket size (default: "1h"). Use "5m" for short windows, "1d" for weekly'),
+                appName: z
+                    .string()
+                    .optional()
+                    .describe('Filter to a specific application name. Omit to get time series for all apps'),
+            },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ environment, hoursBack, granularity, appName }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+
+                const to = Date.now();
+                const from = to - (hoursBack || 24) * 60 * 60 * 1000;
+
+                const granularityMap: Record<string, 'PT5M' | 'PT15M' | 'PT30M' | 'PT1H' | 'P1D'> = {
+                    '5m': 'PT5M',
+                    '15m': 'PT15M',
+                    '30m': 'PT30M',
+                    '1h': 'PT1H',
+                    '1d': 'P1D',
+                };
+                const g = granularityMap[granularity || '1h'];
+
+                const data = await client.monitoring.getMemoryTimeSeries(orgId, env.id, from, to, g, appName);
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(
+                                {
+                                    environment: env.name,
+                                    period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
+                                    granularity: granularity || '1h',
+                                    dataPoints: data,
+                                },
+                                null,
+                                2,
+                            ),
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
 }

@@ -18,77 +18,20 @@ npm install -g @sfdxy/anypoint-connect
 ## Architecture
 
 ```mermaid
-graph TB
-    subgraph Entry["Entry Points"]
-        CLI["CLI — anc"]
-        MCP["MCP Server — stdio"]
-        LIB["Library — import"]
-    end
+graph LR
+    CLI["CLI — anc"] --> AC["AnypointClient"]
+    MCP["MCP Server"] --> AC
+    LIB["Library"] --> AC
 
-    subgraph Config["Config & Profiles"]
-        PR["Profile Resolver<br/>flag → env → project → default"]
-        PC[".anypoint-connect.json<br/>Project binding"]
-        CFG["Profile Config<br/>~/.anypoint-connect/profiles/"]
-    end
+    AC --> HTTP["HttpClient"]
+    HTTP --> AP["Anypoint Platform API"]
 
-    subgraph Core["Core"]
-        AC["AnypointClient<br/>Facade"]
-        HTTP["HttpClient<br/>Axios + Bearer"]
-        RL["RateLimiter"]
-        CACHE["Cache<br/>TTL + Stats"]
-    end
-
-    subgraph Auth["Auth"]
-        TM["TokenManager<br/>Auto-refresh"]
-        OAUTH["OAuthFlow<br/>Browser callback"]
-        FS["FileStore<br/>AES-256-GCM per-profile"]
-    end
-
-    subgraph APIs["Domain APIs"]
-        AM["AccessManagement<br/>Users, Environments"]
-        CH2["CloudHub2<br/>Deploy, Restart, Scale"]
-        LOGS["LogsApi<br/>Tail, Download"]
-        MON["MonitoringApi<br/>AMQL Queries"]
-        EX["ExchangeApi<br/>Search, Download Spec"]
-        APIM["ApiManagerApi<br/>Instances, Policies"]
-        DC["DesignCenterApi<br/>Pull, Push, Publish"]
-    end
-
-    subgraph Safety["Safety"]
-        GUARD["Production Guards<br/>Env detection, Confirmation"]
-    end
-
-    CLI --> PR
-    MCP --> PR
-    LIB --> AC
-    PC -.-> PR
-    PR --> CFG
-    CFG --> AC
-    AC --> HTTP
-    AC --> CACHE
-    HTTP --> RL
-    HTTP --> TM
-    TM --> OAUTH
-    TM --> FS
-    AC --> AM
-    AC --> CH2
-    AC --> LOGS
-    AC --> MON
-    AC --> EX
-    AC --> APIM
-    AC --> DC
-    CLI --> GUARD
-
-    OAUTH -->|"callback :3000/api/callback"| AP["Anypoint Platform API"]
-    HTTP --> AP
-
-    style Entry fill:#1a1a2e,stroke:#4ecdc4,color:#e0e0e0
-    style Config fill:#1a1a2e,stroke:#f4a261,color:#e0e0e0
-    style Core fill:#16213e,stroke:#0f3460,color:#e0e0e0
-    style Auth fill:#1a1a2e,stroke:#e94560,color:#e0e0e0
-    style APIs fill:#16213e,stroke:#533483,color:#e0e0e0
-    style Safety fill:#1a1a2e,stroke:#ff6b6b,color:#e0e0e0
-    style AP fill:#0f3460,stroke:#4ecdc4,color:#e0e0e0
+    AC --> CH2["CloudHub2"]
+    AC --> MON["Monitoring"]
+    AC --> LOGS["Logs"]
+    AC --> EX["Exchange"]
+    AC --> APIM["API Manager"]
+    AC --> DC["Design Center"]
 ```
 
 ```
@@ -106,7 +49,7 @@ src/
 ├── api/               Domain API clients
 │   ├── CloudHub2Api.ts      Deploy, redeploy, restart, scale, poll
 │   ├── LogsApi.ts           Tail, download (CH2 native)
-│   ├── MonitoringApi.ts     AMQL queries, JSON/CSV export
+│   ├── MonitoringApi.ts     AMQL queries (request + JVM metrics), JSON/CSV export
 │   ├── ExchangeApi.ts       Search assets, download specs
 │   ├── ApiManagerApi.ts     API instances, policies, SLA tiers
 │   ├── DesignCenterApi.ts   Projects, files, lock/save, publish
@@ -126,7 +69,7 @@ src/
 │   ├── apps.ts        list | status | restart | scale
 │   ├── deploy.ts      deploy with prod safety net
 │   ├── logs.ts        tail | download
-│   ├── monitor.ts     view | download
+│   ├── monitor.ts     view | perf | trend | workers | memory | memory-trend | compare | download
 │   ├── exchange.ts    search | info | download-spec
 │   ├── api.ts         list | policies | sla-tiers
 │   └── design-center.ts  list | files | pull | push | publish
@@ -300,6 +243,22 @@ anc logs download my-api --env Production \
 anc monitor view --env Sandbox
 anc monitor view --env Production --app my-api --from 7d
 
+# Performance percentiles
+anc monitor perf --env Production
+
+# JVM memory usage
+anc monitor memory --env Production
+anc monitor memory --env Production --app my-api
+
+# Memory trend over time
+anc monitor memory-trend --env Production --app my-api --granularity 1h
+
+# Worker/replica metrics
+anc monitor workers --env Production --app my-api
+
+# Cross-environment comparison
+anc monitor compare
+
 # Export
 anc monitor download --env Production --from 30d --format json
 anc monitor download --env Sandbox --from 7d --format csv --output metrics.csv
@@ -413,6 +372,12 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 | `get_log_patterns` | Top recurring message templates with counts |
 | `get_log_stats` | Statistical health summary: error rate, spikes, noise % |
 | `get_metrics` | Fetch monitoring metrics (AMQL) |
+| `get_performance_metrics` | Percentile-based performance metrics (p50/p95/p99) |
+| `get_metrics_timeseries` | Time-series metrics for trending analysis |
+| `get_worker_metrics` | Per-worker/replica performance metrics |
+| `get_memory_metrics` | JVM memory usage: heap, GC stats, thread counts |
+| `get_memory_timeseries` | JVM memory time-series for leak detection and trending |
+| `compare_env_performance` | Compare performance across all environments |
 | `search_exchange` | Search assets in Exchange |
 | `download_api_spec` | Download RAML/OAS spec from Exchange |
 | `compare_environments` | Side-by-side diff of deployments across environments |
@@ -456,6 +421,8 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 - *"Show me the RAML spec for the order-api project"*
 - *"Improve the API descriptions for order-api"*
 - *"Scale order-service to 3 replicas in Production"*
+- *"Show me the JVM memory usage for all apps in Production"*
+- *"Is my-api leaking memory? Show me the heap trend over the past week"*
 
 ---
 

@@ -56,6 +56,24 @@ export interface CrossEnvMetrics {
     p99: number;
 }
 
+export interface MemoryMetrics {
+    appName: string;
+    heapUsed: number;
+    heapCommitted: number;
+    heapMax: number;
+    gcCount: number;
+    gcTime: number;
+    threadCount: number;
+}
+
+export interface MemoryTimeSeriesPoint {
+    timestamp: number;
+    appName: string;
+    heapUsed: number;
+    heapCommitted: number;
+    gcCount: number;
+}
+
 export interface MetricsExport {
     environment: string;
     period: { from: string; to: string };
@@ -276,6 +294,71 @@ export class MonitoringApi {
                 avgResponseTime: Number(row['avg_response_time'] || 0),
                 maxResponseTime: Number(row['max_response_time'] || 0),
                 p95: Number(row['p95'] || 0),
+            }));
+        });
+    }
+
+    /**
+     * Get JVM memory metrics per app (heap, GC, threads)
+     * Queries the mulesoft.jvm datasource
+     */
+    async getMemoryMetrics(
+        orgId: string,
+        envId: string,
+        from: number,
+        to: number,
+        appName?: string,
+    ): Promise<MemoryMetrics[]> {
+        const cacheKey = `mon:memory:${orgId}:${envId}:${from}:${to}:${appName || ''}`;
+        return this.cache.getOrCompute(cacheKey, async () => {
+            let query = `SELECT AVG(heap_used) AS "heap_used", AVG(heap_committed) AS "heap_committed", MAX(heap_total) AS "heap_max", SUM("gc.count") AS "gc_count", AVG("gc.time") AS "gc_time", AVG(thread_count) AS "thread_count", "app.name" FROM "mulesoft.jvm" WHERE "sub_org.id" = '${orgId}' AND "env.id" = '${envId}' AND timestamp BETWEEN ${from} AND ${to}`;
+
+            if (appName) {
+                query += ` AND "app.name" = '${appName}'`;
+            }
+            query += ` GROUP BY "app.name"`;
+
+            const data = await this.search(query);
+            return data.map((row) => ({
+                appName: String(row['app.name'] || 'Unknown'),
+                heapUsed: Number(row['heap_used'] || 0),
+                heapCommitted: Number(row['heap_committed'] || 0),
+                heapMax: Number(row['heap_max'] || 0),
+                gcCount: Number(row['gc_count'] || 0),
+                gcTime: Number(row['gc_time'] || 0),
+                threadCount: Number(row['thread_count'] || 0),
+            }));
+        });
+    }
+
+    /**
+     * Get JVM memory time-series for trending analysis
+     * Queries the mulesoft.jvm datasource with TIMESERIES
+     */
+    async getMemoryTimeSeries(
+        orgId: string,
+        envId: string,
+        from: number,
+        to: number,
+        granularity: TimeSeriesGranularity = 'PT1H',
+        appName?: string,
+    ): Promise<MemoryTimeSeriesPoint[]> {
+        const cacheKey = `mon:memts:${orgId}:${envId}:${from}:${to}:${granularity}:${appName || ''}`;
+        return this.cache.getOrCompute(cacheKey, async () => {
+            let query = `SELECT timestamp, AVG(heap_used) AS "heap_used", AVG(heap_committed) AS "heap_committed", SUM("gc.count") AS "gc_count", "app.name" FROM "mulesoft.jvm" WHERE "sub_org.id" = '${orgId}' AND "env.id" = '${envId}' AND timestamp BETWEEN ${from} AND ${to}`;
+
+            if (appName) {
+                query += ` AND "app.name" = '${appName}'`;
+            }
+            query += ` GROUP BY "app.name" TIMESERIES ${granularity}`;
+
+            const data = await this.search(query, 1000);
+            return data.map((row) => ({
+                timestamp: Number(row['timestamp'] || 0),
+                appName: String(row['app.name'] || 'Unknown'),
+                heapUsed: Number(row['heap_used'] || 0),
+                heapCommitted: Number(row['heap_committed'] || 0),
+                gcCount: Number(row['gc_count'] || 0),
             }));
         });
     }

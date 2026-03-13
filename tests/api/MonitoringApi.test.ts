@@ -366,4 +366,133 @@ describe('MonitoringApi', () => {
             expect(await api.isAvailable()).toBe(true);
         });
     });
+
+    describe('getMemoryMetrics', () => {
+        it('should query mulesoft.jvm datasource', async () => {
+            mockPost.mockResolvedValue({ data: [] });
+            await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000);
+
+            const query = mockPost.mock.calls[0][1].query;
+            expect(query).toContain('"mulesoft.jvm"');
+        });
+
+        it('should select heap, GC, and thread metrics', async () => {
+            mockPost.mockResolvedValue({ data: [] });
+            await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000);
+
+            const query = mockPost.mock.calls[0][1].query;
+            expect(query).toContain('AVG(heap_used)');
+            expect(query).toContain('AVG(heap_committed)');
+            expect(query).toContain('MAX(heap_total)');
+            expect(query).toContain('SUM("gc.count")');
+            expect(query).toContain('AVG("gc.time")');
+            expect(query).toContain('AVG(thread_count)');
+        });
+
+        it('should return mapped MemoryMetrics', async () => {
+            mockPost.mockResolvedValue({
+                data: [
+                    {
+                        'app.name': 'mem-app',
+                        heap_used: 268435456,
+                        heap_committed: 536870912,
+                        heap_max: 1073741824,
+                        gc_count: 150,
+                        gc_time: 1200,
+                        thread_count: 42,
+                    },
+                ],
+            });
+
+            const result = await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000);
+            expect(result).toEqual([
+                {
+                    appName: 'mem-app',
+                    heapUsed: 268435456,
+                    heapCommitted: 536870912,
+                    heapMax: 1073741824,
+                    gcCount: 150,
+                    gcTime: 1200,
+                    threadCount: 42,
+                },
+            ]);
+        });
+
+        it('should add app.name filter when appName is provided', async () => {
+            mockPost.mockResolvedValue({ data: [] });
+            await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000, 'my-app');
+
+            const query = mockPost.mock.calls[0][1].query;
+            expect(query).toContain(`"app.name" = 'my-app'`);
+        });
+
+        it('should include org, env, and timestamp filters', async () => {
+            mockPost.mockResolvedValue({ data: [] });
+            await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000);
+
+            const query = mockPost.mock.calls[0][1].query;
+            expect(query).toContain(`"sub_org.id" = 'org-1'`);
+            expect(query).toContain(`"env.id" = 'env-1'`);
+            expect(query).toContain('timestamp BETWEEN 1000 AND 2000');
+        });
+    });
+
+    describe('getMemoryTimeSeries', () => {
+        it('should query mulesoft.jvm with TIMESERIES clause', async () => {
+            mockPost.mockResolvedValue({ data: [] });
+            await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000, 'PT5M');
+
+            const query = mockPost.mock.calls[0][1].query;
+            expect(query).toContain('"mulesoft.jvm"');
+            expect(query).toContain('TIMESERIES PT5M');
+        });
+
+        it('should default to PT1H granularity', async () => {
+            mockPost.mockResolvedValue({ data: [] });
+            await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000);
+
+            const query = mockPost.mock.calls[0][1].query;
+            expect(query).toContain('TIMESERIES PT1H');
+        });
+
+        it('should return mapped MemoryTimeSeriesPoint', async () => {
+            mockPost.mockResolvedValue({
+                data: [
+                    {
+                        timestamp: 1700000000000,
+                        'app.name': 'ts-mem-app',
+                        heap_used: 268435456,
+                        heap_committed: 536870912,
+                        gc_count: 10,
+                    },
+                ],
+            });
+
+            const result = await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000);
+            expect(result).toEqual([
+                {
+                    timestamp: 1700000000000,
+                    appName: 'ts-mem-app',
+                    heapUsed: 268435456,
+                    heapCommitted: 536870912,
+                    gcCount: 10,
+                },
+            ]);
+        });
+
+        it('should use higher limit (1000) for time-series queries', async () => {
+            mockPost.mockResolvedValue({ data: [] });
+            await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000);
+
+            expect(mockPost).toHaveBeenCalledWith(expect.stringContaining('limit=1000'), expect.anything());
+        });
+
+        it('should add app.name filter when appName is provided', async () => {
+            mockPost.mockResolvedValue({ data: [] });
+            await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000, 'PT1H', 'filtered-app');
+
+            const query = mockPost.mock.calls[0][1].query;
+            expect(query).toContain(`"app.name" = 'filtered-app'`);
+        });
+    });
 });

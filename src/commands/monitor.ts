@@ -14,7 +14,7 @@ import chalk from 'chalk';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { parseDate } from '../utils/dates.js';
-import { printTable, formatMs, formatDate } from '../utils/formatter.js';
+import { printTable, formatMs, formatDate, formatBytes } from '../utils/formatter.js';
 import { createClient } from './shared.js';
 import type { AppMetricsSummary, TimeSeriesGranularity } from '../api/MonitoringApi.js';
 
@@ -314,6 +314,105 @@ export function createMonitorCommand(): Command {
                 log.success(`Exported ${exported.apps.length} apps metrics → ${chalk.bold(output)}`);
             } catch (error) {
                 log.error(`Export failed: ${errorMessage(error)}`);
+                process.exit(1);
+            }
+        });
+
+    monitor
+        .command('memory')
+        .description('View JVM memory usage, GC stats, and thread counts per app')
+        .option('-a, --app <name>', 'Filter by application name')
+        .requiredOption('-e, --env <name>', 'Environment name')
+        .option('--from <date>', 'Start time (default: 24h ago)')
+        .option('--to <date>', 'End time (default: now)')
+        .action(async (opts) => {
+            try {
+                const client = createClient();
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+
+                const to = opts.to ? parseDate(opts.to) : Date.now();
+                const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
+
+                const metrics = await client.monitoring.getMemoryMetrics(orgId, env.id, from, to, opts.app);
+
+                if (metrics.length === 0) {
+                    log.warn('No memory metrics available for the specified period');
+                    return;
+                }
+
+                log.header(
+                    `Memory — ${env.name} (${new Date(from).toLocaleDateString()} → ${new Date(to).toLocaleDateString()})`,
+                );
+
+                printTable(
+                    ['Application', 'Heap Used', 'Heap Committed', 'Heap Max', 'GC Count', 'GC Time', 'Threads'],
+                    metrics.map((m) => [
+                        m.appName,
+                        formatBytes(m.heapUsed),
+                        formatBytes(m.heapCommitted),
+                        formatBytes(m.heapMax),
+                        String(Math.round(m.gcCount)),
+                        formatMs(m.gcTime),
+                        String(Math.round(m.threadCount)),
+                    ]),
+                );
+            } catch (error) {
+                log.error(`Memory metrics failed: ${errorMessage(error)}`);
+                process.exit(1);
+            }
+        });
+
+    monitor
+        .command('memory-trend')
+        .description('View JVM memory usage over time for an application')
+        .requiredOption('-e, --env <name>', 'Environment name')
+        .requiredOption('-a, --app <name>', 'Application name')
+        .option('-g, --granularity <interval>', 'Time bucket size: 5m, 15m, 30m, 1h, 1d (default: 1h)', '1h')
+        .option('--from <date>', 'Start time (default: 24h ago)')
+        .option('--to <date>', 'End time (default: now)')
+        .action(async (opts) => {
+            try {
+                const granularity = GRANULARITY_MAP[opts.granularity];
+                if (!granularity) {
+                    log.error(`Invalid granularity "${opts.granularity}". Use: 5m, 15m, 30m, 1h, 1d`);
+                    process.exit(1);
+                }
+
+                const client = createClient();
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+
+                const to = opts.to ? parseDate(opts.to) : Date.now();
+                const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
+
+                const data = await client.monitoring.getMemoryTimeSeries(
+                    orgId,
+                    env.id,
+                    from,
+                    to,
+                    granularity,
+                    opts.app,
+                );
+
+                if (data.length === 0) {
+                    log.warn('No memory time-series data available for the specified period');
+                    return;
+                }
+
+                log.header(`Memory Trend — ${opts.app} in ${env.name} (${opts.granularity} buckets)`);
+
+                printTable(
+                    ['Time', 'Heap Used', 'Heap Committed', 'GC Count'],
+                    data.map((d) => [
+                        formatDate(d.timestamp),
+                        formatBytes(d.heapUsed),
+                        formatBytes(d.heapCommitted),
+                        String(Math.round(d.gcCount)),
+                    ]),
+                );
+            } catch (error) {
+                log.error(`Memory trend failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
