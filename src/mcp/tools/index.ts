@@ -10,3 +10,4 @@ export { registerMonitoringTools } from './monitoring.js';
 export { registerExchangeTools } from './exchange.js';
 export { registerApiManagerTools } from './api-manager.js';
 export { registerDesignCenterTools } from './design-center.js';
+export { registerProfileTools } from './profile.js';

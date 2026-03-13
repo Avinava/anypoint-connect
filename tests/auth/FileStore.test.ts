@@ -80,7 +80,7 @@ describe('FileStore', () => {
         await store.save(sampleTokens);
 
         const configDir = path.join(tmpHome, '.anypoint-connect');
-        const tokenFile = path.join(configDir, 'tokens.enc');
+        const tokenFile = path.join(configDir, 'profiles', 'default', 'tokens.enc');
         const raw = fs.readFileSync(tokenFile, 'utf8');
 
         // File should be valid JSON with encrypted fields

@@ -12,6 +12,7 @@ export interface TokenManagerConfig {
     clientSecret: string;
     redirectUri: string;
     baseUrl?: string;
+    profileName?: string;
 }
 
 export interface AuthStatus {
@@ -35,7 +36,7 @@ export class TokenManager {
             redirectUri: config.redirectUri,
             baseUrl: config.baseUrl,
         });
-        this.store = new FileStore();
+        this.store = new FileStore(config.profileName);
     }
 
     async getStatus(): Promise<AuthStatus> {

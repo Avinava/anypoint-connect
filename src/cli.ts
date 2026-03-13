@@ -15,10 +15,17 @@ import { createExchangeCommand } from './commands/exchange.js';
 import { createApiCommand } from './commands/api.js';
 import { createDesignCenterCommand } from './commands/design-center.js';
 import { VERSION } from './version.js';
+import { migrateIfNeeded } from './utils/config.js';
+
+// Auto-migrate legacy config to profiles/default/ if needed
+migrateIfNeeded();
 
 const program = new Command();
 
-program.name('anc').description('Anypoint Connect — CLI for Anypoint Platform').version(VERSION);
+program
+    .name('anc')
+    .description('Anypoint Connect — CLI for Anypoint Platform\n\nSupports named profiles for multi-org workflows. Use --profile on auth/config commands\nor place .anypoint-connect.json in your project to auto-select a profile.')
+    .version(VERSION);
 
 program.addCommand(createConfigCommand());
 program.addCommand(createAuthCommand());

@@ -8,6 +8,7 @@ import open from 'open';
 import ora from 'ora';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
+import { resolveProfile } from '../utils/config.js';
 import { createClient } from './shared.js';
 
 export function createAuthCommand(): Command {
@@ -15,11 +16,13 @@ export function createAuthCommand(): Command {
 
     auth.command('login')
         .description('Authenticate with Anypoint Platform via OAuth')
-        .action(async () => {
+        .option('-p, --profile <name>', 'Profile to authenticate')
+        .action(async (options: { profile?: string }) => {
             try {
-                const client = createClient();
+                const { name: profileName } = resolveProfile(options.profile);
+                const client = createClient(profileName);
                 const authUrl = client.getAuthorizeUrl();
-                log.info('Opening browser for authentication...');
+                log.info(`Opening browser for authentication (profile: ${profileName})...`);
                 log.dim(`  ${authUrl}`);
 
                 // Start listening for callback before opening browser
@@ -37,6 +40,7 @@ export function createAuthCommand(): Command {
                 const me = await client.whoami();
                 log.success(`Authenticated as ${me.firstName} ${me.lastName} (${me.username})`);
                 log.kv('Organization', me.organization.name);
+                log.kv('Profile', profileName);
             } catch (error) {
                 log.error(`Authentication failed: ${errorMessage(error)}`);
                 process.exit(1);
@@ -45,11 +49,13 @@ export function createAuthCommand(): Command {
 
     auth.command('logout')
         .description('Clear stored credentials')
-        .action(async () => {
+        .option('-p, --profile <name>', 'Profile to log out')
+        .action(async (options: { profile?: string }) => {
             try {
-                const client = createClient();
+                const { name: profileName } = resolveProfile(options.profile);
+                const client = createClient(profileName);
                 await client.logout();
-                log.success('Logged out successfully');
+                log.success(`Logged out successfully (profile: ${profileName})`);
             } catch (error) {
                 log.error(`Logout failed: ${errorMessage(error)}`);
                 process.exit(1);
@@ -58,13 +64,17 @@ export function createAuthCommand(): Command {
 
     auth.command('status')
         .description('Show current authentication status')
-        .action(async () => {
+        .option('-p, --profile <name>', 'Profile to check status for')
+        .action(async (options: { profile?: string }) => {
             try {
-                const client = createClient();
+                const { name: profileName, source } = resolveProfile(options.profile);
+                const client = createClient(profileName);
                 const status = await client.getAuthStatus();
 
+                log.kv('Profile', `${profileName} (resolved via ${source})`);
+
                 if (!status.authenticated) {
-                    log.warn('Not authenticated. Run: anc auth login');
+                    log.warn(`Not authenticated. Run: anc auth login${profileName !== 'default' ? ` --profile ${profileName}` : ''}`);
                     return;
                 }
 

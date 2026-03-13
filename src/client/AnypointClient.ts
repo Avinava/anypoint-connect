@@ -21,6 +21,7 @@ export interface AnypointClientConfig {
     redirectUri?: string;
     baseUrl?: string;
     cacheTtlMinutes?: number;
+    profileName?: string;
 }
 
 export class AnypointClient {
@@ -43,6 +44,7 @@ export class AnypointClient {
             clientSecret: config.clientSecret,
             redirectUri: config.redirectUri || DEFAULT_CALLBACK_URL,
             baseUrl: config.baseUrl,
+            profileName: config.profileName,
         });
 
         this.cache = new Cache(config.cacheTtlMinutes || 5);
