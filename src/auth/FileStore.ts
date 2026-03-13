@@ -1,6 +1,6 @@
 /**
  * File Token Store
- * AES-256-GCM encrypted file storage at ~/.anypoint-connect/tokens.enc
+ * AES-256-GCM encrypted file storage at ~/.anypoint-connect/profiles/<profile>/tokens.enc
  */
 
 import * as fs from 'fs';
@@ -8,7 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { TokenStore, AnypointTokens } from './TokenStore.js';
-import { getConfigDir } from '../utils/config.js';
+import { getProfileDir } from '../utils/config.js';
 
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const TOKEN_FILE_NAME = 'tokens.enc';
@@ -17,12 +17,13 @@ export class FileStore implements TokenStore {
     private readonly filePath: string;
     private readonly encryptionKey: Buffer;
 
-    constructor() {
-        const configDir = getConfigDir();
-        this.filePath = path.join(configDir, TOKEN_FILE_NAME);
+    constructor(profile?: string) {
+        const profileDir = getProfileDir(profile || 'default');
+        this.filePath = path.join(profileDir, TOKEN_FILE_NAME);
 
-        // Derive key from machine-specific data
-        const machineId = `${os.hostname()}-${os.userInfo().username}-anypoint-connect`;
+        // Derive key from machine-specific data + profile name for isolation
+        const profileSuffix = profile || 'default';
+        const machineId = `${os.hostname()}-${os.userInfo().username}-anypoint-connect-${profileSuffix}`;
         this.encryptionKey = crypto.scryptSync(machineId, 'anc-salt-v1', 32);
     }
 

@@ -25,6 +25,12 @@ graph TB
         LIB["Library — import"]
     end
 
+    subgraph Config["Config & Profiles"]
+        PR["Profile Resolver<br/>flag → env → project → default"]
+        PC[".anypoint-connect.json<br/>Project binding"]
+        CFG["Profile Config<br/>~/.anypoint-connect/profiles/"]
+    end
+
     subgraph Core["Core"]
         AC["AnypointClient<br/>Facade"]
         HTTP["HttpClient<br/>Axios + Bearer"]
@@ -35,7 +41,7 @@ graph TB
     subgraph Auth["Auth"]
         TM["TokenManager<br/>Auto-refresh"]
         OAUTH["OAuthFlow<br/>Browser callback"]
-        FS["FileStore<br/>AES-256-GCM"]
+        FS["FileStore<br/>AES-256-GCM per-profile"]
     end
 
     subgraph APIs["Domain APIs"]
@@ -52,9 +58,12 @@ graph TB
         GUARD["Production Guards<br/>Env detection, Confirmation"]
     end
 
-    CLI --> AC
-    MCP --> AC
+    CLI --> PR
+    MCP --> PR
     LIB --> AC
+    PC -.-> PR
+    PR --> CFG
+    CFG --> AC
     AC --> HTTP
     AC --> CACHE
     HTTP --> RL
@@ -74,6 +83,7 @@ graph TB
     HTTP --> AP
 
     style Entry fill:#1a1a2e,stroke:#4ecdc4,color:#e0e0e0
+    style Config fill:#1a1a2e,stroke:#f4a261,color:#e0e0e0
     style Core fill:#16213e,stroke:#0f3460,color:#e0e0e0
     style Auth fill:#1a1a2e,stroke:#e94560,color:#e0e0e0
     style APIs fill:#16213e,stroke:#533483,color:#e0e0e0
@@ -111,8 +121,8 @@ src/
 │   ├── types.ts             Shared type definitions
 │   └── utils.ts             Noise detection, templatization
 ├── commands/          CLI commands
-│   ├── config.ts      init | show | set | path
-│   ├── auth.ts        login | logout | status
+│   ├── config.ts      init | show | set | path | profiles | use
+│   ├── auth.ts        login | logout | status (--profile)
 │   ├── apps.ts        list | status | restart | scale
 │   ├── deploy.ts      deploy with prod safety net
 │   ├── logs.ts        tail | download
@@ -123,7 +133,7 @@ src/
 ├── safety/            Production guards
 │   └── guards.ts      Env detection, JAR validation, confirmation
 ├── utils/
-│   └── config.ts      3-layer config resolution
+│   └── config.ts      Profile-based config resolution
 ├── cli.ts             CLI entry point (bin: anc)
 ├── mcp.ts             MCP server entry point
 └── index.ts           Library barrel export
@@ -131,34 +141,36 @@ src/
 
 ### Config Resolution
 
-Credentials and settings are resolved via a 3-layer priority chain:
+Config uses **named profiles** for multi-org support. A profile is first resolved, then credentials within that profile:
 
-```mermaid
-flowchart LR
-    ENV["① Environment Variables<br/><code>ANYPOINT_CLIENT_ID</code>"] --> RESOLVE["Config Resolver"]
-    GLOBAL["② Global Config<br/><code>~/.anypoint-connect/config.json</code>"] --> RESOLVE
-    LOCAL["③ Project .env<br/><code>cwd/.env</code>"] --> RESOLVE
-    RESOLVE --> RUNTIME["Runtime Config"]
+**Profile resolution** (highest priority wins):
 
-    style ENV fill:#0f3460,stroke:#4ecdc4,color:#e0e0e0
-    style GLOBAL fill:#16213e,stroke:#e94560,color:#e0e0e0
-    style LOCAL fill:#1a1a2e,stroke:#533483,color:#e0e0e0
-    style RESOLVE fill:#1a1a2e,stroke:#4ecdc4,color:#e0e0e0
-    style RUNTIME fill:#0f3460,stroke:#4ecdc4,color:#e0e0e0
-```
+| Priority | Source | Example |
+|----------|--------|---------|
+| **1** | `--profile` CLI flag | `anc apps list --profile client-a --env Sandbox` |
+| **2** | `ANYPOINT_PROFILE` env var | `export ANYPOINT_PROFILE=client-a` |
+| **3** | `.anypoint-connect.json` in project | `{ "profile": "client-a" }` (walks up from cwd) |
+| **4** | Fallback | `"default"` |
+
+**Credential resolution** within a profile (highest priority wins):
 
 | Priority | Source | When to use |
 |----------|--------|-------------|
 | **1 (highest)** | Environment variables | CI/CD pipelines, Docker, per-session overrides |
-| **2** | `~/.anypoint-connect/config.json` | Day-to-day development — persists globally |
-| **3 (lowest)** | `.env` in current directory | Legacy/project-local fallback |
+| **2** | Profile config.json | Day-to-day development — persists per profile |
+| **3 (lowest)** | `.env` in cwd | Legacy/project-local fallback |
 
-Everything lives under `~/.anypoint-connect/`:
+Storage layout:
 
 ```
 ~/.anypoint-connect/
-├── config.json     OAuth credentials + settings (chmod 600)
-└── tokens.enc      AES-256-GCM encrypted access/refresh tokens
+└── profiles/
+    ├── default/
+    │   ├── config.json     OAuth credentials (chmod 600)
+    │   └── tokens.enc      AES-256-GCM encrypted tokens
+    └── client-a/
+        ├── config.json
+        └── tokens.enc
 ```
 
 ---
@@ -196,31 +208,41 @@ npm link   # makes "anc" available globally
 ### 3. Configure
 
 ```bash
+# Default profile (single-org)
 anc config init
-#   Client ID: <paste>
-#   Client Secret: <paste>
-#   Callback URL: (http://localhost:3000/api/callback)
-#   Base URL: (https://anypoint.mulesoft.com)
-#   Default Environment (optional): Sandbox
-#   ✔ Configuration saved!
+
+# Named profile (multi-org)
+anc config init --profile client-a
+anc config init --profile client-b
 ```
 
 ### 4. Authenticate
 
 ```bash
-anc auth login    # Opens browser → OAuth consent → tokens stored
-anc auth status   # Verify
+anc auth login                     # Default profile
+anc auth login --profile client-a  # Specific profile
+anc auth status                    # Check current auth
+```
+
+### 5. Bind a Project to a Profile
+
+```bash
+cd ~/projects/client-a-integrations
+anc config use client-a
+# Creates .anypoint-connect.json → { "profile": "client-a" }
+# Now all commands & MCP in this folder auto-use "client-a"
 ```
 
 ### Managing Config
 
 ```bash
-anc config show                    # Show config (secrets masked)
+anc config show                      # Show config (secrets masked)
+anc config show --profile client-a   # Show specific profile
 anc config set defaultEnv Production  # Update a value
-anc config path                    # Print config directory path
+anc config profiles                  # List all profiles
 
 # Override per-session
-ANYPOINT_CLIENT_ID=other-id anc apps list --env Sandbox
+ANYPOINT_PROFILE=client-b anc apps list --env Sandbox
 ```
 
 ---
@@ -325,9 +347,10 @@ anc dc publish my-api-spec --version 2.0.0 --classifier oas3 --api-version v2
 ### Authentication
 
 ```bash
-anc auth login     # Opens browser for OAuth login
-anc auth status    # Check current auth
-anc auth logout    # Clear stored tokens
+anc auth login                     # Default profile
+anc auth login --profile client-a  # Specific profile
+anc auth status                    # Check current auth
+anc auth logout                    # Clear stored tokens
 ```
 
 ---
@@ -339,7 +362,7 @@ The MCP server exposes all Anypoint operations as tools for AI assistants (Claud
 ### Prerequisites
 
 ```bash
-anc config init    # one-time setup
+anc config init    # one-time setup (or --profile <name> for multi-org)
 anc auth login     # get tokens
 ```
 
@@ -371,7 +394,7 @@ Or if installed globally, use the CLI directly:
 }
 ```
 
-No `env` block needed — the MCP server reads from `~/.anypoint-connect/` automatically.
+The MCP server auto-detects the active profile from the project's `.anypoint-connect.json` (or falls back to `default`). No `env` block needed.
 
 ### MCP Tools
 
@@ -400,6 +423,8 @@ No `env` block needed — the MCP server reads from `~/.anypoint-connect/` autom
 | `read_design_center_file` | Read file content with smart path resolution |
 | `update_design_center_file` | ⚠️ Push updated file (lock/save/unlock) |
 | `publish_to_exchange` | ⚠️ Publish Design Center project to Exchange |
+| `get_project_profile` | Show active profile, resolution source, and available profiles |
+| `set_project_profile` | Bind project directory to a named profile |
 
 ### MCP Prompts
 

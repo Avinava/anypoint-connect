@@ -1,6 +1,6 @@
 /**
  * Config CLI Commands
- * anc config init | show | set <key> <value> | path
+ * anc config init | show | set <key> <value> | path | profiles | use <profile>
  */
 
 import { Command } from 'commander';
@@ -14,6 +14,10 @@ import {
     updateSavedConfig,
     hasSavedConfig,
     getConfigDir,
+    getProfileDir,
+    listProfiles,
+    resolveProfile,
+    writeProjectConfig,
     DEFAULT_CALLBACK_URL,
     type SavedConfig,
 } from '../utils/config.js';
@@ -33,13 +37,15 @@ export function createConfigCommand(): Command {
     // ── config init ──────────────────────────────────
     config
         .command('init')
-        .description('Interactive setup — saves credentials to ~/.anypoint-connect/config.json')
-        .action(async () => {
-            const existing = readSavedConfig();
+        .description('Interactive setup — saves credentials to a profile')
+        .option('-p, --profile <name>', 'Profile name to configure')
+        .action(async (options: { profile?: string }) => {
+            const { name: profileName } = resolveProfile(options.profile);
+            const existing = readSavedConfig(profileName);
 
-            if (existing && hasSavedConfig()) {
-                log.info('Existing configuration found. Values will be used as defaults.');
-                log.dim(`  Config file: ${getConfigDir()}/config.json`);
+            if (existing && hasSavedConfig(profileName)) {
+                log.info(`Existing configuration found for profile "${profileName}". Values will be used as defaults.`);
+                log.dim(`  Config file: ${getProfileDir(profileName)}/config.json`);
                 console.log();
             }
 
@@ -49,9 +55,9 @@ export function createConfigCommand(): Command {
             });
 
             try {
-                log.header('Anypoint Connect Setup');
-                log.dim('  Credentials are saved to ~/.anypoint-connect/config.json (chmod 600)');
-                log.dim('  Tokens are saved to ~/.anypoint-connect/tokens.enc (AES-256-GCM)');
+                log.header(`Anypoint Connect Setup — Profile: ${chalk.cyan(profileName)}`);
+                log.dim(`  Credentials saved to: ~/.anypoint-connect/profiles/${profileName}/config.json`);
+                log.dim(`  Tokens saved to: ~/.anypoint-connect/profiles/${profileName}/tokens.enc (AES-256-GCM)`);
                 console.log();
 
                 const clientId = await ask(rl, '  Client ID:', existing?.clientId);
@@ -87,14 +93,14 @@ export function createConfigCommand(): Command {
                     ...(defaultEnv ? { defaultEnv } : {}),
                 };
 
-                writeSavedConfig(saved);
+                writeSavedConfig(saved, profileName);
 
                 console.log();
-                log.success('Configuration saved!');
-                log.kv('Location', `${getConfigDir()}/config.json`);
+                log.success(`Configuration saved for profile "${profileName}"!`);
+                log.kv('Location', `${getProfileDir(profileName)}/config.json`);
                 console.log();
                 log.info('Next step: authenticate with Anypoint Platform');
-                log.dim('  anc auth login');
+                log.dim(`  anc auth login${profileName !== 'default' ? ` --profile ${profileName}` : ''}`);
             } catch (error) {
                 rl.close();
                 log.error(`Setup failed: ${errorMessage(error)}`);
@@ -106,16 +112,19 @@ export function createConfigCommand(): Command {
     config
         .command('show')
         .description('Display current configuration (secrets masked)')
-        .action(() => {
-            const saved = readSavedConfig();
+        .option('-p, --profile <name>', 'Profile to show')
+        .action((options: { profile?: string }) => {
+            const { name: profileName, source } = resolveProfile(options.profile);
+            const saved = readSavedConfig(profileName);
 
             if (!saved) {
-                log.warn('No configuration found. Run: anc config init');
+                log.warn(`No configuration found for profile "${profileName}". Run: anc config init --profile ${profileName}`);
                 return;
             }
 
-            log.header('Anypoint Connect Configuration');
-            log.kv('Config File', `${getConfigDir()}/config.json`);
+            log.header(`Anypoint Connect Configuration — Profile: ${chalk.cyan(profileName)}`);
+            log.kv('Profile', `${profileName} (resolved via ${source})`);
+            log.kv('Config File', `${getProfileDir(profileName)}/config.json`);
             console.log();
             log.kv('Client ID', saved.clientId);
             log.kv('Client Secret', '••••••' + (saved.clientSecret?.slice(-4) || ''));
@@ -132,7 +141,10 @@ export function createConfigCommand(): Command {
         .description('Set a single config value')
         .argument('<key>', 'Config key: clientId, clientSecret, callbackUrl, baseUrl, defaultEnv')
         .argument('<value>', 'Value to set')
-        .action((key: string, value: string) => {
+        .option('-p, --profile <name>', 'Profile to update')
+        .action((key: string, value: string, options: { profile?: string }) => {
+            const { name: profileName } = resolveProfile(options.profile);
+
             const validKeys: (keyof SavedConfig)[] = [
                 'clientId',
                 'clientSecret',
@@ -146,17 +158,67 @@ export function createConfigCommand(): Command {
                 process.exit(1);
             }
 
-            updateSavedConfig({ [key]: value });
+            updateSavedConfig({ [key]: value }, profileName);
             const display = key === 'clientSecret' ? '••••••' + value.slice(-4) : value;
-            log.success(`Set ${key} = ${display}`);
+            log.success(`[${profileName}] Set ${key} = ${display}`);
         });
 
     // ── config path ──────────────────────────────────
     config
         .command('path')
         .description('Print the config directory path')
+        .option('-p, --profile <name>', 'Profile to show path for')
+        .action((options: { profile?: string }) => {
+            if (options.profile) {
+                console.log(getProfileDir(options.profile));
+            } else {
+                console.log(getConfigDir());
+            }
+        });
+
+    // ── config profiles ──────────────────────────────
+    config
+        .command('profiles')
+        .description('List all configured profiles')
         .action(() => {
-            console.log(getConfigDir());
+            const profiles = listProfiles();
+            const { name: activeProfile, source } = resolveProfile();
+
+            if (profiles.length === 0) {
+                log.warn('No profiles configured. Run: anc config init');
+                return;
+            }
+
+            log.header('Configured Profiles');
+            for (const p of profiles) {
+                const isActive = p === activeProfile;
+                const hasConfig = hasSavedConfig(p);
+                const marker = isActive ? chalk.green('▸ ') : '  ';
+                const status = hasConfig ? chalk.green('✓') : chalk.dim('○');
+                const label = isActive ? chalk.bold(p) + chalk.dim(` (active — ${source})`) : p;
+                console.log(`${marker}${status} ${label}`);
+            }
+        });
+
+    // ── config use ───────────────────────────────────
+    config
+        .command('use')
+        .description('Bind current directory to a profile (writes .anypoint-connect.json)')
+        .argument('<profile>', 'Profile name to use in this directory')
+        .action((profile: string) => {
+            const profiles = listProfiles();
+
+            if (profiles.length > 0 && !profiles.includes(profile)) {
+                log.warn(`Profile "${profile}" does not exist yet.`);
+                log.dim(`  Available profiles: ${profiles.join(', ')}`);
+                log.dim(`  Run: anc config init --profile ${profile}`);
+                console.log();
+            }
+
+            const filePath = writeProjectConfig(profile);
+            log.success(`Directory bound to profile "${profile}"`);
+            log.kv('File', filePath);
+            log.dim('  All commands in this directory will now use this profile.');
         });
 
     return config;

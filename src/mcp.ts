@@ -9,7 +9,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { getConfig } from './utils/config.js';
+import { getConfig, resolveProfile } from './utils/config.js';
 import { AnypointClient } from './client/AnypointClient.js';
 import { VERSION } from './version.js';
 
@@ -22,6 +22,7 @@ import {
     registerExchangeTools,
     registerApiManagerTools,
     registerDesignCenterTools,
+    registerProfileTools,
 } from './mcp/tools/index.js';
 import { registerResources } from './mcp/resources.js';
 import { registerPrompts } from './mcp/prompts.js';
@@ -36,12 +37,17 @@ export class AnypointConnectMcpServer {
             version: VERSION,
         });
 
-        const config = getConfig();
+        const resolved = resolveProfile();
+        const config = getConfig({ profile: resolved.name });
+
+        console.error(`Profile: "${resolved.name}" (source: ${resolved.source})`);
+
         this.client = new AnypointClient({
             clientId: config.clientId,
             clientSecret: config.clientSecret,
             redirectUri: config.callbackUrl,
             baseUrl: config.baseUrl,
+            profileName: config.profile,
         });
 
         // Register tools by domain
@@ -53,6 +59,7 @@ export class AnypointConnectMcpServer {
         registerExchangeTools(this.server, this.client);
         registerApiManagerTools(this.server, this.client);
         registerDesignCenterTools(this.server, this.client);
+        registerProfileTools(this.server);
 
         // Register resources and prompts
         registerResources(this.server, this.client, this.client.getCache());
