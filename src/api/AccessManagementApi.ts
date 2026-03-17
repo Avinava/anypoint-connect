@@ -41,6 +41,46 @@ export interface Environment {
     clientId?: string;
 }
 
+export interface OrgEntitlements {
+    vCoresProduction: { assigned: number; reassigned: number };
+    vCoresSandbox: { assigned: number; reassigned: number };
+    vCoresDesign: { assigned: number; reassigned: number };
+    staticIps: { assigned: number; reassigned: number };
+    vpcs: { assigned: number; reassigned: number };
+    mqMessages: { base: number; addOn: number };
+    mqRequests: { base: number; addOn: number };
+    mqAdvancedFeatures: { enabled: boolean };
+    objectStoreRequestUnits: { base: number; addOn: number };
+    objectStoreKeys: { base: number; addOn: number };
+    designCenter: { api: boolean; [key: string]: unknown };
+    autoscaling: boolean;
+    armAlerts: boolean;
+    apis: { enabled: boolean };
+    apiMonitoring: { schedules: number };
+    monitoringCenter: { productSKU: number };
+    loadBalancer: { assigned: number; reassigned: number };
+    runtimeFabric: { enabled?: boolean; [key: string]: unknown };
+    runtimeFabricCloud: { enabled?: boolean; [key: string]: unknown };
+    appViz: { enabled?: boolean; [key: string]: unknown };
+    globalDeployment: boolean;
+    createSubOrgs: boolean;
+    createEnvironments: boolean;
+    [key: string]: unknown;
+}
+
+export interface OrgSubscription {
+    category: string;
+    type: string;
+    expiration: string;
+}
+
+export interface OrgDetails {
+    name: string;
+    id: string;
+    entitlements: OrgEntitlements;
+    subscription: OrgSubscription;
+}
+
 export class AccessManagementApi {
     constructor(
         private readonly http: HttpClient,
@@ -73,6 +113,15 @@ export class AccessManagementApi {
                 `/accounts/api/organizations/${orgId}/environments`,
             );
             return response.data || [];
+        });
+    }
+
+    /**
+     * Get organization details including entitlements and subscription
+     */
+    async getOrgDetails(orgId: string): Promise<OrgDetails> {
+        return this.cache.getOrCompute(`org:${orgId}`, async () => {
+            return this.http.get<OrgDetails>(`/accounts/api/organizations/${orgId}`);
         });
     }
 

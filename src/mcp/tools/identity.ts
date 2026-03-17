@@ -1,6 +1,6 @@
 /**
  * MCP Tool Registrar — Identity tools
- * whoami, list_environments
+ * whoami, list_environments, get_entitlements
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -78,6 +78,70 @@ export function registerIdentityTools(server: McpServer, client: AnypointClient)
                                 null,
                                 2,
                             ),
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'get_entitlements',
+        {
+            title: 'Get Organization Entitlements',
+            description:
+                'Returns the platform features and capacity licensed for this organization: vCore allocations (production/sandbox/design), Anypoint MQ quotas, Object Store limits, API Manager, monitoring, Runtime Fabric, autoscaling, alerts, and subscription type/expiration. Use this BEFORE calling MQ, Object Store, or other optional-feature tools to verify the org has those capabilities — avoids 403 errors on unprovisioned services.',
+            annotations: { readOnlyHint: true },
+        },
+        async () => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const org = await client.accessManagement.getOrgDetails(orgId);
+                const e = org.entitlements;
+
+                const summary = {
+                    organization: org.name,
+                    subscription: org.subscription,
+                    compute: {
+                        vCoresProduction: e.vCoresProduction,
+                        vCoresSandbox: e.vCoresSandbox,
+                        vCoresDesign: e.vCoresDesign,
+                        autoscaling: e.autoscaling,
+                        globalDeployment: e.globalDeployment,
+                    },
+                    messaging: {
+                        mqMessages: e.mqMessages,
+                        mqRequests: e.mqRequests,
+                        mqAdvancedFeatures: e.mqAdvancedFeatures,
+                    },
+                    objectStore: {
+                        requestUnits: e.objectStoreRequestUnits,
+                        keys: e.objectStoreKeys,
+                    },
+                    networking: {
+                        staticIps: e.staticIps,
+                        vpcs: e.vpcs,
+                        loadBalancer: e.loadBalancer,
+                    },
+                    apiManagement: {
+                        apis: e.apis,
+                        apiMonitoring: e.apiMonitoring,
+                        monitoringCenter: e.monitoringCenter,
+                        alerts: e.armAlerts,
+                    },
+                    designCenter: e.designCenter,
+                    runtimeFabric: e.runtimeFabric,
+                    runtimeFabricCloud: e.runtimeFabricCloud,
+                    visualization: e.appViz,
+                };
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(summary, null, 2),
                         },
                     ],
                 };

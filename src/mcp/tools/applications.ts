@@ -171,6 +171,64 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
     );
 
     server.registerTool(
+        'get_app_settings',
+        {
+            title: 'Get Application Settings',
+            description:
+                'Reads the application properties (configuration settings) for a deployed Mule application in CloudHub 2.0. Returns both plain-text properties as key-value pairs and the names of secure (encrypted) properties. Use this to verify configuration after a deploy, compare settings between environments, or check for missing properties.',
+            inputSchema: {
+                appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
+                environment: z.string().describe('Environment name (e.g. "Production") or environment ID'),
+            },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ appName, environment }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
+
+                if (!deployment) {
+                    return {
+                        content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
+                    };
+                }
+
+                const detail = await client.cloudHub2.getDeployment(orgId, env.id, deployment.id);
+
+                const config = (detail.application?.configuration ?? {}) as Record<string, unknown>;
+                const propertiesService = config['mule.agent.application.properties.service'] as
+                    | Record<string, unknown>
+                    | undefined;
+                const properties = (propertiesService?.properties ?? {}) as Record<string, string>;
+                const secureProperties = propertiesService?.secureProperties as Record<string, string> | undefined;
+                const securePropertyKeys = secureProperties ? Object.keys(secureProperties) : [];
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(
+                                {
+                                    appName: detail.name,
+                                    environment: env.name,
+                                    properties,
+                                    securePropertyKeys,
+                                    rawConfiguration: config,
+                                },
+                                null,
+                                2,
+                            ),
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
         'restart_app',
         {
             title: 'Restart Application',

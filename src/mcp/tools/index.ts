@@ -11,3 +11,6 @@ export { registerExchangeTools } from './exchange.js';
 export { registerApiManagerTools } from './api-manager.js';
 export { registerDesignCenterTools } from './design-center.js';
 export { registerProfileTools } from './profile.js';
+export { registerAuditTools } from './audit.js';
+export { registerAnypointMQTools } from './anypoint-mq.js';
+export { registerObjectStoreTools } from './object-store.js';

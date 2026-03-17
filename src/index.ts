@@ -12,7 +12,14 @@ export { FileStore } from './auth/FileStore.js';
 export type { TokenStore, AnypointTokens } from './auth/TokenStore.js';
 
 // APIs
-export { AccessManagementApi, type UserProfile, type Environment } from './api/AccessManagementApi.js';
+export {
+    AccessManagementApi,
+    type UserProfile,
+    type Environment,
+    type OrgEntitlements,
+    type OrgSubscription,
+    type OrgDetails,
+} from './api/AccessManagementApi.js';
 export { CloudHub2Api, type CH2Deployment, type CreateDeploymentPayload } from './api/CloudHub2Api.js';
 export { LogsApi, type LogEntry } from './api/LogsApi.js';
 export {
@@ -33,6 +40,21 @@ export {
     type DesignCenterFile,
     type PublishToExchangeOptions,
 } from './api/DesignCenterApi.js';
+
+export {
+    AuditLogApi,
+    type AuditLogEntry,
+    type AuditLogObject,
+    type AuditLogResponse,
+    type AuditLogQuery,
+} from './api/AuditLogApi.js';
+export { AnypointMQApi, type MQDestination, type MQStats, type MQMessage } from './api/AnypointMQApi.js';
+export {
+    ObjectStoreApi,
+    type ObjectStore,
+    type ObjectStoreKeysPage,
+    type ObjectStoreValue,
+} from './api/ObjectStoreApi.js';
 
 // Utils
 export { HttpClient, type HttpClientConfig } from './client/HttpClient.js';
