@@ -77,7 +77,25 @@ export class TokenManager {
                 throw new Error('Token expired and no refresh token. Run: anc auth login');
             }
 
-            tokens = await this.oauthFlow.refreshToken(tokens.refreshToken);
+            try {
+                tokens = await this.oauthFlow.refreshToken(tokens.refreshToken);
+            } catch {
+                // Refresh failed — another process (e.g. CLI) may have already
+                // rotated the refresh token. Reload from disk and retry once.
+                this.cachedTokens = null;
+                const reloaded = await this.store.load();
+                if (reloaded?.refreshToken && reloaded.refreshToken !== tokens.refreshToken) {
+                    // File has newer tokens; if the access token is still valid, use it
+                    if (reloaded.expiresAt >= now + bufferMs) {
+                        this.cachedTokens = reloaded;
+                        return reloaded.accessToken;
+                    }
+                    // Access token also expired — try refreshing with the newer refresh token
+                    tokens = await this.oauthFlow.refreshToken(reloaded.refreshToken);
+                } else {
+                    throw new Error('Token refresh failed. Run: anc auth login');
+                }
+            }
             await this.store.save(tokens);
             this.cachedTokens = tokens;
         }
