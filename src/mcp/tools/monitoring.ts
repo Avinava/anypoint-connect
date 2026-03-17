@@ -332,6 +332,42 @@ export function registerMonitoringTools(server: McpServer, client: AnypointClien
     );
 
     server.registerTool(
+        'raw_amql_query',
+        {
+            title: 'Execute Raw AMQL Query',
+            description:
+                'Executes a freeform AMQL (Anypoint Monitoring Query Language) query against the monitoring API. Use this for ad-hoc analysis when the pre-built metric tools don\'t answer a specific question. Datasources: "mulesoft.app.inbound" (inbound requests), "mulesoft.app.outbound" (outbound calls), "mulesoft.jvm" (memory/GC/threads). Supports SELECT, COUNT, AVG, SUM, MAX, MIN, PERCENTILE, GROUP BY, TIMESERIES, WHERE with timestamp BETWEEN.',
+            inputSchema: {
+                query: z
+                    .string()
+                    .describe(
+                        'AMQL query string. Example: SELECT COUNT(requests) AS "count", AVG(response_time) AS "avg_rt", "app.name" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = \'<orgId>\' AND timestamp BETWEEN <from> AND <to> GROUP BY "app.name"',
+                    ),
+                limit: z
+                    .number()
+                    .optional()
+                    .describe('Maximum number of data points to return (default: 200, max: 1000)'),
+            },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ query, limit }) => {
+            try {
+                const data = await client.monitoring.search(query, limit || 200);
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify({ rowCount: data.length, data }, null, 2),
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
         'get_memory_timeseries',
         {
             title: 'Get Memory Usage Time Series',

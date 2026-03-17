@@ -23,6 +23,9 @@ import {
     registerApiManagerTools,
     registerDesignCenterTools,
     registerProfileTools,
+    registerAuditTools,
+    registerAnypointMQTools,
+    registerObjectStoreTools,
 } from './mcp/tools/index.js';
 import { registerResources } from './mcp/resources.js';
 import { registerPrompts } from './mcp/prompts.js';
@@ -60,6 +63,9 @@ export class AnypointConnectMcpServer {
         registerApiManagerTools(this.server, this.client);
         registerDesignCenterTools(this.server, this.client);
         registerProfileTools(this.server);
+        registerAuditTools(this.server, this.client);
+        registerAnypointMQTools(this.server, this.client);
+        registerObjectStoreTools(this.server, this.client);
 
         // Register resources and prompts
         registerResources(this.server, this.client, this.client.getCache());

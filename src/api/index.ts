@@ -1,4 +1,11 @@
-export { AccessManagementApi, type UserProfile, type Environment } from './AccessManagementApi.js';
+export {
+    AccessManagementApi,
+    type UserProfile,
+    type Environment,
+    type OrgEntitlements,
+    type OrgSubscription,
+    type OrgDetails,
+} from './AccessManagementApi.js';
 export {
     CloudHub2Api,
     type CH2Deployment,
@@ -16,3 +23,12 @@ export {
     type DesignCenterBranch,
     type PublishToExchangeOptions,
 } from './DesignCenterApi.js';
+export {
+    AuditLogApi,
+    type AuditLogEntry,
+    type AuditLogObject,
+    type AuditLogResponse,
+    type AuditLogQuery,
+} from './AuditLogApi.js';
+export { AnypointMQApi, type MQDestination, type MQStats, type MQMessage } from './AnypointMQApi.js';
+export { ObjectStoreApi, type ObjectStore, type ObjectStoreKeysPage, type ObjectStoreValue } from './ObjectStoreApi.js';

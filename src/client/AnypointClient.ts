@@ -13,6 +13,9 @@ import { MonitoringApi } from '../api/MonitoringApi.js';
 import { ExchangeApi } from '../api/ExchangeApi.js';
 import { ApiManagerApi } from '../api/ApiManagerApi.js';
 import { DesignCenterApi } from '../api/DesignCenterApi.js';
+import { AuditLogApi } from '../api/AuditLogApi.js';
+import { AnypointMQApi } from '../api/AnypointMQApi.js';
+import { ObjectStoreApi } from '../api/ObjectStoreApi.js';
 import { DEFAULT_CALLBACK_URL } from '../utils/config.js';
 
 export interface AnypointClientConfig {
@@ -37,6 +40,9 @@ export class AnypointClient {
     public readonly exchange: ExchangeApi;
     public readonly apiManager: ApiManagerApi;
     public readonly designCenter: DesignCenterApi;
+    public readonly auditLog: AuditLogApi;
+    public readonly anypointMQ: AnypointMQApi;
+    public readonly objectStore: ObjectStoreApi;
 
     constructor(config: AnypointClientConfig) {
         this.tokenManager = new TokenManager({
@@ -61,6 +67,9 @@ export class AnypointClient {
         this.exchange = new ExchangeApi(this.httpClient, this.cache);
         this.apiManager = new ApiManagerApi(this.httpClient, this.cache);
         this.designCenter = new DesignCenterApi(this.httpClient, this.cache);
+        this.auditLog = new AuditLogApi(this.httpClient);
+        this.anypointMQ = new AnypointMQApi(this.httpClient, this.cache);
+        this.objectStore = new ObjectStoreApi(this.httpClient, this.cache);
     }
 
     // ── Auth ──────────────────────────────────────────

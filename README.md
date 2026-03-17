@@ -32,6 +32,9 @@ graph LR
     AC --> EX["Exchange"]
     AC --> APIM["API Manager"]
     AC --> DC["Design Center"]
+    AC --> AUDIT["Audit Log"]
+    AC --> MQ["Anypoint MQ"]
+    AC --> OS["Object Store"]
 ```
 
 ```
@@ -53,7 +56,10 @@ src/
 │   ├── ExchangeApi.ts       Search assets, download specs
 │   ├── ApiManagerApi.ts     API instances, policies, SLA tiers
 │   ├── DesignCenterApi.ts   Projects, files, lock/save, publish
-│   └── AccessManagementApi.ts
+│   ├── AuditLogApi.ts       Platform audit events (who changed what)
+│   ├── AnypointMQApi.ts     Queue/exchange management, message browsing
+│   ├── ObjectStoreApi.ts    Object Store v2 — stores, keys, values
+│   └── AccessManagementApi.ts  User, environments, org entitlements
 ├── analysis/          Log analysis pipeline
 │   ├── LogAnalyzer.ts       Pipeline orchestrator
 │   ├── parser.ts            Multi-line joiner + JSON Logger parser
@@ -146,6 +152,7 @@ npm link   # makes "anc" available globally
    - `Monitoring` → **Read Metrics**
    - `Design Center` → **Read/Write Designer**
    - `Exchange` → **Exchange Contributor**
+   - `Audit Logs` → **View Audit Logs** (optional, for `get_audit_log`)
 6. Copy the **Client ID** and **Client Secret**
 
 ### 3. Configure
@@ -359,35 +366,55 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 
 | Tool | Description |
 |------|-------------|
+| **Identity & Org** | |
 | `whoami` | Get authenticated user & org info |
 | `list_environments` | List all environments in the org |
+| `get_entitlements` | Get org license: vCores, MQ, Object Store, API quotas, subscription |
+| **Applications** | |
 | `list_apps` | List deployed apps with status, version, vCores, and replica count |
 | `get_app_status` | Detailed deployment status: resources (CPU/memory), autoscaling, JVM, replicas |
 | `get_app_resources` | Consolidated resource allocation view for all apps in an environment |
+| `get_app_settings` | Read application properties and secure property keys |
 | `restart_app` | ⚠️ Rolling restart of an application |
 | `scale_app` | ⚠️ Scale application replicas (1–8) |
-| `get_logs` | Fetch recent log entries |
+| **Logs & Analysis** | |
+| `get_logs` | Fetch recent log entries with optional keyword search |
 | `download_logs` | Download logs for a time range |
 | `analyze_errors` | Clustered error groups with before/after context windows |
 | `get_log_patterns` | Top recurring message templates with counts |
 | `get_log_stats` | Statistical health summary: error rate, spikes, noise % |
-| `get_metrics` | Fetch monitoring metrics (AMQL) |
+| **Monitoring (AMQL)** | |
+| `get_metrics` | Inbound/outbound request count and response time |
 | `get_performance_metrics` | Percentile-based performance metrics (p50/p95/p99) |
 | `get_metrics_timeseries` | Time-series metrics for trending analysis |
 | `get_worker_metrics` | Per-worker/replica performance metrics |
 | `get_memory_metrics` | JVM memory usage: heap, GC stats, thread counts |
 | `get_memory_timeseries` | JVM memory time-series for leak detection and trending |
 | `compare_env_performance` | Compare performance across all environments |
+| `raw_amql_query` | Execute freeform AMQL queries for ad-hoc analysis |
+| **Exchange** | |
 | `search_exchange` | Search assets in Exchange |
 | `download_api_spec` | Download RAML/OAS spec from Exchange |
-| `compare_environments` | Side-by-side diff of deployments across environments |
+| **API Manager** | |
 | `list_api_instances` | List managed API instances with governance info |
 | `get_api_policies` | Get policies and SLA tiers for an API |
+| **Design Center** | |
 | `list_design_center_projects` | List all API spec projects |
 | `get_design_center_files` | List files in a Design Center project |
 | `read_design_center_file` | Read file content with smart path resolution |
 | `update_design_center_file` | ⚠️ Push updated file (lock/save/unlock) |
 | `publish_to_exchange` | ⚠️ Publish Design Center project to Exchange |
+| **Audit Log** | |
+| `get_audit_log` | Query platform changes: who did what, when |
+| **Anypoint MQ** | |
+| `list_queues` | List MQ destinations (queues/exchanges) in a region |
+| `get_queue_stats` | Queue depth, in-flight, and throughput stats |
+| `get_dlq_messages` | Browse dead-letter queue messages without consuming |
+| **Object Store v2** | |
+| `list_stores` | List Object Stores in an environment |
+| `get_store_keys` | List keys in an Object Store with pagination |
+| `get_store_value` | Retrieve and auto-format a value by key |
+| **Profile** | |
 | `get_project_profile` | Show active profile, resolution source, and available profiles |
 | `set_project_profile` | Bind project directory to a named profile |
 
@@ -423,6 +450,12 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 - *"Scale order-service to 3 replicas in Production"*
 - *"Show me the JVM memory usage for all apps in Production"*
 - *"Is my-api leaking memory? Show me the heap trend over the past week"*
+- *"What changed in the platform in the last 24 hours?"*
+- *"Check our org entitlements — do we have MQ provisioned?"*
+- *"Show me the app settings for billing-api in Production"*
+- *"Run this AMQL query: SELECT COUNT(requests) FROM mulesoft.app.inbound..."*
+- *"What's in the dead-letter queue for order-events?"*
+- *"Search the logs for correlation ID abc-123"*
 
 ---
 

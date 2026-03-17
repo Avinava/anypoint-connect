@@ -29,10 +29,16 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
                     .describe(
                         'Minimum log level filter: ERROR, WARN, INFO, or DEBUG. Only entries at or above this level are returned.',
                     ),
+                search: z
+                    .string()
+                    .optional()
+                    .describe(
+                        'Text to search for in log messages (case-insensitive substring match). Use to find specific errors, correlation IDs, flow names, or keywords.',
+                    ),
             },
             annotations: { readOnlyHint: true },
         },
-        async ({ appName, environment, lines, level }) => {
+        async ({ appName, environment, lines, level, search }) => {
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
@@ -40,6 +46,7 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
                 const entries = await client.logs.getLogs(orgId, env.id, appName, {
                     limit: lines || 100,
                     level,
+                    search,
                 });
 
                 const formatted = entries.map((e: LogEntry) => ({
