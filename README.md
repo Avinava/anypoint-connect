@@ -21,8 +21,196 @@
   <a href="#programmatic-usage">Library</a>
 </p>
 
+## Quick Start
+
 ```bash
+# 1. Install
 npm install -g @sfdxy/anypoint-connect
+
+# 2. Configure (interactive — prompts for Client ID & Secret)
+anc config init
+
+# 3. Authenticate (opens browser for OAuth)
+anc auth login
+
+# 4. Verify
+anc auth status
+```
+
+> **Don't have a Client ID yet?** See [Create a Connected App](#2-create-a-connected-app-in-anypoint-platform) below.
+
+---
+
+## Setup
+
+### 1. Install
+
+```bash
+# Global install from npm (recommended)
+npm install -g @sfdxy/anypoint-connect
+```
+
+<details>
+<summary>Install from source</summary>
+
+```bash
+git clone https://github.com/Avinava/anypoint-connect.git
+cd anypoint-connect
+npm install && npm run build
+npm link   # makes "anc" available globally
+```
+
+</details>
+
+Verify the install:
+
+```bash
+anc --version
+```
+
+### 2. Create a Connected App in Anypoint Platform
+
+You need a **Connected App** in Anypoint to authenticate. Here's how to create one:
+
+1. Log in to [Anypoint Platform](https://anypoint.mulesoft.com)
+2. Go to **Access Management → Connected Apps**
+3. Click **Create app**, choose **App that acts on a user's behalf**
+4. Set the **Redirect URI** to:
+   ```
+   http://localhost:3000/api/callback
+   ```
+5. Grant these scopes:
+
+   | Scope Category | Permissions |
+   |---------------|-------------|
+   | **General** | View Organization, View Environment |
+   | **Runtime Manager** | Read Applications, Create/Modify Applications |
+   | **CloudHub** | Read Applications, Manage Applications |
+   | **Monitoring** | Read Metrics |
+   | **Design Center** | Read/Write Designer |
+   | **Exchange** | Exchange Contributor |
+   | **Audit Logs** | View Audit Logs *(optional)* |
+
+6. Copy the **Client ID** and **Client Secret** — you'll need them in the next step.
+
+### 3. Configure Credentials
+
+Run the interactive setup and paste your Client ID and Secret when prompted:
+
+```bash
+anc config init
+```
+
+```
+Anypoint Connect Setup — Profile: default
+  Credentials saved to: ~/.anypoint-connect/profiles/default/config.json
+  Tokens saved to: ~/.anypoint-connect/profiles/default/tokens.enc (AES-256-GCM)
+
+  Client ID: <paste your Client ID>
+  Client Secret: <paste your Client Secret>
+  Callback URL: (http://localhost:3000/api/callback)
+  Base URL: (https://anypoint.mulesoft.com)
+```
+
+Verify your config:
+
+```bash
+anc config show
+```
+
+### 4. Authenticate
+
+This opens your browser for OAuth login and stores encrypted tokens locally:
+
+```bash
+anc auth login
+```
+
+Check your auth status anytime:
+
+```bash
+anc auth status
+```
+
+### 5. You're Ready!
+
+```bash
+# List apps in an environment
+anc apps list --env Sandbox
+
+# Tail logs
+anc logs tail my-api --env Sandbox
+
+# Check deployment metrics
+anc monitor view --env Production
+```
+
+---
+
+## Multi-Org / Multi-Profile Setup
+
+If you work across multiple Anypoint organizations, use **named profiles**:
+
+```bash
+# Create separate profiles
+anc config init --profile org-a
+anc config init --profile org-b
+
+# Authenticate each
+anc auth login --profile org-a
+anc auth login --profile org-b
+
+# Bind a project directory to a profile
+cd ~/projects/org-a-integrations
+anc config use org-a
+# Creates .anypoint-connect.json → { "profile": "org-a" }
+# All commands in this folder now auto-use "org-a"
+```
+
+### Managing Config
+
+```bash
+anc config show                      # Show config (secrets masked)
+anc config show --profile org-a      # Show specific profile
+anc config set defaultEnv Production # Update a value
+anc config profiles                  # List all profiles
+
+# Override per-session
+ANYPOINT_PROFILE=org-b anc apps list --env Sandbox
+```
+
+### Config Resolution
+
+Config uses **named profiles** for multi-org support. A profile is first resolved, then credentials within that profile:
+
+**Profile resolution** (highest priority wins):
+
+| Priority | Source | Example |
+|----------|--------|---------|
+| **1** | `--profile` CLI flag | `anc apps list --profile org-a --env Sandbox` |
+| **2** | `ANYPOINT_PROFILE` env var | `export ANYPOINT_PROFILE=org-a` |
+| **3** | `.anypoint-connect.json` in project | `{ "profile": "org-a" }` (walks up from cwd) |
+| **4** | Fallback | `"default"` |
+
+**Credential resolution** within a profile (highest priority wins):
+
+| Priority | Source | When to use |
+|----------|--------|-------------|
+| **1 (highest)** | Environment variables | CI/CD pipelines, Docker, per-session overrides |
+| **2** | Profile config.json | Day-to-day development — persists per profile |
+| **3 (lowest)** | `.env` in cwd | Legacy/project-local fallback |
+
+Storage layout:
+
+```
+~/.anypoint-connect/
+└── profiles/
+    ├── default/
+    │   ├── config.json     OAuth credentials (chmod 600)
+    │   └── tokens.enc      AES-256-GCM encrypted tokens
+    └── org-a/
+        ├── config.json
+        └── tokens.enc
 ```
 
 ---
@@ -48,6 +236,9 @@ graph LR
     AC --> MQ["Anypoint MQ"]
     AC --> OS["Object Store"]
 ```
+
+<details>
+<summary>Source tree</summary>
 
 ```
 src/
@@ -100,112 +291,7 @@ src/
 └── index.ts           Library barrel export
 ```
 
-### Config Resolution
-
-Config uses **named profiles** for multi-org support. A profile is first resolved, then credentials within that profile:
-
-**Profile resolution** (highest priority wins):
-
-| Priority | Source | Example |
-|----------|--------|---------|
-| **1** | `--profile` CLI flag | `anc apps list --profile client-a --env Sandbox` |
-| **2** | `ANYPOINT_PROFILE` env var | `export ANYPOINT_PROFILE=client-a` |
-| **3** | `.anypoint-connect.json` in project | `{ "profile": "client-a" }` (walks up from cwd) |
-| **4** | Fallback | `"default"` |
-
-**Credential resolution** within a profile (highest priority wins):
-
-| Priority | Source | When to use |
-|----------|--------|-------------|
-| **1 (highest)** | Environment variables | CI/CD pipelines, Docker, per-session overrides |
-| **2** | Profile config.json | Day-to-day development — persists per profile |
-| **3 (lowest)** | `.env` in cwd | Legacy/project-local fallback |
-
-Storage layout:
-
-```
-~/.anypoint-connect/
-└── profiles/
-    ├── default/
-    │   ├── config.json     OAuth credentials (chmod 600)
-    │   └── tokens.enc      AES-256-GCM encrypted tokens
-    └── client-a/
-        ├── config.json
-        └── tokens.enc
-```
-
----
-
-## Setup
-
-### 1. Install
-
-```bash
-# Global install (recommended)
-npm install -g @sfdxy/anypoint-connect
-
-# Or from source
-git clone https://github.com/Avinava/anypoint-connect.git
-cd anypoint-connect
-npm install && npm run build
-npm link   # makes "anc" available globally
-```
-
-### 2. Create a Connected App in Anypoint Platform
-
-1. Log in to [Anypoint Platform](https://anypoint.mulesoft.com)
-2. Go to **Access Management → Connected Apps**
-3. Click **Create app**, choose **App that acts on a user's behalf**
-4. Set the **Redirect URI** to `http://localhost:3000/api/callback`
-5. Grant scopes:
-   - `General` → **View Organization**, **View Environment**
-   - `Runtime Manager` → **Read Applications**, **Create/Modify Applications**
-   - `CloudHub` → **Read Applications**, **Manage Applications**
-   - `Monitoring` → **Read Metrics**
-   - `Design Center` → **Read/Write Designer**
-   - `Exchange` → **Exchange Contributor**
-   - `Audit Logs` → **View Audit Logs** (optional, for `get_audit_log`)
-6. Copy the **Client ID** and **Client Secret**
-
-### 3. Configure
-
-```bash
-# Default profile (single-org)
-anc config init
-
-# Named profile (multi-org)
-anc config init --profile client-a
-anc config init --profile client-b
-```
-
-### 4. Authenticate
-
-```bash
-anc auth login                     # Default profile
-anc auth login --profile client-a  # Specific profile
-anc auth status                    # Check current auth
-```
-
-### 5. Bind a Project to a Profile
-
-```bash
-cd ~/projects/client-a-integrations
-anc config use client-a
-# Creates .anypoint-connect.json → { "profile": "client-a" }
-# Now all commands & MCP in this folder auto-use "client-a"
-```
-
-### Managing Config
-
-```bash
-anc config show                      # Show config (secrets masked)
-anc config show --profile client-a   # Show specific profile
-anc config set defaultEnv Production  # Update a value
-anc config profiles                  # List all profiles
-
-# Override per-session
-ANYPOINT_PROFILE=client-b anc apps list --env Sandbox
-```
+</details>
 
 ---
 
