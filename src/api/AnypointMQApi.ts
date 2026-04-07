@@ -78,4 +78,26 @@ export class AnypointMQApi {
             `${BROKER_BASE}/organizations/${orgId}/environments/${envId}/regions/${regionId}/destinations/queues/${encodeURIComponent(queueId)}/messages?poolingTime=1000&batchSize=${batchSize}`,
         );
     }
+
+    /**
+     * Publish a message to an Anypoint MQ queue
+     */
+    async publishMessage(
+        orgId: string,
+        envId: string,
+        regionId: string,
+        queueId: string,
+        body: string,
+        headers?: Record<string, string>,
+        properties?: Record<string, string>,
+    ): Promise<{ messageId: string }> {
+        return this.http.put<{ messageId: string }>(
+            `${BROKER_BASE}/organizations/${orgId}/environments/${envId}/regions/${regionId}/destinations/queues/${encodeURIComponent(queueId)}/messages`,
+            {
+                body,
+                headers: headers || {},
+                properties: properties || {},
+            },
+        );
+    }
 }

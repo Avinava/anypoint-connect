@@ -78,4 +78,31 @@ export class ObjectStoreApi {
             contentType: response.contentType,
         };
     }
+
+    /**
+     * Put (create or update) a value in an Object Store
+     */
+    async putValue(
+        orgId: string,
+        envId: string,
+        storeId: string,
+        key: string,
+        value: string,
+        contentType: string = 'application/json',
+    ): Promise<void> {
+        await this.http.put(
+            `${BASE}/organizations/${orgId}/environments/${envId}/stores/${encodeURIComponent(storeId)}/keys/${encodeURIComponent(key)}`,
+            { value },
+            { headers: { 'Content-Type': contentType } },
+        );
+    }
+
+    /**
+     * Delete a key from an Object Store
+     */
+    async deleteKey(orgId: string, envId: string, storeId: string, key: string): Promise<void> {
+        await this.http.delete(
+            `${BASE}/organizations/${orgId}/environments/${envId}/stores/${encodeURIComponent(storeId)}/keys/${encodeURIComponent(key)}`,
+        );
+    }
 }

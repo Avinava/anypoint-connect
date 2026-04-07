@@ -126,4 +126,63 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
             }
         },
     );
+
+    server.registerTool(
+        'get_api_alerts',
+        {
+            title: 'Get API Alerts',
+            description:
+                'Returns the configured alerts for a managed API instance. Shows alert conditions, thresholds, notification settings, and enabled/disabled status. Use this to audit monitoring coverage, verify alerting is configured for critical APIs, or troubleshoot why alerts are not firing.',
+            inputSchema: {
+                apiName: z
+                    .string()
+                    .describe('API name (partial match) or numeric API instance ID from list_api_instances'),
+                environment: z.string().describe('Environment name or ID'),
+            },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ apiName, environment }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+
+                let apiId: number;
+                const numId = parseInt(apiName);
+                if (!isNaN(numId)) {
+                    apiId = numId;
+                } else {
+                    const found = await client.apiManager.findByName(orgId, env.id, apiName);
+                    if (!found) {
+                        return {
+                            content: [{ type: 'text', text: `API "${apiName}" not found in ${env.name}` }],
+                            isError: true,
+                        };
+                    }
+                    apiId = found.instance.id;
+                }
+
+                const alerts = await client.apiManager.getAlerts(orgId, env.id, apiId);
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(
+                                {
+                                    apiId,
+                                    environment: env.name,
+                                    alertCount: alerts.length,
+                                    alerts,
+                                },
+                                null,
+                                2,
+                            ),
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
 }

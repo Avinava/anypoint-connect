@@ -375,8 +375,12 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 | `get_app_status` | Detailed deployment status: resources (CPU/memory), autoscaling, JVM, replicas |
 | `get_app_resources` | Consolidated resource allocation view for all apps in an environment |
 | `get_app_settings` | Read application properties and secure property keys |
+| `deploy_app` | ⚠️ Deploy or redeploy an app using Maven coordinates (groupId:artifactId:version) |
+| `update_app_settings` | ⚠️ Update application properties with merge (triggers rolling restart) |
 | `restart_app` | ⚠️ Rolling restart of an application |
 | `scale_app` | ⚠️ Scale application replicas (1–8) |
+| `stop_app` | ⚠️ Stop an application without deleting the deployment |
+| `start_app` | Start a previously stopped application |
 | **Logs & Analysis** | |
 | `get_logs` | Fetch recent log entries with optional keyword search |
 | `download_logs` | Download logs for a time range |
@@ -394,10 +398,12 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 | `raw_amql_query` | Execute freeform AMQL queries for ad-hoc analysis |
 | **Exchange** | |
 | `search_exchange` | Search assets in Exchange |
+| `get_exchange_asset` | Get detailed asset info: versions, dependencies, instances, files |
 | `download_api_spec` | Download RAML/OAS spec from Exchange |
 | **API Manager** | |
 | `list_api_instances` | List managed API instances with governance info |
 | `get_api_policies` | Get policies and SLA tiers for an API |
+| `get_api_alerts` | View configured alerts for an API instance |
 | **Design Center** | |
 | `list_design_center_projects` | List all API spec projects |
 | `get_design_center_files` | List files in a Design Center project |
@@ -410,10 +416,13 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 | `list_queues` | List MQ destinations (queues/exchanges) in a region |
 | `get_queue_stats` | Queue depth, in-flight, and throughput stats |
 | `get_dlq_messages` | Browse dead-letter queue messages without consuming |
+| `publish_mq_message` | Publish a message to an MQ queue (test, replay, seed data) |
 | **Object Store v2** | |
 | `list_stores` | List Object Stores in an environment |
 | `get_store_keys` | List keys in an Object Store with pagination |
 | `get_store_value` | Retrieve and auto-format a value by key |
+| `put_store_value` | ⚠️ Write or update a value by key |
+| `delete_store_value` | ⚠️ Delete a key and its value |
 | **Profile** | |
 | `get_project_profile` | Show active profile, resolution source, and available profiles |
 | `set_project_profile` | Bind project directory to a named profile |
@@ -456,6 +465,16 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 - *"Run this AMQL query: SELECT COUNT(requests) FROM mulesoft.app.inbound..."*
 - *"What's in the dead-letter queue for order-events?"*
 - *"Search the logs for correlation ID abc-123"*
+- *"Deploy order-api v1.3.0 to Sandbox with 2 replicas"*
+- *"Redeploy billing-service to Production with the latest version from Exchange"*
+- *"Update the db.url property for order-api in Sandbox"*
+- *"Stop the test-processor app in Development"*
+- *"Start the test-processor app back up"*
+- *"What versions of order-management-api are in Exchange?"*
+- *"Are there any alerts configured for the Order API?"*
+- *"Write a watermark value to the default Object Store in Sandbox"*
+- *"Delete the stale cache key from Object Store"*
+- *"Publish a test message to the order-events queue"*
 
 ---
 
