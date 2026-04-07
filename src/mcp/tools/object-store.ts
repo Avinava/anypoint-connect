@@ -128,4 +128,77 @@ export function registerObjectStoreTools(server: McpServer, client: AnypointClie
             }
         },
     );
+
+    server.registerTool(
+        'put_store_value',
+        {
+            title: 'Write Object Store Value',
+            description:
+                'Creates or updates a value in an Object Store v2 store. If the key already exists, its value is overwritten. Use this to set watermarks, update cached data, write idempotency records, or seed test data in Object Store. The value should be a string (use JSON.stringify for structured data).',
+            inputSchema: {
+                environment: z.string().describe('Environment name or ID'),
+                storeId: z.string().describe('Object store ID as returned by list_stores'),
+                key: z.string().describe('The key to write'),
+                value: z.string().describe('The value to store (string or JSON-stringified object)'),
+                contentType: z
+                    .string()
+                    .optional()
+                    .describe(
+                        'Content type of the value (default: "application/json"). Use "text/plain" for raw strings.',
+                    ),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+        },
+        async ({ environment, storeId, key, value, contentType }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                await client.objectStore.putValue(orgId, env.id, storeId, key, value, contentType);
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `✅ Wrote key "${key}" to store "${storeId}" in ${env.name}. Use get_store_value to verify.`,
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'delete_store_value',
+        {
+            title: 'Delete Object Store Key',
+            description:
+                'Deletes a specific key and its value from an Object Store v2 store. The deletion is permanent and cannot be undone. Use this to remove stale watermarks, clear cached data, or clean up test entries.',
+            inputSchema: {
+                environment: z.string().describe('Environment name or ID'),
+                storeId: z.string().describe('Object store ID as returned by list_stores'),
+                key: z.string().describe('The key to delete'),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+        },
+        async ({ environment, storeId, key }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                await client.objectStore.deleteKey(orgId, env.id, storeId, key);
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `✅ Deleted key "${key}" from store "${storeId}" in ${env.name}.`,
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
 }

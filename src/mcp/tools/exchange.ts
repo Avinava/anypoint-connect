@@ -163,4 +163,65 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
             }
         },
     );
+
+    server.registerTool(
+        'get_exchange_asset',
+        {
+            title: 'Get Exchange Asset Details',
+            description:
+                "Returns detailed information about a specific Exchange asset including all published versions, dependencies, API instances, contact information, and file classifiers. Use this to check which versions of an asset are available before deploying, to understand an asset's dependency chain, or to find the groupId needed for deploy_app.",
+            inputSchema: {
+                groupId: z.string().describe('Group ID of the asset (typically the org ID — use whoami to get it)'),
+                assetId: z.string().describe('Asset ID as shown in Exchange (e.g. "order-management-api")'),
+                version: z
+                    .string()
+                    .optional()
+                    .describe(
+                        'Specific version to get details for. Omit to get the latest version with all version history.',
+                    ),
+            },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ groupId, assetId, version }) => {
+            try {
+                const detail = await client.exchange.getAsset(groupId, assetId, version);
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(
+                                {
+                                    name: detail.name,
+                                    groupId: detail.groupId,
+                                    assetId: detail.assetId,
+                                    version: detail.version,
+                                    type: detail.type,
+                                    description: detail.description,
+                                    status: detail.status,
+                                    contact: detail.contactName
+                                        ? { name: detail.contactName, email: detail.contactEmail }
+                                        : null,
+                                    versions: detail.versions,
+                                    dependencies: detail.dependencies,
+                                    instances: detail.instances,
+                                    files: detail.files?.map((f) => ({
+                                        classifier: f.classifier,
+                                        packaging: f.packaging,
+                                        mainFile: f.mainFile,
+                                    })),
+                                    labels: detail.labels,
+                                    categories: detail.categories,
+                                },
+                                null,
+                                2,
+                            ),
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
 }

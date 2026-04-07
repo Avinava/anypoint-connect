@@ -127,4 +127,60 @@ export function registerAnypointMQTools(server: McpServer, client: AnypointClien
             }
         },
     );
+
+    server.registerTool(
+        'publish_mq_message',
+        {
+            title: 'Publish MQ Message',
+            description:
+                'Publishes a message to an Anypoint MQ queue. Use this to test integrations, replay failed messages, seed test data, or trigger event-driven flows. The message body can be any string (typically JSON). Optional headers and properties can be attached for routing or metadata.',
+            inputSchema: {
+                environment: z.string().describe('Environment name or ID'),
+                region: z.string().describe('MQ region ID (e.g. "us-east-1")'),
+                queueId: z.string().describe('Queue ID (destination ID) as returned by list_queues'),
+                body: z.string().describe('Message body content (typically JSON-stringified payload)'),
+                headers: z.record(z.string()).optional().describe('Optional message headers as key-value pairs'),
+                properties: z
+                    .record(z.string())
+                    .optional()
+                    .describe('Optional message properties as key-value pairs (used for routing or metadata)'),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+        },
+        async ({ environment, region, queueId, body, headers, properties }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const result = await client.anypointMQ.publishMessage(
+                    orgId,
+                    env.id,
+                    region,
+                    queueId,
+                    body,
+                    headers,
+                    properties,
+                );
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(
+                                {
+                                    message: `✅ Message published to queue "${queueId}" in ${env.name}`,
+                                    messageId: result.messageId,
+                                    region,
+                                    bodyLength: body.length,
+                                },
+                                null,
+                                2,
+                            ),
+                        },
+                    ],
+                };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
 }
