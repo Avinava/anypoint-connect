@@ -1,13 +1,25 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="Anypoint Connect Banner" width="100%" />
+  <img src="assets/logo.svg" alt="Anypoint Connect Banner" width="600" />
 </p>
 
-# Anypoint Connect
+<p align="center">
+  <a href="https://www.npmjs.com/package/@sfdxy/anypoint-connect"><img src="https://img.shields.io/npm/v/@sfdxy/anypoint-connect?style=flat-square&color=34d399" alt="npm version" /></a>
+  <a href="https://github.com/Avinava/anypoint-connect/actions"><img src="https://img.shields.io/github/actions/workflow/status/Avinava/anypoint-connect/ci.yml?style=flat-square&color=38bdf8" alt="CI" /></a>
+  <a href="https://github.com/Avinava/anypoint-connect/blob/master/LICENSE"><img src="https://img.shields.io/npm/l/@sfdxy/anypoint-connect?style=flat-square&color=818cf8" alt="License" /></a>
+  <a href="https://www.npmjs.com/package/@sfdxy/anypoint-connect"><img src="https://img.shields.io/npm/dm/@sfdxy/anypoint-connect?style=flat-square&color=fbbf24" alt="Downloads" /></a>
+</p>
 
-> CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets.
+<p align="center">
+  <strong>CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets.</strong>
+</p>
 
-[![CI](https://github.com/Avinava/anypoint-connect/actions/workflows/ci.yml/badge.svg)](https://github.com/Avinava/anypoint-connect/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@sfdxy/anypoint-connect)](https://www.npmjs.com/package/@sfdxy/anypoint-connect)
+<p align="center">
+  <a href="#architecture">Architecture</a> •
+  <a href="#setup">Setup</a> •
+  <a href="#cli-reference">CLI Reference</a> •
+  <a href="#mcp-server">MCP Server</a> •
+  <a href="#programmatic-usage">Library</a>
+</p>
 
 ```bash
 npm install -g @sfdxy/anypoint-connect
