@@ -15,7 +15,11 @@ export function errorMessage(error: unknown): string {
     if (error instanceof AxiosError && error.response) {
         const data = error.response.data;
         if (typeof data === 'string' && data.length > 0) return data;
-        if (data && typeof data === 'object' && 'message' in data) return String((data as { message: string }).message);
+        if (data && typeof data === 'object') {
+            if ('message' in data) return String((data as { message: string }).message);
+            // Some APIs return { error: '...' } or { status, ... } — show full body
+            return `HTTP ${error.response.status}: ${JSON.stringify(data)}`;
+        }
         return `HTTP ${error.response.status || 'unknown'}`;
     }
     return error instanceof Error ? error.message : String(error);
