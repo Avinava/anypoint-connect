@@ -308,7 +308,30 @@ export class DesignCenterApi {
     // ── Publish ────────────────────────────────────
 
     /**
+     * Read and parse the exchange.json metadata from a Design Center project.
+     * Returns null if the file doesn't exist or can't be parsed.
+     */
+    async getExchangeJson(
+        orgId: string,
+        projectId: string,
+        branch = 'master',
+    ): Promise<Record<string, unknown> | null> {
+        try {
+            const raw = await this.getFileContent(orgId, projectId, 'exchange.json', branch);
+            return JSON.parse(raw);
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Publish a Design Center project to Anypoint Exchange.
+     *
+     * The DC XP API expects all publish parameters in the JSON body, NOT in the URL path.
+     * Endpoint: POST /designcenter/api-designer/projects/{projectId}/branches/{branch}/publish/exchange
+     *
+     * Requires a branch lock (same as file saves). Uses lock → publish → unlock pattern.
+     * If assetId or main file aren't specified, we auto-detect them from exchange.json.
      */
     async publishToExchange(
         orgId: string,
@@ -317,26 +340,40 @@ export class DesignCenterApi {
         branch = 'master',
     ): Promise<{ groupId: string; assetId: string; version: string }> {
         const ownerId = await this.getOwnerId();
-        const groupId = options.groupId || orgId;
-        const assetId = options.assetId || projectId;
 
-        const response = await this.http
-            .post<{ groupId: string; assetId: string; version: string }>(
-                `${BASE}/projects/${projectId}/branches/${branch}/publish/exchange/${groupId}/${assetId}/${options.version}`,
-                {
-                    name: options.name,
-                    apiVersion: options.apiVersion,
-                    classifier: options.classifier,
-                    main: options.main,
-                },
-                {
-                    headers: this.dcHeaders(orgId, ownerId),
-                },
-            )
-            .catch((e) => {
-                throw new Error(`Failed to publish: ${errorMessage(e)}`);
-            });
+        // Read exchange.json for defaults (assetId, main file, etc.)
+        const exchangeMeta = await this.getExchangeJson(orgId, projectId, branch);
 
-        return response;
+        const groupId = options.groupId || (exchangeMeta?.groupId as string) || orgId;
+        const assetId = options.assetId || (exchangeMeta?.assetId as string) || options.name;
+        const mainFile = options.main || (exchangeMeta?.main as string);
+
+        // Acquire lock before publishing (required by DC API)
+        await this.acquireLock(orgId, projectId, branch);
+        try {
+            const response = await this.http
+                .post<{ groupId: string; assetId: string; version: string }>(
+                    `${BASE}/projects/${projectId}/branches/${branch}/publish/exchange`,
+                    {
+                        name: options.name,
+                        apiVersion: options.apiVersion,
+                        version: options.version,
+                        classifier: options.classifier,
+                        main: mainFile,
+                        assetId,
+                        groupId,
+                    },
+                    {
+                        headers: this.dcHeaders(orgId, ownerId),
+                    },
+                )
+                .catch((e) => {
+                    throw new Error(`Failed to publish: ${errorMessage(e)}`);
+                });
+
+            return response;
+        } finally {
+            await this.releaseLock(orgId, projectId, branch);
+        }
     }
 }
