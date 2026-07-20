@@ -3,6 +3,8 @@
  * Asset discovery, search, and spec download via Anypoint Exchange v2
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import type { HttpClient } from '../client/HttpClient.js';
 import type { Cache } from '../client/Cache.js';
 
@@ -55,7 +57,18 @@ export interface ExchangeSearchOptions {
     organizationId?: string;
 }
 
+export interface PublishAppAssetResult {
+    groupId: string;
+    assetId: string;
+    version: string;
+    classifier: string;
+    fileName: string;
+}
+
 const BASE = '/exchange/api/v2';
+
+/** Upload timeout for artifact publish — jars are far larger than API calls (30–80 MB). */
+const PUBLISH_TIMEOUT_MS = 300000;
 
 export class ExchangeApi {
     constructor(
@@ -96,6 +109,43 @@ export class ExchangeApi {
     async getAssetVersions(groupId: string, assetId: string): Promise<Array<{ version: string; status: string }>> {
         const detail = await this.getAsset(groupId, assetId);
         return detail.versions || [];
+    }
+
+    /**
+     * Publish a locally built Mule application jar to Exchange as a type `app` asset,
+     * via the Exchange v2 publication API. This is the path that actually works for
+     * uploading a binary — the Maven facade rejects plain PUTs with a 412.
+     *
+     * Uses a multipart body (`name`, `classifier=mule-application`, and the jar under
+     * `files.mule-application.jar`) with the `x-sync-publication` header so the call
+     * returns only once the asset is fully published.
+     */
+    async publishAppAsset(
+        orgId: string,
+        groupId: string,
+        assetId: string,
+        version: string,
+        jarPath: string,
+    ): Promise<PublishAppAssetResult> {
+        const buffer = await fs.promises.readFile(jarPath);
+        const fileName = path.basename(jarPath);
+
+        const form = new FormData();
+        form.append('name', assetId);
+        form.append('classifier', 'mule-application');
+        form.append('files.mule-application.jar', new Blob([buffer]), fileName);
+
+        const url = `${BASE}/organizations/${orgId}/assets/${groupId}/${assetId}/${version}`;
+        await this.http.postMultipart(url, form, {
+            headers: { 'x-sync-publication': 'true' },
+            timeout: PUBLISH_TIMEOUT_MS,
+        });
+
+        // Invalidate any cached reads for these coordinates.
+        this.cache.delete(`exchange:${groupId}:${assetId}:${version}`);
+        this.cache.delete(`exchange:${groupId}:${assetId}:latest`);
+
+        return { groupId, assetId, version, classifier: 'mule-application', fileName };
     }
 
     /**

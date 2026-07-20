@@ -1,12 +1,14 @@
 /**
  * MCP Tool Registrar — Exchange tools
- * search_exchange, download_api_spec, compare_environments
+ * search_exchange, download_api_spec, compare_environments, get_exchange_asset, publish_app_jar
  */
 
+import * as path from 'path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText, dryRunPreview } from './shared.js';
+import { validateJarFile } from '../../safety/guards.js';
 
 export function registerExchangeTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -219,6 +221,76 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                         },
                     ],
                 };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'publish_app_jar',
+        {
+            title: 'Publish Application JAR to Exchange',
+            description:
+                'Uploads a locally built Mule application JAR to Anypoint Exchange as a type "app" asset, using the Exchange v2 publication API (multipart, classifier mule-application). This is the missing first step for deploying a freshly built artifact: CloudHub 2.0 deployments reference an artifact already in Exchange, and this tool puts it there. Returns the published coordinates (groupId, assetId, version) ready to feed into deploy_app / update_app_artifact. Destructive: publishing a version that already exists may be rejected by Exchange. Pass confirm:true to upload.',
+            inputSchema: {
+                jarPath: z.string().describe('Path to the built .jar file (e.g. "target/example-api-1.0.0-mule-application.jar")'),
+                assetId: z
+                    .string()
+                    .optional()
+                    .describe('Exchange asset ID. Default: the jar filename without the .jar extension.'),
+                assetVersion: z.string().optional().describe('Exchange asset version (default: "1.0.0").'),
+                groupId: z.string().optional().describe('Exchange group ID (default: the organization ID).'),
+                confirm: z
+                    .boolean()
+                    .optional()
+                    .describe('Set true to upload. When omitted/false, returns a dry-run preview and uploads nothing.'),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+        },
+        async ({ jarPath, assetId, assetVersion, groupId, confirm }) => {
+            try {
+                const check = validateJarFile(jarPath);
+                if (!check.valid) {
+                    return mcpText(`❌ ${check.error}`);
+                }
+
+                const orgId = await client.getDefaultOrgId();
+                const resolvedGroupId = groupId || orgId;
+                const resolvedAssetId = assetId || path.basename(jarPath).replace(/\.jar$/, '');
+                const resolvedVersion = assetVersion || '1.0.0';
+
+                if (!confirm) {
+                    return dryRunPreview({
+                        action: 'publish app jar to Exchange',
+                        jarPath,
+                        coordinates: {
+                            groupId: resolvedGroupId,
+                            assetId: resolvedAssetId,
+                            version: resolvedVersion,
+                            classifier: 'mule-application',
+                        },
+                    });
+                }
+
+                const result = await client.exchange.publishAppAsset(
+                    orgId,
+                    resolvedGroupId,
+                    resolvedAssetId,
+                    resolvedVersion,
+                    jarPath,
+                );
+
+                return mcpText({
+                    message: `✅ Published "${result.assetId}" v${result.version} to Exchange`,
+                    coordinates: {
+                        groupId: result.groupId,
+                        assetId: result.assetId,
+                        version: result.version,
+                        packaging: 'jar',
+                    },
+                    tip: 'Deploy it with deploy_app (new app) or update_app_artifact (existing app).',
+                });
             } catch (error) {
                 return mcpError(error);
             }
