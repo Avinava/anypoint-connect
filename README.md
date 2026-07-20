@@ -462,6 +462,8 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 
 ### MCP Tools
 
+> **Deploy safety.** The mutating deploy tools (`deploy_app`, `update_app_artifact`, `rollback_app`, `publish_app_jar`, `deploy_jar`) are **dry-run by default**: called without `confirm: true` they return a preview of exactly what would change and modify nothing. Re-call with `confirm: true` to apply. Redeploys of an existing app change **only** the artifact reference — runtime, target/space, replicas, and settings are always preserved.
+
 | Tool | Description |
 |------|-------------|
 | **Identity & Org** | |
@@ -471,9 +473,12 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 | **Applications** | |
 | `list_apps` | List deployed apps with status, version, vCores, and replica count |
 | `get_app_status` | Detailed deployment status: resources (CPU/memory), autoscaling, JVM, replicas |
+| `get_deployment_spec` | Full deployment spec (ref, runtime, target kind, vCores, replica states) — look before you leap |
 | `get_app_resources` | Consolidated resource allocation view for all apps in an environment |
 | `get_app_settings` | Read application properties and secure property keys |
-| `deploy_app` | ⚠️ Deploy or redeploy an app using Maven coordinates (groupId:artifactId:version) |
+| `deploy_app` | ⚠️ Create a new deployment, or safely redeploy an existing one (artifact ref only). For an existing app, prefer `update_app_artifact` |
+| `update_app_artifact` | ⚠️ Safe production redeploy — change only the artifact version, preserving runtime/target/replicas/settings |
+| `rollback_app` | ⚠️ Roll an app back to a previous version (last successful by default) |
 | `update_app_settings` | ⚠️ Update application properties with merge (triggers rolling restart) |
 | `restart_app` | ⚠️ Rolling restart of an application |
 | `scale_app` | ⚠️ Scale application replicas (1–8) |
@@ -498,6 +503,8 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 | `search_exchange` | Search assets in Exchange |
 | `get_exchange_asset` | Get detailed asset info: versions, dependencies, instances, files |
 | `download_api_spec` | Download RAML/OAS spec from Exchange |
+| `publish_app_jar` | ⚠️ Upload a locally built application JAR to Exchange as a deployable asset |
+| `deploy_jar` | ⚠️ Publish a JAR and deploy it in one call (create new app, or safe artifact update) |
 | **API Manager** | |
 | `list_api_instances` | List managed API instances with governance info |
 | `get_api_policies` | Get policies and SLA tiers for an API |
@@ -564,6 +571,9 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 - *"What's in the dead-letter queue for order-events?"*
 - *"Search the logs for correlation ID abc-123"*
 - *"Deploy order-api v1.3.0 to Sandbox with 2 replicas"*
+- *"Publish target/example-api-1.0.0-mule-application.jar and deploy it to Sandbox"*
+- *"Bump example-api in Production to v1.4.12 (artifact only)"*
+- *"Roll example-api back to the last good version"*
 - *"Redeploy billing-service to Production with the latest version from Exchange"*
 - *"Update the db.url property for order-api in Sandbox"*
 - *"Stop the test-processor app in Development"*
@@ -573,6 +583,46 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 - *"Write a watermark value to the default Object Store in Sandbox"*
 - *"Delete the stale cache key from Object Store"*
 - *"Publish a test message to the order-events queue"*
+
+---
+
+## Deploying a JAR (build → publish → deploy → roll back)
+
+A locally built Mule application JAR goes to CloudHub 2.0 in two steps — publish the artifact to
+Exchange, then deploy it — or in a single `deploy_jar` call. Every mutating step is **dry-run by
+default**; add `confirm: true` to apply.
+
+**One call (recommended).** Publish and deploy together:
+
+```jsonc
+// dry run — shows what would happen, changes nothing
+deploy_jar({ "jarPath": "target/example-api-1.0.0-mule-application.jar", "appName": "example-api", "environment": "Sandbox" })
+// apply
+deploy_jar({ "jarPath": "target/example-api-1.0.0-mule-application.jar", "appName": "example-api", "environment": "Sandbox", "confirm": true })
+```
+
+**Step by step**, for more control:
+
+```jsonc
+// 1. publish the built jar to Exchange
+publish_app_jar({ "jarPath": "target/example-api-1.0.0-mule-application.jar", "confirm": true })
+
+// 2. see exactly what is running before you touch it
+get_deployment_spec({ "appName": "example-api", "environment": "Production" })
+
+// 3. safe production bump — changes only the artifact ref, waits for it to settle
+update_app_artifact({ "appName": "example-api", "environment": "Production", "version": "1.0.0", "wait": true, "confirm": true })
+
+// 4. something wrong? roll back to the last good version
+rollback_app({ "appName": "example-api", "environment": "Production", "confirm": true })
+```
+
+For an **existing** app, `deploy_jar`, `deploy_app`, and `update_app_artifact` all change **only** the
+artifact reference — the runtime, target/space, replicas, and settings are preserved, so a redeploy
+can never silently downgrade the runtime or relocate the app. Infrastructure changes on an existing
+app are rejected; create a new deployment or use the dedicated settings/scale tools instead.
+
+The same flow is available from the CLI: `anc deploy <jarPath> --app <name> --env <env>`.
 
 ---
 
