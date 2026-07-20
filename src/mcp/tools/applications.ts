@@ -4,6 +4,7 @@ import type { AnypointClient } from '../../client/AnypointClient.js';
 import type { CreateDeploymentPayload } from '../../api/CloudHub2Api.js';
 import { mcpError, mcpText, dryRunPreview } from './shared.js';
 import { buildCreatePayload, mergeForArtifactUpdate } from '../../safety/deployment.js';
+import { errorMessage } from '../../utils/errors.js';
 
 type DeploymentSettings = CreateDeploymentPayload['target']['deploymentSettings'];
 
@@ -541,6 +542,172 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     replicas: payload.target.replicas,
                     region: payload.target.targetId,
                     tip: 'Use get_app_status to monitor deployment progress.',
+                });
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'update_app_artifact',
+        {
+            title: 'Update Application Artifact (Safe Redeploy)',
+            description:
+                'Safely redeploys an existing CloudHub 2.0 application to a new artifact version by PATCHing ONLY the application reference. The live Mule runtime, deployment target/space, replica count, resources, and settings are all preserved — this is the correct tool for a production version bump, and is preferred over deploy_app for existing apps. Optionally waits for the deployment to reach a running state. Pass confirm:true to apply; without it you get a dry-run preview of the ref change.',
+            inputSchema: {
+                appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
+                environment: z.string().describe('Environment name (e.g. "Production") or environment ID'),
+                version: z.string().describe('New artifact version to deploy (e.g. "1.4.12")'),
+                artifactId: z.string().optional().describe('Maven artifact ID. Default: keep the existing one.'),
+                groupId: z.string().optional().describe('Maven group ID. Default: keep the existing one.'),
+                packaging: z.string().optional().describe('Artifact packaging. Default: keep existing (usually "jar").'),
+                wait: z
+                    .boolean()
+                    .optional()
+                    .describe('Wait for the redeploy to reach a running state before returning (default: false).'),
+                confirm: z
+                    .boolean()
+                    .optional()
+                    .describe('Set true to apply. When omitted/false, returns a dry-run preview and changes nothing.'),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+        },
+        async ({ appName, environment, version, artifactId, groupId, packaging, wait, confirm }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const existing = await client.cloudHub2.findByName(orgId, env.id, appName);
+
+                if (!existing) {
+                    return mcpText(
+                        `Application "${appName}" not found in ${env.name}. Use deploy_app to create a new deployment.`,
+                    );
+                }
+
+                const merged = mergeForArtifactUpdate(existing, { groupId, artifactId, version, packaging });
+                const oldRef = existing.application?.ref;
+
+                if (!confirm) {
+                    return dryRunPreview({
+                        action: 'update artifact ref (safe redeploy)',
+                        app: appName,
+                        environment: env.name,
+                        current: { ref: oldRef },
+                        next: { ref: merged.application.ref },
+                        preserved: 'runtime, target/space, replicas, resources, settings',
+                    });
+                }
+
+                let deployment = await client.cloudHub2.updateArtifactRef(
+                    orgId,
+                    env.id,
+                    existing.id,
+                    merged.application.ref,
+                );
+
+                let waitResult: string | undefined;
+                if (wait) {
+                    try {
+                        deployment = await client.cloudHub2.waitForDeployment(orgId, env.id, deployment.id);
+                        waitResult = deployment.status;
+                    } catch (waitErr) {
+                        waitResult = `did not settle: ${errorMessage(waitErr)}`;
+                    }
+                }
+
+                return mcpText({
+                    message: `✅ Updated "${appName}" in ${env.name} to v${version}`,
+                    deploymentId: deployment.id,
+                    status: deployment.status,
+                    from: oldRef,
+                    to: merged.application.ref,
+                    preserved: 'runtime, target/space, replicas, resources, settings',
+                    ...(wait ? { waitResult } : { tip: 'Pass wait:true or use get_app_status to monitor progress.' }),
+                });
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'rollback_app',
+        {
+            title: 'Roll Back Application',
+            description:
+                'Rolls an existing CloudHub 2.0 application back to a previous artifact version by PATCHing only the application reference (runtime, target, replicas, and settings are preserved). By default it targets the last successfully deployed version; pass toVersion to roll back to a specific version. Use this to quickly revert a bad deploy. Pass confirm:true to apply; without it you get a dry-run preview.',
+            inputSchema: {
+                appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
+                environment: z.string().describe('Environment name (e.g. "Production") or environment ID'),
+                toVersion: z
+                    .string()
+                    .optional()
+                    .describe('Version to roll back to. Default: the last successfully deployed version.'),
+                wait: z.boolean().optional().describe('Wait for the rollback to reach a running state (default: false).'),
+                confirm: z
+                    .boolean()
+                    .optional()
+                    .describe('Set true to apply. When omitted/false, returns a dry-run preview and changes nothing.'),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+        },
+        async ({ appName, environment, toVersion, wait, confirm }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const existing = await client.cloudHub2.findByName(orgId, env.id, appName);
+
+                if (!existing) {
+                    return mcpText(`Application "${appName}" not found in ${env.name}`);
+                }
+
+                const currentVersion = existing.application?.ref?.version;
+                const lastGood = existing.lastSuccessfulVersion;
+                // Prefer an explicit target; otherwise fall back to the last good version, but only
+                // if it differs from what is currently deployed (else there is nothing to roll back to).
+                const target = toVersion || (lastGood && lastGood !== currentVersion ? lastGood : undefined);
+
+                if (!target) {
+                    return mcpText(
+                        `No rollback target for "${appName}" in ${env.name}. Current version is ${currentVersion}` +
+                            `${lastGood ? ` and last successful is ${lastGood}` : ''}. Pass toVersion to roll back to a specific version.`,
+                    );
+                }
+
+                const merged = mergeForArtifactUpdate(existing, { version: target });
+
+                if (!confirm) {
+                    return dryRunPreview({
+                        action: 'rollback (artifact ref only)',
+                        app: appName,
+                        environment: env.name,
+                        current: { version: currentVersion },
+                        next: { version: target },
+                        preserved: 'runtime, target/space, replicas, resources, settings',
+                    });
+                }
+
+                let deployment = await client.cloudHub2.rollbackToRef(orgId, env.id, existing.id, merged.application.ref);
+
+                let waitResult: string | undefined;
+                if (wait) {
+                    try {
+                        deployment = await client.cloudHub2.waitForDeployment(orgId, env.id, deployment.id);
+                        waitResult = deployment.status;
+                    } catch (waitErr) {
+                        waitResult = `did not settle: ${errorMessage(waitErr)}`;
+                    }
+                }
+
+                return mcpText({
+                    message: `✅ Rolled back "${appName}" in ${env.name}: v${currentVersion} → v${target}`,
+                    deploymentId: deployment.id,
+                    status: deployment.status,
+                    rolledBackFrom: currentVersion,
+                    rolledBackTo: target,
+                    preserved: 'runtime, target/space, replicas, resources, settings',
+                    ...(wait ? { waitResult } : {}),
                 });
             } catch (error) {
                 return mcpError(error);
