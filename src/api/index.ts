@@ -11,6 +11,8 @@ export {
     type CH2Deployment,
     type CH2DeploymentResponse,
     type CreateDeploymentPayload,
+    type ArtifactRef,
+    type DeploymentResources,
 } from './CloudHub2Api.js';
 export { LogsApi, type LogEntry, type LogSearchResponse } from './LogsApi.js';
 export { MonitoringApi, type AppMetricsSummary, type MetricsExport, type MetricDataPoint } from './MonitoringApi.js';

@@ -55,6 +55,23 @@ export class HttpClient {
         });
     }
 
+    /**
+     * POST a multipart/form-data body (e.g. an artifact upload).
+     *
+     * The axios instance sets `Content-Type: application/json` by default; we override it
+     * to `undefined` so axios detects the native `FormData` and sets the multipart boundary
+     * itself. Callers may pass a per-call `timeout` (uploads are far larger than API calls).
+     */
+    async postMultipart<T = unknown>(url: string, form: FormData, config?: AxiosRequestConfig): Promise<T> {
+        return this.rateLimiter.execute(async () => {
+            const response: AxiosResponse<T> = await this.client.post(url, form, {
+                ...config,
+                headers: { ...config?.headers, 'Content-Type': undefined },
+            });
+            return response.data;
+        });
+    }
+
     async put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
         return this.rateLimiter.execute(async () => {
             const response: AxiosResponse<T> = await this.client.put(url, data, config);
