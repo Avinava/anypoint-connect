@@ -119,6 +119,72 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
     );
 
     server.registerTool(
+        'get_deployment_spec',
+        {
+            title: 'Get Deployment Spec',
+            description:
+                'Returns the full current deployment spec for a CloudHub 2.0 application — the "look before you leap" view used before a redeploy or rollback. Includes the exact artifact reference (groupId:artifactId:version:packaging), Mule runtime version, deployment target (a private space ID vs a shared cloudhub-* region), vCores, replica count with per-replica state and location, update strategy, clustering, JVM args, public URL, desired vs last-successful version, and timestamps. Unlike get_app_status this always fetches full deployment detail. Use it to confirm exactly what is running before changing an artifact, and to capture the current ref so you can roll back.',
+            inputSchema: {
+                appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
+                environment: z.string().describe('Environment name (e.g. "Production") or environment ID'),
+            },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ appName, environment }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const found = await client.cloudHub2.findByName(orgId, env.id, appName);
+
+                if (!found) {
+                    return mcpText(`Application "${appName}" not found in ${env.name}`);
+                }
+
+                // Fetch full detail (the list object can be thinner than the single-deployment endpoint).
+                const d = await client.cloudHub2.getDeployment(orgId, env.id, found.id);
+                const settings = d.target?.deploymentSettings;
+                const targetId = d.target?.targetId || '';
+                const isPrivateSpace = !targetId.startsWith('cloudhub-');
+
+                return mcpText({
+                    name: d.name,
+                    deploymentId: d.id,
+                    status: d.status,
+                    ref: d.application?.ref,
+                    runtime: settings?.runtime?.version,
+                    target: {
+                        provider: d.target?.provider,
+                        targetId,
+                        kind: isPrivateSpace ? 'private-space' : 'shared-region',
+                    },
+                    vCores: d.application?.vCores,
+                    resources: settings?.resources,
+                    replicas: {
+                        count: d.target?.replicas?.length ?? 0,
+                        states: d.target?.replicas?.map((r) => ({
+                            id: r.id,
+                            state: r.state,
+                            location: r.deploymentLocation,
+                            version: r.currentDeploymentVersion,
+                        })),
+                    },
+                    updateStrategy: settings?.updateStrategy,
+                    clustered: settings?.clustered,
+                    autoscaling: settings?.autoscaling,
+                    jvm: settings?.jvm,
+                    publicUrl: settings?.http?.inbound?.publicUrl,
+                    desiredVersion: d.desiredVersion,
+                    lastSuccessfulVersion: d.lastSuccessfulVersion,
+                    createdAt: d.createdAt,
+                    updatedAt: d.updatedAt,
+                });
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
         'get_app_resources',
         {
             title: 'Get Application Resources',
