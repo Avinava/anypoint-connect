@@ -101,6 +101,36 @@ describe('CloudHub2Api', () => {
         });
     });
 
+    describe('updateArtifactRef', () => {
+        it('PATCHes a body containing ONLY the artifact ref (no runtime/target/replicas)', async () => {
+            mockPatch.mockResolvedValue({ id: 'dep-1', status: 'APPLYING' });
+            const ref = { groupId: 'org-1', artifactId: 'my-api', version: '2.0.0', packaging: 'jar' };
+
+            await api.updateArtifactRef('org-1', 'env-1', 'dep-1', ref);
+
+            expect(mockPatch).toHaveBeenCalledWith(
+                expect.stringContaining('/org-1/environments/env-1/deployments/dep-1'),
+                { application: { ref } },
+                expect.objectContaining({
+                    headers: expect.objectContaining({ 'X-ANYPNT-ORG-ID': 'org-1', 'X-ANYPNT-ENV-ID': 'env-1' }),
+                }),
+            );
+            // Guard the invariant: the PATCH body must not carry infra that could clobber prod.
+            const body = mockPatch.mock.calls[0][1];
+            expect(Object.keys(body)).toEqual(['application']);
+            expect(Object.keys(body.application)).toEqual(['ref']);
+        });
+    });
+
+    describe('rollbackToRef', () => {
+        it('delegates to a ref-only PATCH', async () => {
+            mockPatch.mockResolvedValue({ id: 'dep-1', status: 'APPLYING' });
+            const ref = { groupId: 'org-1', artifactId: 'my-api', version: '1.0.0', packaging: 'jar' };
+            await api.rollbackToRef('org-1', 'env-1', 'dep-1', ref);
+            expect(mockPatch).toHaveBeenCalledWith(expect.any(String), { application: { ref } }, expect.any(Object));
+        });
+    });
+
     describe('findByName', () => {
         it('should find a deployment by app name (case-insensitive)', async () => {
             const items = [

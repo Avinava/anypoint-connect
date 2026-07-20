@@ -11,26 +11,8 @@ import chalk from 'chalk';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { isProductionEnv, buildDeploySummary, confirmProductionDeploy } from '../safety/guards.js';
+import { buildCreatePayload, mergeForArtifactUpdate } from '../safety/deployment.js';
 import { createClient } from './shared.js';
-import type { CreateDeploymentPayload } from '../api/CloudHub2Api.js';
-
-/** Map a CloudHub 2.0 target ID to its public URL subdomain */
-function regionToSubdomain(region: string): string {
-    const map: Record<string, string> = {
-        'cloudhub-us-east-1': 'us-e1',
-        'cloudhub-us-east-2': 'us-e2',
-        'cloudhub-us-west-2': 'us-w2',
-        'cloudhub-eu-west-1': 'eu-w1',
-        'cloudhub-eu-west-2': 'eu-w2',
-        'cloudhub-eu-central-1': 'eu-c1',
-        'cloudhub-ap-southeast-1': 'ap-se1',
-        'cloudhub-ap-southeast-2': 'ap-se2',
-        'cloudhub-ap-northeast-1': 'ap-ne1',
-        'cloudhub-sa-east-1': 'sa-e1',
-        'cloudhub-ca-central-1': 'ca-c1',
-    };
-    return map[region] || region.replace('cloudhub-', '').replace(/-/g, '');
-}
 
 export function createDeployCommand(): Command {
     const deploy = new Command('deploy')
@@ -112,41 +94,25 @@ export function createDeployCommand(): Command {
                 // ── Deploy ───────────────────────────────────────
                 const spinner = ora('Deploying...').start();
 
-                const payload: CreateDeploymentPayload = {
-                    name: opts.app,
-                    application: {
-                        ref: {
-                            groupId,
-                            artifactId,
-                            version,
-                            packaging: 'jar',
-                        },
-                        desiredState: 'STARTED',
-                    },
-                    target: {
-                        provider: 'MC',
-                        targetId: opts.region,
-                        deploymentSettings: {
-                            runtime: { version: opts.runtime },
-                            http: {
-                                inbound: {
-                                    publicUrl: `${opts.app}.${regionToSubdomain(opts.region)}.cloudhub.io`,
-                                },
-                            },
-                            clustered: false,
-                            enforceDeployingReplicasAcrossNodes: false,
-                            updateStrategy: 'rolling',
-                        },
-                        replicas: parseInt(opts.replicas) || 1,
-                    },
-                };
-
                 let deployment;
                 if (existing) {
-                    spinner.text = 'Updating existing deployment...';
-                    deployment = await client.cloudHub2.updateDeployment(orgId, env.id, existing.id, payload);
+                    // Safe redeploy: PATCH only the artifact ref so the live runtime, target/space,
+                    // replicas, and settings are preserved (previously this clobbered them).
+                    spinner.text = 'Updating artifact reference on existing deployment...';
+                    const merged = mergeForArtifactUpdate(existing, { groupId, artifactId, version });
+                    deployment = await client.cloudHub2.updateArtifactRef(orgId, env.id, existing.id, merged.application.ref);
                 } else {
                     spinner.text = 'Creating new deployment...';
+                    const payload = buildCreatePayload({
+                        appName: opts.app,
+                        groupId,
+                        artifactId,
+                        version,
+                        runtime: opts.runtime,
+                        replicas: parseInt(opts.replicas) || 1,
+                        region: opts.region,
+                        vcores: opts.vcores,
+                    });
                     deployment = await client.cloudHub2.createDeployment(orgId, env.id, payload);
                 }
 
