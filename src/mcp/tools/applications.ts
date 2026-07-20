@@ -2,7 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import type { CreateDeploymentPayload } from '../../api/CloudHub2Api.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText, dryRunPreview } from './shared.js';
+import { buildCreatePayload, mergeForArtifactUpdate } from '../../safety/deployment.js';
 
 type DeploymentSettings = CreateDeploymentPayload['target']['deploymentSettings'];
 
@@ -347,8 +348,12 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     .optional()
                     .describe('Secure (encrypted) application properties as key-value pairs'),
                 jvmArgs: z.string().optional().describe('JVM arguments (e.g. "-XX:MaxMetaspaceSize=256m")'),
+                confirm: z
+                    .boolean()
+                    .optional()
+                    .describe('Set true to apply. When omitted/false, returns a dry-run preview and changes nothing.'),
             },
-            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
         async ({
             appName,
@@ -363,88 +368,114 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
             properties,
             secureProperties,
             jvmArgs,
+            confirm,
         }) => {
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
                 const existing = await client.cloudHub2.findByName(orgId, env.id, appName);
 
-                const targetRegion = region || 'cloudhub-us-east-2';
-
-                // Build configuration if properties are provided
-                const configuration: Record<string, unknown> = {};
-                if (properties || secureProperties) {
-                    configuration['mule.agent.application.properties.service'] = {
-                        applicationName: appName,
-                        ...(properties ? { properties } : {}),
-                        ...(secureProperties ? { secureProperties } : {}),
-                    };
-                }
-
-                const payload: CreateDeploymentPayload = {
-                    name: appName,
-                    application: {
-                        ref: {
-                            groupId,
-                            artifactId,
-                            version,
-                            packaging: 'jar',
-                        },
-                        desiredState: 'STARTED',
-                        ...(Object.keys(configuration).length > 0 ? { configuration } : {}),
-                    },
-                    target: {
-                        provider: 'MC',
-                        targetId: targetRegion,
-                        deploymentSettings: {
-                            runtime: { version: runtime || '4.8.0' },
-                            http: {
-                                inbound: {
-                                    publicUrl: `${appName}.${targetRegion.replace('cloudhub-', '').replace(/-/g, '')}.cloudhub.io`,
-                                },
-                            },
-                            clustered: false,
-                            enforceDeployingReplicasAcrossNodes: false,
-                            updateStrategy: 'rolling',
-                            ...(jvmArgs ? { jvm: { args: jvmArgs } } : {}),
-                        },
-                        replicas: replicas || 1,
-                    },
-                };
-
-                let deployment;
-                let action: string;
-
+                // ── Update path: existing app → SAFE artifact-ref-only redeploy ──
+                // Infra params (runtime/region/vcores/replicas/jvmArgs) are intentionally NOT
+                // restated here; doing so previously clobbered the live deployment. They are
+                // ignored on redeploy and the caller is told so.
                 if (existing) {
-                    deployment = await client.cloudHub2.updateDeployment(orgId, env.id, existing.id, payload);
-                    action = 'Redeployed';
-                } else {
-                    deployment = await client.cloudHub2.createDeployment(orgId, env.id, payload);
-                    action = 'Created new deployment';
+                    const ignored = [
+                        runtime && 'runtime',
+                        region && 'region',
+                        vcores && 'vcores',
+                        replicas && 'replicas',
+                        jvmArgs && 'jvmArgs',
+                        properties && 'properties',
+                        secureProperties && 'secureProperties',
+                    ].filter(Boolean);
+
+                    const merged = mergeForArtifactUpdate(existing, { groupId, artifactId, version });
+                    const currentVersion = existing.application?.ref?.version || null;
+
+                    if (!confirm) {
+                        return dryRunPreview({
+                            action: 'redeploy (artifact ref only)',
+                            app: appName,
+                            environment: env.name,
+                            current: {
+                                version: currentVersion,
+                                runtime: existing.target?.deploymentSettings?.runtime?.version,
+                                targetId: existing.target?.targetId,
+                                replicas: existing.target?.replicas?.length,
+                            },
+                            next: { ref: merged.application.ref },
+                            preserved: 'runtime, target/space, replicas, resources, settings',
+                            ...(ignored.length
+                                ? {
+                                      note: `Ignored on redeploy (use update_app_settings / a fresh deploy to change infra): ${ignored.join(', ')}`,
+                                  }
+                                : {}),
+                        });
+                    }
+
+                    const deployment = await client.cloudHub2.updateArtifactRef(
+                        orgId,
+                        env.id,
+                        existing.id,
+                        merged.application.ref,
+                    );
+
+                    return mcpText({
+                        message: `✅ Redeployed "${appName}" in ${env.name} (artifact ref only)`,
+                        deploymentId: deployment.id,
+                        status: deployment.status,
+                        version: `${groupId}:${artifactId}:${version}`,
+                        previousVersion: currentVersion,
+                        preserved: 'runtime, target/space, replicas, resources, settings',
+                        ...(ignored.length ? { ignored } : {}),
+                        tip: 'Use get_app_status to monitor deployment progress.',
+                    });
                 }
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    message: `✅ ${action} for "${appName}" in ${env.name}`,
-                                    deploymentId: deployment.id,
-                                    status: deployment.status,
-                                    version: `${groupId}:${artifactId}:${version}`,
-                                    runtime: runtime || '4.8.0',
-                                    replicas: replicas || 1,
-                                    region: targetRegion,
-                                    previousVersion: existing?.application?.ref?.version || null,
-                                    tip: 'Use get_app_status to monitor deployment progress.',
-                                },
-                                null,
-                                2,
-                            ),
+                // ── Create path: new app → full payload from the shared builder ──
+                const payload = buildCreatePayload({
+                    appName,
+                    groupId,
+                    artifactId,
+                    version,
+                    runtime,
+                    replicas,
+                    region,
+                    vcores,
+                    properties,
+                    secureProperties,
+                    jvmArgs,
+                });
+
+                if (!confirm) {
+                    return dryRunPreview({
+                        action: 'create new deployment',
+                        app: appName,
+                        environment: env.name,
+                        next: {
+                            version: `${groupId}:${artifactId}:${version}`,
+                            runtime: payload.target.deploymentSettings.runtime.version,
+                            region: payload.target.targetId,
+                            vCores: payload.application.vCores,
+                            replicas: payload.target.replicas,
                         },
-                    ],
-                };
+                    });
+                }
+
+                const deployment = await client.cloudHub2.createDeployment(orgId, env.id, payload);
+
+                return mcpText({
+                    message: `✅ Created new deployment for "${appName}" in ${env.name}`,
+                    deploymentId: deployment.id,
+                    status: deployment.status,
+                    version: `${groupId}:${artifactId}:${version}`,
+                    runtime: payload.target.deploymentSettings.runtime.version,
+                    vCores: payload.application.vCores,
+                    replicas: payload.target.replicas,
+                    region: payload.target.targetId,
+                    tip: 'Use get_app_status to monitor deployment progress.',
+                });
             } catch (error) {
                 return mcpError(error);
             }
