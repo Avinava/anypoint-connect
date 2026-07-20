@@ -6,17 +6,33 @@
 import type { HttpClient } from '../client/HttpClient.js';
 import type { Cache } from '../client/Cache.js';
 
+/**
+ * Maven-style artifact coordinate used both by a live deployment (`CH2Deployment`)
+ * and by a create/update payload (`CreateDeploymentPayload`). Defined once so the two
+ * cannot drift.
+ */
+export interface ArtifactRef {
+    groupId: string;
+    artifactId: string;
+    version: string;
+    packaging: string;
+}
+
+/**
+ * CPU/memory allocation for a deployment. All fields optional so this single shape
+ * serves both the (partial) read response and the (mapper-populated) create payload.
+ */
+export interface DeploymentResources {
+    cpu?: { limit?: string; reserved?: string };
+    memory?: { limit?: string; reserved?: string };
+}
+
 export interface CH2Deployment {
     id: string;
     name: string;
     status: string;
     application: {
-        ref: {
-            groupId: string;
-            artifactId: string;
-            version: string;
-            packaging: string;
-        };
+        ref: ArtifactRef;
         desiredState: string;
         configuration?: Record<string, unknown>;
         integrations?: Record<string, unknown>;
@@ -30,7 +46,7 @@ export interface CH2Deployment {
             runtime?: { version: string; releaseChannel?: string };
             autoscaling?: { enabled: boolean; minReplicas?: number; maxReplicas?: number };
             updateStrategy?: string;
-            resources?: { cpu?: { limit?: string; reserved?: string }; memory?: { limit?: string; reserved?: string } };
+            resources?: DeploymentResources;
             clustered?: boolean;
             enforceDeployingReplicasAcrossNodes?: boolean;
             jvm?: { args?: string };
@@ -57,13 +73,10 @@ export interface CH2DeploymentResponse {
 export interface CreateDeploymentPayload {
     name: string;
     application: {
-        ref: {
-            groupId: string;
-            artifactId: string;
-            version: string;
-            packaging: string;
-        };
+        ref: ArtifactRef;
         desiredState: string;
+        /** CloudHub 2.0 replica size as a decimal vCore value (0.1, 0.2, 0.5, 1, …). */
+        vCores?: number;
         configuration?: {
             'mule.agent.application.properties.service'?: {
                 applicationName: string;
@@ -78,10 +91,7 @@ export interface CreateDeploymentPayload {
         deploymentSettings: {
             runtime: { version: string; releaseChannel?: string };
             http?: { inbound?: { publicUrl?: string } };
-            resources?: {
-                cpu: { limit: string; reserved: string };
-                memory: { limit: string; reserved: string };
-            };
+            resources?: DeploymentResources;
             clustered?: boolean;
             enforceDeployingReplicasAcrossNodes?: boolean;
             updateStrategy?: string;
@@ -237,5 +247,33 @@ export class CloudHub2Api {
             },
             { headers: this.envHeaders(orgId, envId) },
         );
+    }
+
+    /**
+     * Update ONLY the application artifact reference on an existing deployment.
+     * This is the safe redeploy: it PATCHes just `application.ref`, so the live
+     * runtime, target/space, replicas, and settings are all preserved.
+     */
+    async updateArtifactRef(
+        orgId: string,
+        envId: string,
+        deploymentId: string,
+        ref: ArtifactRef,
+    ): Promise<CH2Deployment> {
+        this.cache.delete(`ch2:${orgId}:${envId}`);
+        return this.http.patch<CH2Deployment>(
+            `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
+            { application: { ref } },
+            { headers: this.envHeaders(orgId, envId) },
+        );
+    }
+
+    /**
+     * Roll an application back to a previous artifact reference. Mechanically identical
+     * to `updateArtifactRef` (narrow ref-only PATCH); named separately so callers express
+     * rollback intent and so the two can diverge later if needed.
+     */
+    async rollbackToRef(orgId: string, envId: string, deploymentId: string, ref: ArtifactRef): Promise<CH2Deployment> {
+        return this.updateArtifactRef(orgId, envId, deploymentId, ref);
     }
 }
