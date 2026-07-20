@@ -561,7 +561,10 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                 version: z.string().describe('New artifact version to deploy (e.g. "1.4.12")'),
                 artifactId: z.string().optional().describe('Maven artifact ID. Default: keep the existing one.'),
                 groupId: z.string().optional().describe('Maven group ID. Default: keep the existing one.'),
-                packaging: z.string().optional().describe('Artifact packaging. Default: keep existing (usually "jar").'),
+                packaging: z
+                    .string()
+                    .optional()
+                    .describe('Artifact packaging. Default: keep existing (usually "jar").'),
                 wait: z
                     .boolean()
                     .optional()
@@ -644,7 +647,10 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     .string()
                     .optional()
                     .describe('Version to roll back to. Default: the last successfully deployed version.'),
-                wait: z.boolean().optional().describe('Wait for the rollback to reach a running state (default: false).'),
+                wait: z
+                    .boolean()
+                    .optional()
+                    .describe('Wait for the rollback to reach a running state (default: false).'),
                 confirm: z
                     .boolean()
                     .optional()
@@ -688,7 +694,12 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     });
                 }
 
-                let deployment = await client.cloudHub2.rollbackToRef(orgId, env.id, existing.id, merged.application.ref);
+                let deployment = await client.cloudHub2.rollbackToRef(
+                    orgId,
+                    env.id,
+                    existing.id,
+                    merged.application.ref,
+                );
 
                 let waitResult: string | undefined;
                 if (wait) {

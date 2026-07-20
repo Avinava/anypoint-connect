@@ -94,9 +94,9 @@ describe('buildCreatePayload', () => {
 
     it('nests properties under the mule agent config key', () => {
         const p = buildCreatePayload({ ...baseInput, properties: { DB_URL: 'x' } });
-        expect(
-            p.application.configuration?.['mule.agent.application.properties.service']?.properties,
-        ).toEqual({ DB_URL: 'x' });
+        expect(p.application.configuration?.['mule.agent.application.properties.service']?.properties).toEqual({
+            DB_URL: 'x',
+        });
     });
 });
 
@@ -146,7 +146,12 @@ describe('diffDeployment', () => {
     it('reports no infra changes for a ref-only update mapped onto the same infra', () => {
         const existing = makeExisting();
         // Simulate the server-preserving update: runtime/target unchanged, only version differs.
-        const next = buildCreatePayload({ ...baseInput, version: '1.4.12', runtime: '4.9.18', region: 'private-space-abc' });
+        const next = buildCreatePayload({
+            ...baseInput,
+            version: '1.4.12',
+            runtime: '4.9.18',
+            region: 'private-space-abc',
+        });
         const changes = diffDeployment(existing, next).map((c) => c.field);
         expect(changes).not.toContain('runtime');
         expect(changes).not.toContain('targetId');

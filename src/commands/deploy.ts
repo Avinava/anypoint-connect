@@ -100,7 +100,12 @@ export function createDeployCommand(): Command {
                     // replicas, and settings are preserved (previously this clobbered them).
                     spinner.text = 'Updating artifact reference on existing deployment...';
                     const merged = mergeForArtifactUpdate(existing, { groupId, artifactId, version });
-                    deployment = await client.cloudHub2.updateArtifactRef(orgId, env.id, existing.id, merged.application.ref);
+                    deployment = await client.cloudHub2.updateArtifactRef(
+                        orgId,
+                        env.id,
+                        existing.id,
+                        merged.application.ref,
+                    );
                 } else {
                     spinner.text = 'Creating new deployment...';
                     const payload = buildCreatePayload({

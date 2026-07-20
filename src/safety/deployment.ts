@@ -163,7 +163,11 @@ export function diffDeployment(existing: CH2Deployment, next: CreateDeploymentPa
     };
 
     push('version', existing.application?.ref?.version, next.application?.ref?.version);
-    push('runtime', existing.target?.deploymentSettings?.runtime?.version, next.target?.deploymentSettings?.runtime?.version);
+    push(
+        'runtime',
+        existing.target?.deploymentSettings?.runtime?.version,
+        next.target?.deploymentSettings?.runtime?.version,
+    );
     push('targetId', existing.target?.targetId, next.target?.targetId);
     push('vCores', existing.application?.vCores, next.application?.vCores);
     push('replicas', existing.target?.replicas?.length, next.target?.replicas);
