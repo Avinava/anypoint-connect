@@ -1,6 +1,7 @@
 /**
  * MCP Tool Registrar — Exchange tools
- * search_exchange, download_api_spec, compare_environments, get_exchange_asset, publish_app_jar
+ * search_exchange, download_api_spec, compare_environments, get_exchange_asset,
+ * publish_app_jar, deploy_jar
  */
 
 import * as path from 'path';
@@ -9,6 +10,8 @@ import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import { mcpError, mcpText, dryRunPreview } from './shared.js';
 import { validateJarFile } from '../../safety/guards.js';
+import { buildCreatePayload, mergeForArtifactUpdate } from '../../safety/deployment.js';
+import { errorMessage } from '../../utils/errors.js';
 
 export function registerExchangeTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -290,6 +293,164 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                         packaging: 'jar',
                     },
                     tip: 'Deploy it with deploy_app (new app) or update_app_artifact (existing app).',
+                });
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'deploy_jar',
+        {
+            title: 'Deploy JAR (Publish + Deploy)',
+            description:
+                'One-call deploy of a locally built Mule application JAR: publishes it to Exchange, then deploys it to CloudHub 2.0 — creating the app if it does not exist, or safely updating just the artifact ref if it does. For an existing app, create-only settings (runtime, region, vcores, replicas, jvmArgs, properties) are rejected, because an update must not restate infrastructure. Pass confirm:true to run; without it you get a dry-run preview and nothing is published or deployed.',
+            inputSchema: {
+                jarPath: z.string().describe('Path to the built .jar file (e.g. "target/example-api-1.0.0-mule-application.jar")'),
+                appName: z.string().describe('CloudHub 2.0 application name'),
+                environment: z.string().describe('Environment name (e.g. "Sandbox", "Production") or environment ID'),
+                assetId: z.string().optional().describe('Exchange asset ID (also used as the deployment artifactId). Default: jar filename without .jar.'),
+                assetVersion: z.string().optional().describe('Exchange asset version and deployment version (default: "1.0.0").'),
+                groupId: z.string().optional().describe('Exchange/Maven group ID (default: the organization ID).'),
+                // create-only settings (rejected when the app already exists)
+                runtime: z.string().optional().describe('[new app only] Mule runtime version (default: "4.8.0").'),
+                replicas: z.number().min(1).max(8).optional().describe('[new app only] Number of replicas (default: 1).'),
+                region: z.string().optional().describe('[new app only] CloudHub 2.0 target region (default: "cloudhub-us-east-2").'),
+                vcores: z.string().optional().describe('[new app only] vCore size (default: "0.1").'),
+                properties: z.record(z.string()).optional().describe('[new app only] Application properties.'),
+                secureProperties: z.record(z.string()).optional().describe('[new app only] Secure application properties.'),
+                jvmArgs: z.string().optional().describe('[new app only] JVM arguments.'),
+                wait: z.boolean().optional().describe('Wait for the deployment to reach a running state (default: false).'),
+                confirm: z
+                    .boolean()
+                    .optional()
+                    .describe('Set true to publish and deploy. When omitted/false, returns a dry-run preview only.'),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+        },
+        async ({
+            jarPath,
+            appName,
+            environment,
+            assetId,
+            assetVersion,
+            groupId,
+            runtime,
+            replicas,
+            region,
+            vcores,
+            properties,
+            secureProperties,
+            jvmArgs,
+            wait,
+            confirm,
+        }) => {
+            try {
+                const check = validateJarFile(jarPath);
+                if (!check.valid) {
+                    return mcpText(`❌ ${check.error}`);
+                }
+
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const existing = await client.cloudHub2.findByName(orgId, env.id, appName);
+
+                const resolvedGroupId = groupId || orgId;
+                const resolvedAssetId = assetId || path.basename(jarPath).replace(/\.jar$/, '');
+                const resolvedVersion = assetVersion || '1.0.0';
+
+                // An update must not restate infra — reject create-only settings for an existing app.
+                if (existing) {
+                    const rejected = [
+                        runtime && 'runtime',
+                        region && 'region',
+                        vcores && 'vcores',
+                        replicas && 'replicas',
+                        jvmArgs && 'jvmArgs',
+                        properties && 'properties',
+                        secureProperties && 'secureProperties',
+                    ].filter(Boolean);
+                    if (rejected.length) {
+                        return mcpText(
+                            `❌ "${appName}" already exists in ${env.name}; deploy_jar updates only the artifact ref and cannot change infrastructure. ` +
+                                `Remove these settings (${rejected.join(', ')}), or use update_app_settings / a fresh deploy to change them.`,
+                        );
+                    }
+                }
+
+                const ref = { groupId: resolvedGroupId, artifactId: resolvedAssetId, version: resolvedVersion, packaging: 'jar' };
+                const action = existing ? 'publish + update artifact ref' : 'publish + create deployment';
+
+                if (!confirm) {
+                    return dryRunPreview({
+                        action,
+                        app: appName,
+                        environment: env.name,
+                        publish: {
+                            groupId: resolvedGroupId,
+                            assetId: resolvedAssetId,
+                            version: resolvedVersion,
+                            classifier: 'mule-application',
+                        },
+                        deploy: existing
+                            ? { mode: 'update', from: existing.application?.ref, to: ref, preserved: 'runtime, target/space, replicas, resources, settings' }
+                            : { mode: 'create', ref, runtime: runtime || '4.8.0', region: region || 'cloudhub-us-east-2', vcores: vcores || '0.1', replicas: replicas || 1 },
+                    });
+                }
+
+                // 1) Publish the jar to Exchange.
+                const published = await client.exchange.publishAppAsset(
+                    orgId,
+                    resolvedGroupId,
+                    resolvedAssetId,
+                    resolvedVersion,
+                    jarPath,
+                );
+
+                // 2) Deploy: safe ref-only update for an existing app, full create otherwise.
+                let deployment;
+                if (existing) {
+                    const merged = mergeForArtifactUpdate(existing, ref);
+                    deployment = await client.cloudHub2.updateArtifactRef(orgId, env.id, existing.id, merged.application.ref);
+                } else {
+                    const payload = buildCreatePayload({
+                        appName,
+                        groupId: resolvedGroupId,
+                        artifactId: resolvedAssetId,
+                        version: resolvedVersion,
+                        runtime,
+                        replicas,
+                        region,
+                        vcores,
+                        properties,
+                        secureProperties,
+                        jvmArgs,
+                    });
+                    deployment = await client.cloudHub2.createDeployment(orgId, env.id, payload);
+                }
+
+                let waitResult: string | undefined;
+                if (wait) {
+                    try {
+                        deployment = await client.cloudHub2.waitForDeployment(orgId, env.id, deployment.id);
+                        waitResult = deployment.status;
+                    } catch (waitErr) {
+                        waitResult = `did not settle: ${errorMessage(waitErr)}`;
+                    }
+                }
+
+                return mcpText({
+                    message: `✅ Deployed "${appName}" to ${env.name} (${existing ? 'updated' : 'created'})`,
+                    published: {
+                        groupId: published.groupId,
+                        assetId: published.assetId,
+                        version: published.version,
+                    },
+                    deploymentId: deployment.id,
+                    status: deployment.status,
+                    ...(existing ? { previousVersion: existing.application?.ref?.version } : {}),
+                    ...(wait ? { waitResult } : { tip: 'Use get_app_status to monitor progress.' }),
                 });
             } catch (error) {
                 return mcpError(error);
