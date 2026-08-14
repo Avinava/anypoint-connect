@@ -51,6 +51,12 @@ tool is **dry-run by default**: without `confirm: true` it returns a preview of 
 change and does nothing. Re-calling with `confirm: true` applies. `deploy_jar`'s preview publishes
 nothing either — publish happens only on confirm.
 
+Application deletion is stricter: `delete_app` returns the current deployment ID in its preview,
+then requires both `confirm: true` and that exact `expectedDeploymentId`. Production additionally
+requires `confirmProduction: true`. A recreated deployment with the same name has a different ID and
+is never deleted under an earlier confirmation. The CLI provides the equivalent flow through
+`anc apps delete`, `--confirm <deployment-id>`, and `--allow-production`.
+
 ## Tools
 
 | Tool | Kind | Purpose |
@@ -61,6 +67,7 @@ nothing either — publish happens only on confirm.
 | `rollback_app` | write | Revert to a complete historical artifact ref, skipping lifecycle-only specs |
 | `deploy_jar` | write | Publish + create-or-update in one call |
 | `deploy_app` | write | Create new, or safe artifact-only redeploy of an existing app |
+| `delete_app` | write | Delete only a deployment using bound two-step confirmation |
 
 ## Conventions & open points
 

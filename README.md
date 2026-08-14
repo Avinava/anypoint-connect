@@ -305,6 +305,13 @@ anc apps status my-api --env Sandbox
 anc apps restart my-api --env Production      # prod confirmation prompt
 anc apps scale my-api --env Sandbox --replicas 2
 anc apps scale my-api --env Production --replicas 3 --force  # skip confirmation
+
+# Delete is a bound two-step operation
+anc apps delete my-api --env Sandbox           # dry run; prints deployment ID
+anc apps delete my-api --env Sandbox --confirm <DEPLOYMENT_ID>
+
+# Production also requires an explicit environment acknowledgement
+anc apps delete my-api --env Production --confirm <DEPLOYMENT_ID> --allow-production
 ```
 
 ### Deploy
@@ -484,6 +491,7 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 | `scale_app` | ⚠️ Scale application replicas (1–8) |
 | `stop_app` | ⚠️ Stop an application without deleting the deployment |
 | `start_app` | Start a previously stopped application |
+| `delete_app` | ⚠️ Permanently delete a deployment using dry-run plus deployment-ID-bound confirmation |
 | **Logs & Analysis** | |
 | `get_logs` | Fetch recent log entries with optional keyword search |
 | `download_logs` | Download logs for a time range |
@@ -626,6 +634,13 @@ app are rejected; create a new deployment or use the dedicated settings/scale to
 configuration. Existing plain properties and protected-property placeholders are merged into the
 request, while artifact coordinates, desired state, runtime, target, replicas, and other
 configuration services are left untouched.
+
+Application deletion uses a stronger two-step confirmation. Call `delete_app` first without
+`confirm` to receive the current deployment ID and a complete preview. Re-call with `confirm: true`
+and that exact `expectedDeploymentId`; production also requires `confirmProduction: true`. If the
+application was recreated between calls, the changed deployment ID makes the operation fail closed.
+Deletion removes only the deployment and preserves its Exchange artifact and unrelated Anypoint
+resources. Use `stop_app` instead when the deployment configuration must remain available.
 
 The same flow is available from the CLI: `anc deploy <jarPath> --app <name> --env <env>`.
 

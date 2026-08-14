@@ -30,6 +30,7 @@ export {
     type ArtifactRef,
     type ApplicationPropertiesService,
     type ApplicationConfigurationUpdate,
+    type DeploymentDeletionVerification,
 } from './api/CloudHub2Api.js';
 export { LogsApi, type LogEntry } from './api/LogsApi.js';
 export {
