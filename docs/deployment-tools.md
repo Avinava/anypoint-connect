@@ -36,6 +36,10 @@ JSON content-type is cleared so the multipart boundary is set correctly).
 - **Existing app** → PATCH **only** `application.ref` via `CloudHub2Api.updateArtifactRef`. Runtime,
   target/space, replicas, resources, and settings are preserved by the server. This is the invariant
   that prevents accidental downgrades/relocations, and it is enforced by a regression test.
+- **Settings update** → PATCH only `application.configuration` with the merged application-properties
+  service. Existing masked secure-property entries are copied unchanged unless replaced by the
+  caller; artifact and infrastructure fields are never replayed.
+- **Start/stop** → PATCH only `application.desiredState`.
 
 Both the MCP tools and the CLI `deploy` command call the same shared builder/merge helpers, so the
 two surfaces cannot drift.
@@ -54,7 +58,7 @@ nothing either — publish happens only on confirm.
 | `get_deployment_spec` | read | Full current spec — the look-before-you-leap view |
 | `publish_app_jar` | write | Upload a built JAR to Exchange |
 | `update_app_artifact` | write | Safe redeploy — artifact ref only, optional wait |
-| `rollback_app` | write | Revert to a previous version (last good by default) |
+| `rollback_app` | write | Revert to a complete historical artifact ref, skipping lifecycle-only specs |
 | `deploy_jar` | write | Publish + create-or-update in one call |
 | `deploy_app` | write | Create new, or safe artifact-only redeploy of an existing app |
 

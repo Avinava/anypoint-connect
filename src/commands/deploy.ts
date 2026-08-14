@@ -39,7 +39,7 @@ export function createDeployCommand(): Command {
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
 
                 // Check for existing deployment
-                const existing = await client.cloudHub2.findByName(orgId, env.id, opts.app);
+                const existing = await client.cloudHub2.findDetailByName(orgId, env.id, opts.app);
 
                 // If no JAR provided but app exists, show status
                 if (!jarPath && existing) {

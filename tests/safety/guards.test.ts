@@ -147,7 +147,7 @@ describe('buildDeploySummary', () => {
             name: 'my-api',
             status: 'APPLIED',
             application: { ref: { version: '1.1.0' } },
-            target: { replicas: [{}] },
+            target: { replicas: 1 },
         } as any;
         const summary = buildDeploySummary('my-api', 'Sandbox', existing, '1.2.0');
         expect(summary).toContain('1.1.0');

@@ -9,9 +9,14 @@ export {
 export {
     CloudHub2Api,
     type CH2Deployment,
+    type CH2DeploymentSummary,
     type CH2DeploymentResponse,
+    type CH2DeploymentSpec,
+    type CH2Replica,
     type CreateDeploymentPayload,
     type ArtifactRef,
+    type ApplicationPropertiesService,
+    type ApplicationConfigurationUpdate,
     type DeploymentResources,
 } from './CloudHub2Api.js';
 export { LogsApi, type LogEntry, type LogSearchResponse } from './LogsApi.js';

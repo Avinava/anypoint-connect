@@ -22,7 +22,7 @@ export function createAppsCommand(): Command {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
 
-                const deployments = await client.cloudHub2.getDeployments(orgId, env.id);
+                const deployments = await client.cloudHub2.getDetailedDeployments(orgId, env.id);
 
                 if (deployments.length === 0) {
                     log.info(`No applications deployed in ${env.name}`);
@@ -38,7 +38,7 @@ export function createAppsCommand(): Command {
                         d.status,
                         d.application?.ref?.version || '-',
                         d.target?.deploymentSettings?.runtime?.version || '-',
-                        String(d.target?.replicas?.length || 0),
+                        String(d.target?.replicas || 0),
                     ]),
                 );
             } catch (error) {
@@ -57,7 +57,7 @@ export function createAppsCommand(): Command {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
 
-                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
+                const deployment = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!deployment) {
                     log.error(`Application "${appName}" not found in ${env.name}`);
@@ -71,11 +71,14 @@ export function createAppsCommand(): Command {
                 log.kv('Group ID', deployment.application?.ref?.groupId || '-');
                 log.kv('Artifact ID', deployment.application?.ref?.artifactId || '-');
 
-                if (deployment.target?.replicas) {
+                if (deployment.replicas) {
                     console.log();
                     log.bold('  Replicas:');
-                    for (const replica of deployment.target.replicas) {
-                        log.kv(`    ${replica.id}`, `${replica.state} (${replica.deploymentLocation || 'unknown'})`);
+                    for (const [index, replica] of deployment.replicas.entries()) {
+                        log.kv(
+                            `    ${replica.id || `replica-${index + 1}`}`,
+                            `${replica.state} (${replica.deploymentLocation || 'unknown'})`,
+                        );
                     }
                 }
 
