@@ -10,7 +10,13 @@
  * These are pure functions (no I/O) so they unit-test cleanly.
  */
 
-import type { ArtifactRef, CH2Deployment, CreateDeploymentPayload } from '../api/CloudHub2Api.js';
+import type {
+    ApplicationPropertiesService,
+    ArtifactRef,
+    CH2Deployment,
+    CH2DeploymentSpec,
+    CreateDeploymentPayload,
+} from '../api/CloudHub2Api.js';
 
 export const DEFAULT_RUNTIME = '4.8.0';
 export const DEFAULT_REGION = 'cloudhub-us-east-2';
@@ -144,6 +150,67 @@ export function mergeForArtifactUpdate(existing: CH2Deployment, ref: Partial<Art
     return { application: { ref: merged } };
 }
 
+export interface RollbackTarget {
+    ref: ArtifactRef;
+    sourceSpecId?: string;
+}
+
+function refsEqual(left: ArtifactRef, right: ArtifactRef): boolean {
+    return (
+        left.groupId === right.groupId &&
+        left.artifactId === right.artifactId &&
+        left.version === right.version &&
+        left.packaging === right.packaging
+    );
+}
+
+/** Resolve a rollback to a complete historical artifact ref without confusing spec IDs with artifact versions. */
+export function resolveRollbackTarget(
+    existing: CH2Deployment,
+    specs: CH2DeploymentSpec[],
+    toVersion?: string,
+): RollbackTarget | null {
+    const current = existing.application.ref;
+    const priorSpecs = specs.filter((spec) => spec.version !== existing.desiredVersion);
+
+    if (toVersion) {
+        const historical = priorSpecs.find(
+            (spec) => spec.application?.ref?.version === toVersion && !refsEqual(spec.application.ref, current),
+        );
+        if (historical) return { ref: historical.application.ref, sourceSpecId: historical.version };
+        if (toVersion === current.version) return null;
+        return { ref: { ...current, version: toVersion } };
+    }
+
+    if (existing.lastSuccessfulVersion && existing.lastSuccessfulVersion !== existing.desiredVersion) {
+        const lastSuccessful = specs.find((spec) => spec.version === existing.lastSuccessfulVersion);
+        if (lastSuccessful?.application?.ref && !refsEqual(lastSuccessful.application.ref, current)) {
+            return { ref: lastSuccessful.application.ref, sourceSpecId: lastSuccessful.version };
+        }
+    }
+
+    const previousArtifact = priorSpecs.find(
+        (spec) => spec.application?.ref && !refsEqual(spec.application.ref, current),
+    );
+    return previousArtifact ? { ref: previousArtifact.application.ref, sourceSpecId: previousArtifact.version } : null;
+}
+
+/** Merge settings while retaining masked secure entries required by the Application Manager API. */
+export function mergeApplicationProperties(
+    existing: CH2Deployment,
+    properties?: Record<string, string>,
+    secureProperties?: Record<string, string>,
+): ApplicationPropertiesService {
+    const configuration = existing.application.configuration ?? {};
+    const service = (configuration['mule.agent.application.properties.service'] ??
+        {}) as Partial<ApplicationPropertiesService>;
+    return {
+        applicationName: existing.name,
+        properties: { ...(service.properties ?? {}), ...(properties ?? {}) },
+        secureProperties: { ...(service.secureProperties ?? {}), ...(secureProperties ?? {}) },
+    };
+}
+
 /** A single field that would change between the live deployment and a proposed payload. */
 export interface DeploymentChange {
     field: string;
@@ -170,7 +237,7 @@ export function diffDeployment(existing: CH2Deployment, next: CreateDeploymentPa
     );
     push('targetId', existing.target?.targetId, next.target?.targetId);
     push('vCores', existing.application?.vCores, next.application?.vCores);
-    push('replicas', existing.target?.replicas?.length, next.target?.replicas);
+    push('replicas', existing.target?.replicas, next.target?.replicas);
 
     return changes;
 }

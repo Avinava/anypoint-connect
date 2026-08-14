@@ -5,6 +5,8 @@ import { describe, it, expect } from 'vitest';
 import {
     buildCreatePayload,
     mergeForArtifactUpdate,
+    mergeApplicationProperties,
+    resolveRollbackTarget,
     diffDeployment,
     parseVcores,
     regionToSubdomain,
@@ -39,11 +41,12 @@ function makeExisting(overrides: Partial<CH2Deployment> = {}): CH2Deployment {
                 updateStrategy: 'rolling',
                 clustered: true,
             },
-            replicas: [
-                { id: 'r1', state: 'STARTED' },
-                { id: 'r2', state: 'STARTED' },
-            ],
+            replicas: 2,
         },
+        replicas: [
+            { id: 'r1', state: 'STARTED' },
+            { id: 'r2', state: 'STARTED' },
+        ],
         ...overrides,
     };
 }
@@ -130,6 +133,95 @@ describe('mergeForArtifactUpdate', () => {
         const payload = mergeForArtifactUpdate(existing, { groupId: 'org-999', version: '2.0.0' });
         expect(payload.application.ref.groupId).toBe('org-999');
         expect(payload.application.ref.artifactId).toBe('example-api');
+    });
+});
+
+describe('resolveRollbackTarget', () => {
+    const spec = (id: string, artifactId: string, version: string) => ({
+        version: id,
+        application: {
+            ref: { groupId: 'org-123', artifactId, version, packaging: 'jar' },
+            desiredState: 'STARTED',
+        },
+        target: {
+            provider: 'MC',
+            targetId: 'private-space-abc',
+            deploymentSettings: { runtime: { version: '4.9.18' } },
+            replicas: 2,
+        },
+    });
+
+    it('uses the last successful spec ref after a failed desired spec', () => {
+        const existing = makeExisting({ desiredVersion: 'spec-new', lastSuccessfulVersion: 'spec-good' });
+        const target = resolveRollbackTarget(existing, [
+            spec('spec-new', 'example-api', '1.4.11'),
+            spec('spec-good', 'example-api', '1.4.10'),
+        ]);
+        expect(target).toEqual({
+            ref: { groupId: 'org-123', artifactId: 'example-api', version: '1.4.10', packaging: 'jar' },
+            sourceSpecId: 'spec-good',
+        });
+    });
+
+    it('skips lifecycle-only specs and selects the newest distinct artifact ref', () => {
+        const existing = makeExisting({ desiredVersion: 'spec-current', lastSuccessfulVersion: 'spec-current' });
+        const target = resolveRollbackTarget(existing, [
+            spec('spec-current', 'example-api', '1.4.11'),
+            spec('spec-stop', 'example-api', '1.4.11'),
+            spec('spec-previous', 'example-api-build-2', '1.0.0'),
+        ]);
+        expect(target?.ref.artifactId).toBe('example-api-build-2');
+        expect(target?.sourceSpecId).toBe('spec-previous');
+    });
+
+    it('resolves an explicit artifact version from history', () => {
+        const existing = makeExisting({ desiredVersion: 'spec-current' });
+        const target = resolveRollbackTarget(
+            existing,
+            [spec('spec-current', 'example-api', '1.4.11'), spec('spec-match', 'example-api-build-1', '1.2.0')],
+            '1.2.0',
+        );
+        expect(target?.ref.artifactId).toBe('example-api-build-1');
+    });
+
+    it('returns null when history contains no distinct target', () => {
+        const existing = makeExisting({ desiredVersion: 'spec-current' });
+        expect(resolveRollbackTarget(existing, [spec('spec-current', 'example-api', '1.4.11')])).toBeNull();
+    });
+});
+
+describe('mergeApplicationProperties', () => {
+    it('preserves existing plain and masked secure settings while overlaying changes', () => {
+        const existing = makeExisting({
+            application: {
+                ref: { groupId: 'org-123', artifactId: 'example-api', version: '1.4.11', packaging: 'jar' },
+                desiredState: 'STOPPED',
+                configuration: {
+                    'mule.agent.application.properties.service': {
+                        applicationName: 'example-api',
+                        properties: { environment: 'test', unchanged: 'yes' },
+                        secureProperties: { credential: '******', token: '******' },
+                    },
+                    'mule.agent.logging.service': { scopeLoggingConfigurations: [] },
+                },
+            },
+        });
+
+        expect(mergeApplicationProperties(existing, { environment: 'staging' }, { credential: 'replacement' })).toEqual(
+            {
+                applicationName: 'example-api',
+                properties: { environment: 'staging', unchanged: 'yes' },
+                secureProperties: { credential: 'replacement', token: '******' },
+            },
+        );
+    });
+
+    it('supports plain-only and secure-only updates', () => {
+        const existing = makeExisting();
+        expect(mergeApplicationProperties(existing, { feature: 'on' }).properties).toEqual({ feature: 'on' });
+        expect(mergeApplicationProperties(existing, undefined, { credential: 'new' }).secureProperties).toEqual({
+            credential: 'new',
+        });
     });
 });
 

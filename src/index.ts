@@ -20,7 +20,17 @@ export {
     type OrgSubscription,
     type OrgDetails,
 } from './api/AccessManagementApi.js';
-export { CloudHub2Api, type CH2Deployment, type CreateDeploymentPayload } from './api/CloudHub2Api.js';
+export {
+    CloudHub2Api,
+    type CH2Deployment,
+    type CH2DeploymentSummary,
+    type CH2DeploymentSpec,
+    type CH2Replica,
+    type CreateDeploymentPayload,
+    type ArtifactRef,
+    type ApplicationPropertiesService,
+    type ApplicationConfigurationUpdate,
+} from './api/CloudHub2Api.js';
 export { LogsApi, type LogEntry } from './api/LogsApi.js';
 export {
     MonitoringApi,

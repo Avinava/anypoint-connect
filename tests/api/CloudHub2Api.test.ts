@@ -66,6 +66,38 @@ describe('CloudHub2Api', () => {
         });
     });
 
+    describe('getDetailedDeployments', () => {
+        it('hydrates thin list records sequentially', async () => {
+            mockGet
+                .mockResolvedValueOnce({
+                    items: [
+                        { id: 'dep-1', name: 'sample-app-1', status: 'APPLIED' },
+                        { id: 'dep-2', name: 'sample-app-2', status: 'APPLIED' },
+                    ],
+                })
+                .mockResolvedValueOnce({ id: 'dep-1', name: 'sample-app-1', application: { ref: {} } })
+                .mockResolvedValueOnce({ id: 'dep-2', name: 'sample-app-2', application: { ref: {} } });
+
+            const result = await api.getDetailedDeployments('org-1', 'env-1');
+
+            expect(result.map((deployment) => deployment.id)).toEqual(['dep-1', 'dep-2']);
+            expect(mockGet.mock.calls[1][0]).toContain('/deployments/dep-1');
+            expect(mockGet.mock.calls[2][0]).toContain('/deployments/dep-2');
+        });
+    });
+
+    describe('getDeploymentSpecs', () => {
+        it('fetches deployment history from the specs endpoint', async () => {
+            mockGet.mockResolvedValue([{ version: 'spec-1' }]);
+            const result = await api.getDeploymentSpecs('org-1', 'env-1', 'dep-1');
+            expect(mockGet).toHaveBeenCalledWith(
+                expect.stringContaining('/deployments/dep-1/specs'),
+                expect.any(Object),
+            );
+            expect(result).toEqual([{ version: 'spec-1' }]);
+        });
+    });
+
     describe('createDeployment', () => {
         it('should POST to the deployments endpoint', async () => {
             const spec = { name: 'new-app' };
@@ -122,6 +154,41 @@ describe('CloudHub2Api', () => {
         });
     });
 
+    describe('updateApplicationConfiguration', () => {
+        it('PATCHes only the application properties configuration', async () => {
+            mockPatch.mockResolvedValue({ id: 'dep-1', status: 'APPLYING' });
+            const service = {
+                applicationName: 'sample-app',
+                properties: { environment: 'test' },
+                secureProperties: { credential: '******' },
+            };
+
+            await api.updateApplicationConfiguration('org-1', 'env-1', 'dep-1', service);
+
+            const body = mockPatch.mock.calls[0][1];
+            expect(body).toEqual({
+                application: {
+                    configuration: {
+                        'mule.agent.application.properties.service': service,
+                    },
+                },
+            });
+            expect(JSON.stringify(body)).not.toMatch(/target|runtime|replicas|desiredState|ref/);
+        });
+    });
+
+    describe('setDesiredState', () => {
+        it('PATCHes only the requested desired state', async () => {
+            mockPatch.mockResolvedValue({ id: 'dep-1', status: 'APPLYING' });
+            await api.setDesiredState('org-1', 'env-1', 'dep-1', 'STOPPED');
+            expect(mockPatch).toHaveBeenCalledWith(
+                expect.any(String),
+                { application: { desiredState: 'STOPPED' } },
+                expect.any(Object),
+            );
+        });
+    });
+
     describe('rollbackToRef', () => {
         it('delegates to a ref-only PATCH', async () => {
             mockPatch.mockResolvedValue({ id: 'dep-1', status: 'APPLYING' });
@@ -148,6 +215,20 @@ describe('CloudHub2Api', () => {
             mockGet.mockResolvedValue({ items: [] });
             const result = await api.findByName('org-1', 'env-1', 'nonexistent');
             expect(result).toBeNull();
+        });
+
+        it('hydrates full detail when requested by name', async () => {
+            mockGet
+                .mockResolvedValueOnce({ items: [{ id: 'dep-1', name: 'sample-app', status: 'APPLIED' }] })
+                .mockResolvedValueOnce({
+                    id: 'dep-1',
+                    name: 'sample-app',
+                    application: { ref: { version: '2.0.0' } },
+                });
+
+            const result = await api.findDetailByName('org-1', 'env-1', 'SAMPLE-APP');
+            expect(result?.application.ref.version).toBe('2.0.0');
+            expect(mockGet).toHaveBeenCalledTimes(2);
         });
     });
 });

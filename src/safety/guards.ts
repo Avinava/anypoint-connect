@@ -39,7 +39,7 @@ export function buildDeploySummary(
     if (existing) {
         const version = existing.application?.ref?.version || 'unknown';
         const status = existing.status || 'unknown';
-        const replicas = existing.target?.replicas?.length || 0;
+        const replicas = existing.target?.replicas || 0;
         lines.push(
             `  ${chalk.dim('Current:')}     v${version} (${status}, ${replicas} replica${replicas !== 1 ? 's' : ''})`,
         );

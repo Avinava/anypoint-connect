@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.1 — Safe Application Updates
+
+### Fixed
+
+- **Application settings can be updated in place.** `update_app_settings` now sends only the
+  application-properties configuration instead of replaying an incomplete deployment returned by
+  the list endpoint. Existing plain properties and masked secure-property entries are preserved.
+- **Lifecycle changes no longer replay deployment infrastructure.** Start and stop operations now
+  PATCH only the requested desired state.
+- **Application reads use the correct response shape.** Status, resources, replica counts and
+  states, timestamps, environment comparisons, and CLI output now hydrate full deployment detail
+  when the list endpoint returns summaries.
+- **Artifact updates resolve current coordinates from deployment detail.** Version-only updates no
+  longer depend on fields absent from list responses.
+- **Rollback resolves deployment history correctly.** Deployment-spec IDs are no longer mistaken
+  for artifact versions; the tool selects a complete historical artifact reference and skips
+  lifecycle-only history entries.
+
+### Internal
+
+- Added separate types for deployment summaries, details, specs, and replica states.
+- Added regression coverage for narrow PATCH bodies, secure-property preservation, detail
+  hydration, and rollback selection.
+
 ## 0.9.0 — Safe Deploy
 
 ### Fixed

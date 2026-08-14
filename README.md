@@ -478,8 +478,8 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 | `get_app_settings` | Read application properties and secure property keys |
 | `deploy_app` | ⚠️ Create a new deployment, or safely redeploy an existing one (artifact ref only). For an existing app, prefer `update_app_artifact` |
 | `update_app_artifact` | ⚠️ Safe production redeploy — change only the artifact version, preserving runtime/target/replicas/settings |
-| `rollback_app` | ⚠️ Roll an app back to a previous version (last successful by default) |
-| `update_app_settings` | ⚠️ Update application properties with merge (triggers rolling restart) |
+| `rollback_app` | ⚠️ Roll an app back to the newest distinct historical artifact, or a requested version |
+| `update_app_settings` | ⚠️ Merge application properties while preserving protected values and deployment infrastructure |
 | `restart_app` | ⚠️ Rolling restart of an application |
 | `scale_app` | ⚠️ Scale application replicas (1–8) |
 | `stop_app` | ⚠️ Stop an application without deleting the deployment |
@@ -573,7 +573,7 @@ The MCP server auto-detects the active profile from the project's `.anypoint-con
 - *"Deploy order-api v1.3.0 to Sandbox with 2 replicas"*
 - *"Publish target/example-api-1.0.0-mule-application.jar and deploy it to Sandbox"*
 - *"Bump example-api in Production to v1.4.12 (artifact only)"*
-- *"Roll example-api back to the last good version"*
+- *"Roll example-api back to its newest distinct historical artifact"*
 - *"Redeploy billing-service to Production with the latest version from Exchange"*
 - *"Update the db.url property for order-api in Sandbox"*
 - *"Stop the test-processor app in Development"*
@@ -613,7 +613,7 @@ get_deployment_spec({ "appName": "example-api", "environment": "Production" })
 // 3. safe production bump — changes only the artifact ref, waits for it to settle
 update_app_artifact({ "appName": "example-api", "environment": "Production", "version": "1.0.0", "wait": true, "confirm": true })
 
-// 4. something wrong? roll back to the last good version
+// 4. something wrong? roll back to the newest distinct historical artifact
 rollback_app({ "appName": "example-api", "environment": "Production", "confirm": true })
 ```
 
@@ -621,6 +621,11 @@ For an **existing** app, `deploy_jar`, `deploy_app`, and `update_app_artifact` a
 artifact reference — the runtime, target/space, replicas, and settings are preserved, so a redeploy
 can never silently downgrade the runtime or relocate the app. Infrastructure changes on an existing
 app are rejected; create a new deployment or use the dedicated settings/scale tools instead.
+
+`update_app_settings` follows the same narrow-update rule: it PATCHes only the application-properties
+configuration. Existing plain properties and protected-property placeholders are merged into the
+request, while artifact coordinates, desired state, runtime, target, replicas, and other
+configuration services are left untouched.
 
 The same flow is available from the CLI: `anc deploy <jarPath> --app <name> --env <env>`.
 

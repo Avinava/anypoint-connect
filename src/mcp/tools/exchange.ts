@@ -123,8 +123,8 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                 ]);
 
                 const [apps1, apps2] = await Promise.all([
-                    client.cloudHub2.getDeployments(orgId, e1.id),
-                    client.cloudHub2.getDeployments(orgId, e2.id),
+                    client.cloudHub2.getDetailedDeployments(orgId, e1.id),
+                    client.cloudHub2.getDetailedDeployments(orgId, e2.id),
                 ]);
 
                 const allNames = new Set([...apps1.map((a) => a.name), ...apps2.map((a) => a.name)]);
@@ -140,14 +140,14 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                                 ? {
                                       status: a1.status,
                                       version: a1.application?.ref?.version || '-',
-                                      replicas: a1.target?.replicas?.length || 0,
+                                      replicas: a1.target?.replicas || 0,
                                   }
                                 : 'NOT DEPLOYED',
                             [e2.name]: a2
                                 ? {
                                       status: a2.status,
                                       version: a2.application?.ref?.version || '-',
-                                      replicas: a2.target?.replicas?.length || 0,
+                                      replicas: a2.target?.replicas || 0,
                                   }
                                 : 'NOT DEPLOYED',
                             versionMatch:
@@ -380,7 +380,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
 
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const existing = await client.cloudHub2.findByName(orgId, env.id, appName);
+                const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 const resolvedGroupId = groupId || orgId;
                 const resolvedAssetId = assetId || path.basename(jarPath).replace(/\.jar$/, '');

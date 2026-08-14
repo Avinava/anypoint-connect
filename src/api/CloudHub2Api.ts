@@ -27,6 +27,32 @@ export interface DeploymentResources {
     memory?: { limit?: string; reserved?: string };
 }
 
+export interface CH2Replica {
+    id?: string;
+    state: string;
+    deploymentLocation?: string;
+    currentDeploymentVersion?: string;
+    reason?: string;
+}
+
+export interface ApplicationPropertiesService {
+    applicationName: string;
+    properties?: Record<string, string>;
+    secureProperties?: Record<string, string>;
+}
+
+export interface CH2DeploymentSummary {
+    id: string;
+    name: string;
+    status: string;
+    creationDate?: number;
+    lastModifiedDate?: number;
+    currentRuntimeVersion?: string;
+    lastSuccessfulRuntimeVersion?: string;
+    application: { status: string };
+    target: { provider: string; targetId: string };
+}
+
 export interface CH2Deployment {
     id: string;
     name: string;
@@ -50,24 +76,45 @@ export interface CH2Deployment {
             clustered?: boolean;
             enforceDeployingReplicasAcrossNodes?: boolean;
             jvm?: { args?: string };
+            [key: string]: unknown;
         };
-        replicas: Array<{
-            id: string;
-            state: string;
-            deploymentLocation?: string;
-            currentDeploymentVersion?: string;
-            reason?: string;
-        }>;
+        replicas: number;
     };
+    replicas: CH2Replica[];
     lastSuccessfulVersion?: string;
     desiredVersion?: string;
-    createdAt?: string;
-    updatedAt?: string;
+    creationDate?: number;
+    lastModifiedDate?: number;
 }
 
 export interface CH2DeploymentResponse {
-    items: CH2Deployment[];
+    items: CH2DeploymentSummary[];
     total: number;
+}
+
+export interface CH2DeploymentSpec {
+    version: string;
+    application: {
+        ref: ArtifactRef;
+        desiredState?: string;
+        configuration?: Record<string, unknown>;
+        integrations?: Record<string, unknown>;
+        vCores?: number;
+    };
+    target?: {
+        provider?: string;
+        targetId?: string;
+        deploymentSettings?: Partial<CH2Deployment['target']['deploymentSettings']>;
+        replicas?: number;
+    };
+}
+
+export interface ApplicationConfigurationUpdate {
+    application: {
+        configuration: {
+            'mule.agent.application.properties.service': ApplicationPropertiesService;
+        };
+    };
 }
 
 export interface CreateDeploymentPayload {
@@ -119,7 +166,7 @@ export class CloudHub2Api {
     /**
      * List all CH2 deployments in an environment
      */
-    async getDeployments(orgId: string, envId: string): Promise<CH2Deployment[]> {
+    async getDeployments(orgId: string, envId: string): Promise<CH2DeploymentSummary[]> {
         return this.cache.getOrCompute(`ch2:${orgId}:${envId}`, async () => {
             const response = await this.http.get<CH2DeploymentResponse>(
                 `${BASE}/organizations/${orgId}/environments/${envId}/deployments`,
@@ -135,6 +182,27 @@ export class CloudHub2Api {
     async getDeployment(orgId: string, envId: string, deploymentId: string): Promise<CH2Deployment> {
         return this.http.get<CH2Deployment>(
             `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
+            { headers: this.envHeaders(orgId, envId) },
+        );
+    }
+
+    /**
+     * Fetch full deployment detail for every application in an environment.
+     * Requests are intentionally sequential so large environments do not burst the API.
+     */
+    async getDetailedDeployments(orgId: string, envId: string): Promise<CH2Deployment[]> {
+        const summaries = await this.getDeployments(orgId, envId);
+        const details: CH2Deployment[] = [];
+        for (const summary of summaries) {
+            details.push(await this.getDeployment(orgId, envId, summary.id));
+        }
+        return details;
+    }
+
+    /** List deployment specifications in API order (newest first). */
+    async getDeploymentSpecs(orgId: string, envId: string, deploymentId: string): Promise<CH2DeploymentSpec[]> {
+        return this.http.get<CH2DeploymentSpec[]>(
+            `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/specs`,
             { headers: this.envHeaders(orgId, envId) },
         );
     }
@@ -181,9 +249,15 @@ export class CloudHub2Api {
     /**
      * Find deployment by app name
      */
-    async findByName(orgId: string, envId: string, appName: string): Promise<CH2Deployment | null> {
+    async findByName(orgId: string, envId: string, appName: string): Promise<CH2DeploymentSummary | null> {
         const deployments = await this.getDeployments(orgId, envId);
         return deployments.find((d) => d.name.toLowerCase() === appName.toLowerCase()) || null;
+    }
+
+    /** Resolve an application by name and hydrate its complete deployment detail. */
+    async findDetailByName(orgId: string, envId: string, appName: string): Promise<CH2Deployment | null> {
+        const summary = await this.findByName(orgId, envId, appName);
+        return summary ? this.getDeployment(orgId, envId, summary.id) : null;
     }
 
     /**
@@ -193,7 +267,7 @@ export class CloudHub2Api {
         orgId: string,
         envId: string,
         deploymentId: string,
-        onStatus?: (status: string, replicas: CH2Deployment['target']['replicas']) => void,
+        onStatus?: (status: string, replicas: CH2Replica[]) => void,
         timeoutMs: number = 300000,
     ): Promise<CH2Deployment> {
         const startTime = Date.now();
@@ -203,7 +277,7 @@ export class CloudHub2Api {
             const deployment = await this.getDeployment(orgId, envId, deploymentId);
 
             if (onStatus) {
-                onStatus(deployment.status, deployment.target.replicas);
+                onStatus(deployment.status, deployment.replicas);
             }
 
             // Terminal states
@@ -225,12 +299,44 @@ export class CloudHub2Api {
      * Restart an application (triggers rolling restart)
      */
     async restartApp(orgId: string, envId: string, deploymentId: string): Promise<CH2Deployment> {
+        return this.setDesiredState(orgId, envId, deploymentId, 'STARTED');
+    }
+
+    /** Start or stop an application without replaying the rest of its deployment. */
+    async setDesiredState(
+        orgId: string,
+        envId: string,
+        deploymentId: string,
+        desiredState: 'STARTED' | 'STOPPED',
+    ): Promise<CH2Deployment> {
         this.cache.delete(`ch2:${orgId}:${envId}`);
         return this.http.patch<CH2Deployment>(
             `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
             {
-                application: { desiredState: 'STARTED' },
+                application: { desiredState },
             },
+            { headers: this.envHeaders(orgId, envId) },
+        );
+    }
+
+    /** Update application properties without replaying artifact or infrastructure fields. */
+    async updateApplicationConfiguration(
+        orgId: string,
+        envId: string,
+        deploymentId: string,
+        propertiesService: ApplicationPropertiesService,
+    ): Promise<CH2Deployment> {
+        this.cache.delete(`ch2:${orgId}:${envId}`);
+        const payload: ApplicationConfigurationUpdate = {
+            application: {
+                configuration: {
+                    'mule.agent.application.properties.service': propertiesService,
+                },
+            },
+        };
+        return this.http.patch<CH2Deployment>(
+            `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
+            payload,
             { headers: this.envHeaders(orgId, envId) },
         );
     }

@@ -1,12 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import type { CreateDeploymentPayload } from '../../api/CloudHub2Api.js';
 import { mcpError, mcpText, dryRunPreview } from './shared.js';
-import { buildCreatePayload, mergeForArtifactUpdate } from '../../safety/deployment.js';
+import {
+    buildCreatePayload,
+    mergeApplicationProperties,
+    mergeForArtifactUpdate,
+    resolveRollbackTarget,
+} from '../../safety/deployment.js';
 import { errorMessage } from '../../utils/errors.js';
-
-type DeploymentSettings = CreateDeploymentPayload['target']['deploymentSettings'];
 
 export function registerApplicationTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -26,7 +28,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const deployments = await client.cloudHub2.getDeployments(orgId, env.id);
+                const deployments = await client.cloudHub2.getDetailedDeployments(orgId, env.id);
 
                 return {
                     content: [
@@ -39,7 +41,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                                     version: d.application?.ref?.version,
                                     runtime: d.target?.deploymentSettings?.runtime?.version,
                                     vCores: d.application?.vCores,
-                                    replicas: d.target?.replicas?.length,
+                                    replicas: d.target?.replicas,
                                     id: d.id,
                                 })),
                                 null,
@@ -70,7 +72,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
+                const deployment = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!deployment) {
                     return {
@@ -99,13 +101,15 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                                     jvm: deployment.target?.deploymentSettings?.jvm,
                                     clustered: deployment.target?.deploymentSettings?.clustered,
                                     updateStrategy: deployment.target?.deploymentSettings?.updateStrategy,
-                                    replicas: deployment.target?.replicas?.map((r) => ({
+                                    replicas: deployment.replicas?.map((r) => ({
                                         id: r.id,
                                         state: r.state,
                                         location: r.deploymentLocation,
                                     })),
                                     publicUrl: deployment.target?.deploymentSettings?.http?.inbound?.publicUrl,
-                                    updatedAt: deployment.updatedAt,
+                                    updatedAt: deployment.lastModifiedDate
+                                        ? new Date(deployment.lastModifiedDate).toISOString()
+                                        : undefined,
                                 },
                                 null,
                                 2,
@@ -135,14 +139,12 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const found = await client.cloudHub2.findByName(orgId, env.id, appName);
+                const d = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
-                if (!found) {
+                if (!d) {
                     return mcpText(`Application "${appName}" not found in ${env.name}`);
                 }
 
-                // Fetch full detail (the list object can be thinner than the single-deployment endpoint).
-                const d = await client.cloudHub2.getDeployment(orgId, env.id, found.id);
                 const settings = d.target?.deploymentSettings;
                 const targetId = d.target?.targetId || '';
                 const isPrivateSpace = !targetId.startsWith('cloudhub-');
@@ -161,8 +163,8 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     vCores: d.application?.vCores,
                     resources: settings?.resources,
                     replicas: {
-                        count: d.target?.replicas?.length ?? 0,
-                        states: d.target?.replicas?.map((r) => ({
+                        count: d.target?.replicas ?? 0,
+                        states: d.replicas?.map((r) => ({
                             id: r.id,
                             state: r.state,
                             location: r.deploymentLocation,
@@ -176,8 +178,8 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     publicUrl: settings?.http?.inbound?.publicUrl,
                     desiredVersion: d.desiredVersion,
                     lastSuccessfulVersion: d.lastSuccessfulVersion,
-                    createdAt: d.createdAt,
-                    updatedAt: d.updatedAt,
+                    createdAt: d.creationDate ? new Date(d.creationDate).toISOString() : undefined,
+                    updatedAt: d.lastModifiedDate ? new Date(d.lastModifiedDate).toISOString() : undefined,
                 });
             } catch (error) {
                 return mcpError(error);
@@ -200,7 +202,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const deployments = await client.cloudHub2.getDeployments(orgId, env.id);
+                const deployments = await client.cloudHub2.getDetailedDeployments(orgId, env.id);
 
                 const resources = deployments.map((d) => ({
                     name: d.name,
@@ -208,7 +210,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     vCores: d.application?.vCores,
                     cpu: d.target?.deploymentSettings?.resources?.cpu,
                     memory: d.target?.deploymentSettings?.resources?.memory,
-                    replicas: d.target?.replicas?.length ?? 0,
+                    replicas: d.target?.replicas ?? 0,
                     autoscaling: d.target?.deploymentSettings?.autoscaling,
                     jvm: d.target?.deploymentSettings?.jvm,
                     clustered: d.target?.deploymentSettings?.clustered,
@@ -252,15 +254,13 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
+                const detail = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
-                if (!deployment) {
+                if (!detail) {
                     return {
                         content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
                     };
                 }
-
-                const detail = await client.cloudHub2.getDeployment(orgId, env.id, deployment.id);
 
                 const config = (detail.application?.configuration ?? {}) as Record<string, unknown>;
                 const propertiesService = config['mule.agent.application.properties.service'] as
@@ -440,7 +440,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const existing = await client.cloudHub2.findByName(orgId, env.id, appName);
+                const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 // ── Update path: existing app → SAFE artifact-ref-only redeploy ──
                 // Infra params (runtime/region/vcores/replicas/jvmArgs) are intentionally NOT
@@ -469,7 +469,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                                 version: currentVersion,
                                 runtime: existing.target?.deploymentSettings?.runtime?.version,
                                 targetId: existing.target?.targetId,
-                                replicas: existing.target?.replicas?.length,
+                                replicas: existing.target?.replicas,
                             },
                             next: { ref: merged.application.ref },
                             preserved: 'runtime, target/space, replicas, resources, settings',
@@ -580,7 +580,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const existing = await client.cloudHub2.findByName(orgId, env.id, appName);
+                const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!existing) {
                     return mcpText(
@@ -639,14 +639,14 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
         {
             title: 'Roll Back Application',
             description:
-                'Rolls an existing CloudHub 2.0 application back to a previous artifact version by PATCHing only the application reference (runtime, target, replicas, and settings are preserved). By default it targets the last successfully deployed version; pass toVersion to roll back to a specific version. Use this to quickly revert a bad deploy. Pass confirm:true to apply; without it you get a dry-run preview.',
+                'Rolls an existing CloudHub 2.0 application back to a previous artifact by PATCHing only the application reference (runtime, target, replicas, and settings are preserved). By default it resolves the last successful or newest distinct historical artifact ref; pass toVersion to select a specific artifact version. Pass confirm:true to apply; without it you get a dry-run preview.',
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
                 environment: z.string().describe('Environment name (e.g. "Production") or environment ID'),
                 toVersion: z
                     .string()
                     .optional()
-                    .describe('Version to roll back to. Default: the last successfully deployed version.'),
+                    .describe('Artifact version to roll back to. Default: newest distinct historical artifact.'),
                 wait: z
                     .boolean()
                     .optional()
@@ -662,44 +662,34 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
             try {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const existing = await client.cloudHub2.findByName(orgId, env.id, appName);
+                const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!existing) {
                     return mcpText(`Application "${appName}" not found in ${env.name}`);
                 }
 
-                const currentVersion = existing.application?.ref?.version;
-                const lastGood = existing.lastSuccessfulVersion;
-                // Prefer an explicit target; otherwise fall back to the last good version, but only
-                // if it differs from what is currently deployed (else there is nothing to roll back to).
-                const target = toVersion || (lastGood && lastGood !== currentVersion ? lastGood : undefined);
+                const specs = await client.cloudHub2.getDeploymentSpecs(orgId, env.id, existing.id);
+                const target = resolveRollbackTarget(existing, specs, toVersion);
 
                 if (!target) {
                     return mcpText(
-                        `No rollback target for "${appName}" in ${env.name}. Current version is ${currentVersion}` +
-                            `${lastGood ? ` and last successful is ${lastGood}` : ''}. Pass toVersion to roll back to a specific version.`,
+                        `No distinct rollback target for "${appName}" in ${env.name}. ` +
+                            'Pass toVersion to select a specific artifact version.',
                     );
                 }
-
-                const merged = mergeForArtifactUpdate(existing, { version: target });
 
                 if (!confirm) {
                     return dryRunPreview({
                         action: 'rollback (artifact ref only)',
                         app: appName,
                         environment: env.name,
-                        current: { version: currentVersion },
-                        next: { version: target },
+                        current: { ref: existing.application.ref, specId: existing.desiredVersion },
+                        next: { ref: target.ref, sourceSpecId: target.sourceSpecId },
                         preserved: 'runtime, target/space, replicas, resources, settings',
                     });
                 }
 
-                let deployment = await client.cloudHub2.rollbackToRef(
-                    orgId,
-                    env.id,
-                    existing.id,
-                    merged.application.ref,
-                );
+                let deployment = await client.cloudHub2.rollbackToRef(orgId, env.id, existing.id, target.ref);
 
                 let waitResult: string | undefined;
                 if (wait) {
@@ -712,11 +702,12 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                 }
 
                 return mcpText({
-                    message: `✅ Rolled back "${appName}" in ${env.name}: v${currentVersion} → v${target}`,
+                    message: `✅ Rolled back "${appName}" in ${env.name}: ${existing.application.ref.version} → ${target.ref.version}`,
                     deploymentId: deployment.id,
                     status: deployment.status,
-                    rolledBackFrom: currentVersion,
-                    rolledBackTo: target,
+                    rolledBackFrom: existing.application.ref,
+                    rolledBackTo: target.ref,
+                    sourceSpecId: target.sourceSpecId,
                     preserved: 'runtime, target/space, replicas, resources, settings',
                     ...(wait ? { waitResult } : {}),
                 });
@@ -748,7 +739,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
         },
         async ({ appName, environment, properties, secureProperties }) => {
             try {
-                if (!properties && !secureProperties) {
+                if (Object.keys(properties ?? {}).length + Object.keys(secureProperties ?? {}).length === 0) {
                     return {
                         content: [
                             {
@@ -762,52 +753,17 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
 
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
+                const detail = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
-                if (!deployment) {
+                if (!detail) {
                     return {
                         content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
                         isError: true,
                     };
                 }
 
-                // Fetch current deployment details to merge properties
-                const detail = await client.cloudHub2.getDeployment(orgId, env.id, deployment.id);
-                const existingConfig = (detail.application?.configuration ?? {}) as Record<string, unknown>;
-                const existingService = (existingConfig['mule.agent.application.properties.service'] ?? {}) as Record<
-                    string,
-                    unknown
-                >;
-                const existingProps = (existingService.properties ?? {}) as Record<string, string>;
-                const existingSecure = (existingService.secureProperties ?? {}) as Record<string, string>;
-
-                const mergedProps = { ...existingProps, ...(properties || {}) };
-                const mergedSecure = { ...existingSecure, ...(secureProperties || {}) };
-
-                const runtimeVersion = deployment.target.deploymentSettings?.runtime?.version || '4.8.0';
-
-                await client.cloudHub2.updateDeployment(orgId, env.id, deployment.id, {
-                    name: deployment.name,
-                    application: {
-                        ref: deployment.application.ref,
-                        desiredState: 'STARTED',
-                        configuration: {
-                            'mule.agent.application.properties.service': {
-                                applicationName: deployment.name,
-                                properties: mergedProps,
-                                secureProperties: mergedSecure,
-                            },
-                        },
-                    },
-                    target: {
-                        provider: 'MC',
-                        targetId: deployment.target.targetId,
-                        deploymentSettings: {
-                            ...deployment.target.deploymentSettings,
-                            runtime: { version: runtimeVersion },
-                        } as DeploymentSettings,
-                    },
-                });
+                const merged = mergeApplicationProperties(detail, properties, secureProperties);
+                await client.cloudHub2.updateApplicationConfiguration(orgId, env.id, detail.id, merged);
 
                 return {
                     content: [
@@ -857,23 +813,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     };
                 }
 
-                const runtimeVersion = deployment.target.deploymentSettings?.runtime?.version || '4.8.0';
-
-                await client.cloudHub2.updateDeployment(orgId, env.id, deployment.id, {
-                    name: deployment.name,
-                    application: {
-                        ref: deployment.application.ref,
-                        desiredState: 'STOPPED',
-                    },
-                    target: {
-                        provider: 'MC',
-                        targetId: deployment.target.targetId,
-                        deploymentSettings: {
-                            ...deployment.target.deploymentSettings,
-                            runtime: { version: runtimeVersion },
-                        } as DeploymentSettings,
-                    },
-                });
+                await client.cloudHub2.setDesiredState(orgId, env.id, deployment.id, 'STOPPED');
 
                 return {
                     content: [
@@ -914,23 +854,7 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                     };
                 }
 
-                const runtimeVersion = deployment.target.deploymentSettings?.runtime?.version || '4.8.0';
-
-                await client.cloudHub2.updateDeployment(orgId, env.id, deployment.id, {
-                    name: deployment.name,
-                    application: {
-                        ref: deployment.application.ref,
-                        desiredState: 'STARTED',
-                    },
-                    target: {
-                        provider: 'MC',
-                        targetId: deployment.target.targetId,
-                        deploymentSettings: {
-                            ...deployment.target.deploymentSettings,
-                            runtime: { version: runtimeVersion },
-                        } as DeploymentSettings,
-                    },
-                });
+                await client.cloudHub2.setDesiredState(orgId, env.id, deployment.id, 'STARTED');
 
                 return {
                     content: [
