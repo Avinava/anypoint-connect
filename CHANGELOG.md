@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.10.0 — Bound Application Deletion
+
+### Added
+
+- **`delete_app` MCP tool.** Application deletion is dry-run by default and requires a second call
+  bound to the exact deployment ID. Production deletion also requires a separate acknowledgement.
+- **`anc apps delete` CLI command.** The CLI uses the same deployment-ID confirmation and
+  production guard as MCP.
+
+### Safety
+
+- Deletion removes only the CloudHub deployment. Exchange artifacts and other Anypoint resources
+  are left untouched, and the preview recommends `stop_app` when configuration should be retained.
+- Post-delete verification bypasses cached deployment lists, detects a replacement deployment with
+  the same name, and reports when CloudHub accepts deletion but absence is not yet observable.
+
 ## 0.9.1 — Safe Application Updates
 
 ### Fixed

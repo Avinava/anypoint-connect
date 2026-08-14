@@ -8,6 +8,7 @@ import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { printTable } from '../utils/formatter.js';
 import { isProductionEnv, confirmProductionDeploy } from '../safety/guards.js';
+import { buildApplicationDeletionPreview, deploymentIdMatches } from '../safety/deletion.js';
 import { createClient } from './shared.js';
 
 export function createAppsCommand(): Command {
@@ -89,6 +90,102 @@ export function createAppsCommand(): Command {
             } catch (error) {
                 log.error(`Failed to get status: ${errorMessage(error)}`);
                 process.exit(1);
+            }
+        });
+
+    apps.command('delete')
+        .description(
+            'Permanently delete an application deployment (dry run unless --confirm matches its deployment ID)',
+        )
+        .argument('<appName>', 'Application name')
+        .requiredOption('-e, --env <name>', 'Environment name or ID')
+        .option('--confirm <deploymentId>', 'Delete only if the current deployment has this exact ID')
+        .option('--allow-production', 'Explicitly allow deletion from a production environment', false)
+        .action(async (appName: string, opts) => {
+            try {
+                const client = createClient();
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+                const deployment = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
+
+                if (!deployment) {
+                    if (opts.confirm) {
+                        log.success(`Deployment is already absent from ${env.name}`);
+                        return;
+                    }
+                    log.error(`Application "${appName}" not found in ${env.name}`);
+                    process.exitCode = 1;
+                    return;
+                }
+
+                const preview = buildApplicationDeletionPreview(deployment, env);
+
+                if (!opts.confirm) {
+                    log.header('Delete application deployment — dry run');
+                    log.kv('App', preview.app);
+                    log.kv('Environment', preview.environment);
+                    log.kv('Deployment ID', preview.deploymentId);
+                    log.kv('Status', preview.status);
+                    log.kv(
+                        'Artifact',
+                        `${preview.artifactRef.groupId}:${preview.artifactRef.artifactId}:${preview.artifactRef.version}`,
+                    );
+                    log.kv('Runtime', preview.runtime || '-');
+                    log.kv('Target', preview.targetId);
+                    log.kv('Replicas', preview.replicas);
+                    log.kv('Production', preview.production);
+                    log.warn(
+                        'This permanently deletes the deployment configuration. The Exchange artifact is preserved.',
+                    );
+                    log.info(
+                        `Re-run with --confirm ${preview.deploymentId}${preview.production ? ' --allow-production' : ''}`,
+                    );
+                    return;
+                }
+
+                if (!deploymentIdMatches(opts.confirm, deployment.id)) {
+                    log.error(
+                        `Deletion refused: confirmation ID does not match the current deployment (${deployment.id}).`,
+                    );
+                    process.exitCode = 1;
+                    return;
+                }
+
+                if (isProductionEnv(env.name, env.isProduction) && !opts.allowProduction) {
+                    log.error('Deletion refused: production requires --allow-production.');
+                    process.exitCode = 1;
+                    return;
+                }
+
+                await client.cloudHub2.deleteDeployment(orgId, env.id, deployment.id);
+                const verification = await client.cloudHub2.waitForDeploymentDeletion(
+                    orgId,
+                    env.id,
+                    deployment.name,
+                    deployment.id,
+                );
+
+                if (verification.replacementDeploymentId) {
+                    log.error(
+                        'The original deployment was deleted, but a new deployment with the same name was detected.',
+                    );
+                    process.exitCode = 1;
+                    return;
+                }
+
+                if (!verification.verifiedAbsent) {
+                    log.warn(
+                        verification.deletionState
+                            ? 'CloudHub marks the deployment as DELETED, but its tombstone remains visible in the list.'
+                            : 'CloudHub accepted deletion, but absence was not verified within 60 seconds.',
+                    );
+                    return;
+                }
+
+                log.success(`Deleted deployment from ${env.name} and verified it is absent`);
+            } catch (error) {
+                log.error(`Delete failed: ${errorMessage(error)}`);
+                process.exitCode = 1;
             }
         });
 

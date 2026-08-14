@@ -17,6 +17,7 @@ export {
     type ArtifactRef,
     type ApplicationPropertiesService,
     type ApplicationConfigurationUpdate,
+    type DeploymentDeletionVerification,
     type DeploymentResources,
 } from './CloudHub2Api.js';
 export { LogsApi, type LogEntry, type LogSearchResponse } from './LogsApi.js';

@@ -131,6 +131,60 @@ describe('CloudHub2Api', () => {
                 }),
             );
         });
+
+        it('verifies absence using a fresh deployment list', async () => {
+            mockGet.mockResolvedValueOnce({
+                items: [{ id: 'dep-1', name: 'sample-app', status: 'APPLIED' }],
+            });
+            await api.getDeployments('org-1', 'env-1');
+
+            mockGet.mockResolvedValueOnce({ items: [] });
+            const result = await api.waitForDeploymentDeletion('org-1', 'env-1', 'sample-app', 'dep-1', 0, 0);
+
+            expect(result).toEqual({ verifiedAbsent: true });
+            expect(mockGet).toHaveBeenCalledTimes(2);
+        });
+
+        it('reports a replacement deployment with the same name', async () => {
+            mockGet.mockResolvedValue({
+                items: [{ id: 'dep-2', name: 'sample-app', status: 'APPLIED' }],
+            });
+
+            const result = await api.waitForDeploymentDeletion('org-1', 'env-1', 'sample-app', 'dep-1', 0, 0);
+
+            expect(result).toEqual({ verifiedAbsent: false, replacementDeploymentId: 'dep-2' });
+        });
+
+        it('reports an unverified deletion when the original deployment remains at timeout', async () => {
+            mockGet.mockResolvedValue({
+                items: [{ id: 'dep-1', name: 'sample-app', status: 'DELETING' }],
+            });
+
+            const result = await api.waitForDeploymentDeletion('org-1', 'env-1', 'sample-app', 'dep-1', 0, 0);
+
+            expect(result).toEqual({ verifiedAbsent: false, currentDeploymentId: 'dep-1' });
+        });
+
+        it('reports a platform-confirmed deletion tombstone separately from an unknown timeout', async () => {
+            mockGet
+                .mockResolvedValueOnce({
+                    items: [{ id: 'dep-1', name: 'sample-app', status: 'FAILED' }],
+                })
+                .mockResolvedValueOnce({
+                    id: 'dep-1',
+                    name: 'sample-app',
+                    status: 'FAILED',
+                    application: { desiredState: 'DELETED' },
+                });
+
+            const result = await api.waitForDeploymentDeletion('org-1', 'env-1', 'sample-app', 'dep-1', 0, 0);
+
+            expect(result).toEqual({
+                verifiedAbsent: false,
+                deletionState: 'DELETED',
+                currentDeploymentId: 'dep-1',
+            });
+        });
     });
 
     describe('updateArtifactRef', () => {

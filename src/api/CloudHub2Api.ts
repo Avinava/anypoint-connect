@@ -117,6 +117,13 @@ export interface ApplicationConfigurationUpdate {
     };
 }
 
+export interface DeploymentDeletionVerification {
+    verifiedAbsent: boolean;
+    deletionState?: 'DELETED';
+    replacementDeploymentId?: string;
+    currentDeploymentId?: string;
+}
+
 export interface CreateDeploymentPayload {
     name: string;
     application: {
@@ -244,6 +251,50 @@ export class CloudHub2Api {
         await this.http.delete(`${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`, {
             headers: this.envHeaders(orgId, envId),
         });
+    }
+
+    /**
+     * Verify that a deleted deployment disappears from the environment list without
+     * allowing the list cache to hide progress. A deployment recreated under the
+     * same name is reported separately so callers never mistake it for the target.
+     */
+    async waitForDeploymentDeletion(
+        orgId: string,
+        envId: string,
+        appName: string,
+        deletedDeploymentId: string,
+        timeoutMs: number = 60000,
+        pollIntervalMs: number = 2000,
+    ): Promise<DeploymentDeletionVerification> {
+        const startedAt = Date.now();
+
+        while (true) {
+            this.cache.delete(`ch2:${orgId}:${envId}`);
+            const current = await this.findByName(orgId, envId, appName);
+
+            if (!current) return { verifiedAbsent: true };
+            if (current.id !== deletedDeploymentId) {
+                return { verifiedAbsent: false, replacementDeploymentId: current.id };
+            }
+            if (Date.now() - startedAt >= timeoutMs) {
+                try {
+                    const detail = await this.getDeployment(orgId, envId, current.id);
+                    if (detail.application?.desiredState === 'DELETED') {
+                        return {
+                            verifiedAbsent: false,
+                            deletionState: 'DELETED',
+                            currentDeploymentId: current.id,
+                        };
+                    }
+                } catch {
+                    // The list and detail endpoints can converge at different times. Do not
+                    // claim absence unless the fresh list itself no longer contains the app.
+                }
+                return { verifiedAbsent: false, currentDeploymentId: current.id };
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+        }
     }
 
     /**

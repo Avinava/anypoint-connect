@@ -8,6 +8,7 @@ import {
     mergeForArtifactUpdate,
     resolveRollbackTarget,
 } from '../../safety/deployment.js';
+import { buildApplicationDeletionPreview, deploymentIdMatches } from '../../safety/deletion.js';
 import { errorMessage } from '../../utils/errors.js';
 
 export function registerApplicationTools(server: McpServer, client: AnypointClient) {
@@ -782,6 +783,142 @@ export function registerApplicationTools(server: McpServer, client: AnypointClie
                         },
                     ],
                 };
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'delete_app',
+        {
+            title: 'Delete Application Deployment',
+            description:
+                'Permanently deletes a CloudHub 2.0 application deployment while leaving its Exchange artifact and other Anypoint resources untouched. This is a bound two-step operation: call without confirm for a preview, then re-call with confirm:true and the exact expectedDeploymentId from that preview. Production also requires confirmProduction:true. Use stop_app instead when the deployment configuration should be preserved.',
+            inputSchema: {
+                appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
+                environment: z.string().describe('Environment name or ID'),
+                confirm: z.boolean().optional().describe('Set true only after reviewing the dry-run preview.'),
+                expectedDeploymentId: z
+                    .string()
+                    .optional()
+                    .describe(
+                        'Exact deployment ID returned by the dry-run preview; binds confirmation to one deployment.',
+                    ),
+                confirmProduction: z
+                    .boolean()
+                    .optional()
+                    .describe('Required in addition to confirm:true when the resolved environment is production.'),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+        },
+        async ({ appName, environment, confirm, expectedDeploymentId, confirmProduction }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const deployment = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
+
+                if (!deployment) {
+                    if (confirm && expectedDeploymentId) {
+                        return mcpText({
+                            deleted: false,
+                            alreadyAbsent: true,
+                            verifiedAbsent: true,
+                            app: appName,
+                            environment: env.name,
+                            expectedDeploymentId,
+                        });
+                    }
+                    return {
+                        ...mcpText({ message: `Application "${appName}" not found in ${env.name}` }),
+                        isError: true as const,
+                    };
+                }
+
+                const preview = buildApplicationDeletionPreview(deployment, env);
+
+                if (!confirm) {
+                    return dryRunPreview({
+                        ...preview,
+                        confirmation: {
+                            confirm: true,
+                            expectedDeploymentId: deployment.id,
+                            ...(preview.production ? { confirmProduction: true } : {}),
+                        },
+                    });
+                }
+
+                if (!deploymentIdMatches(expectedDeploymentId, deployment.id)) {
+                    return {
+                        ...mcpText({
+                            message:
+                                'Deletion refused: expectedDeploymentId is missing or does not match the current deployment.',
+                            expectedDeploymentId: expectedDeploymentId ?? null,
+                            currentDeploymentId: deployment.id,
+                            app: deployment.name,
+                            environment: env.name,
+                        }),
+                        isError: true as const,
+                    };
+                }
+
+                if (preview.production && !confirmProduction) {
+                    return {
+                        ...mcpText({
+                            message: 'Deletion refused: production requires confirmProduction:true.',
+                            app: deployment.name,
+                            environment: env.name,
+                            deploymentId: deployment.id,
+                        }),
+                        isError: true as const,
+                    };
+                }
+
+                await client.cloudHub2.deleteDeployment(orgId, env.id, deployment.id);
+                const verification = await client.cloudHub2.waitForDeploymentDeletion(
+                    orgId,
+                    env.id,
+                    deployment.name,
+                    deployment.id,
+                );
+
+                if (verification.replacementDeploymentId) {
+                    return {
+                        ...mcpText({
+                            deletionAccepted: true,
+                            verifiedAbsent: false,
+                            replacementDetected: true,
+                            deletedDeploymentId: deployment.id,
+                            replacementDeploymentId: verification.replacementDeploymentId,
+                            message:
+                                'The original deployment was deleted, but a new deployment now uses the same name.',
+                        }),
+                        isError: true as const,
+                    };
+                }
+
+                if (!verification.verifiedAbsent) {
+                    return mcpText({
+                        deletionAccepted: true,
+                        verifiedAbsent: false,
+                        ...(verification.deletionState ? { deletionState: verification.deletionState } : {}),
+                        deploymentId: deployment.id,
+                        app: deployment.name,
+                        environment: env.name,
+                        message: verification.deletionState
+                            ? 'CloudHub marks the deployment as DELETED, but its tombstone remains visible in the list.'
+                            : 'CloudHub accepted deletion, but absence was not verified within 60 seconds.',
+                    });
+                }
+
+                return mcpText({
+                    deleted: true,
+                    verifiedAbsent: true,
+                    deploymentId: deployment.id,
+                    app: deployment.name,
+                    environment: env.name,
+                    preserved: preview.preserved,
+                });
             } catch (error) {
                 return mcpError(error);
             }
