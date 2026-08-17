@@ -16,10 +16,10 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v6
+              uses: actions/checkout@v7
 
             - name: Setup Node.js ${{ matrix.node-version }}
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@v7
               with:
                   node-version: ${{ matrix.node-version }}
                   cache: 'npm'
@@ -56,3 +56,24 @@ jobs:
               run: |
                   # Verify MCP server loads without crashing (will fail on missing config, but should import cleanly)
                   node -e "import('./dist/mcp.js').catch(() => process.exit(0))" || true
+
+    docs:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Setup Python
+              uses: actions/setup-python@v7
+              with:
+                  python-version: '3.12'
+                  cache: pip
+                  cache-dependency-path: requirements-docs.txt
+
+            - name: Build the documentation site
+              # --strict turns a broken cross-link, missing anchor, or page left out
+              # of the nav into a failure here rather than a warning in the deploy run.
+              run: |
+                  pip install -r requirements-docs.txt
+                  mkdocs build --strict

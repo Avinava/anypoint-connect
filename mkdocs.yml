@@ -1,0 +1,98 @@
+site_name: anypoint-connect
+site_description: CLI and MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets.
+site_url: https://avinava.github.io/anypoint-connect/
+site_author: Avi
+copyright: MIT licensed
+
+repo_url: https://github.com/Avinava/anypoint-connect
+repo_name: Avinava/anypoint-connect
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: .site
+
+# Planning notes are gitignored because they contain real organization
+# identifiers. Excluding them here means a local build cannot publish one either.
+exclude_docs: |
+    PLAN-*.md
+
+# With `mkdocs build --strict` in CI, these turn a broken cross-link, a missing
+# anchor, or a page left out of the nav into a failed build rather than a warning
+# nobody reads.
+validation:
+    omitted_files: warn
+    absolute_links: warn
+    unrecognized_links: warn
+    anchors: warn
+
+theme:
+    name: material
+    icon:
+        logo: material/cloud-check-outline
+        repo: fontawesome/brands/github
+    features:
+        - content.action.edit
+        - content.code.copy
+        - navigation.instant
+        - navigation.sections
+        - navigation.top
+        - navigation.tracking
+        - search.highlight
+        - search.suggest
+        - toc.follow
+    palette:
+        - media: '(prefers-color-scheme: light)'
+          scheme: default
+          primary: black
+          accent: indigo
+          toggle:
+              icon: material/weather-night
+              name: Switch to dark mode
+        - media: '(prefers-color-scheme: dark)'
+          scheme: slate
+          primary: black
+          accent: indigo
+          toggle:
+              icon: material/weather-sunny
+              name: Switch to light mode
+
+markdown_extensions:
+    - admonition
+    - attr_list
+    - md_in_html
+    - tables
+    - toc:
+          permalink: true
+    - pymdownx.details
+    - pymdownx.superfences:
+          custom_fences:
+              - name: mermaid
+                class: mermaid
+                format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+    - Home: index.md
+    - Setup:
+          - Getting started: getting-started.md
+          - Profiles and multiple orgs: profiles.md
+          - Access readiness: readiness.md
+    - Using it:
+          - CLI reference: cli-reference.md
+          - MCP server: mcp.md
+          - Tool catalog: tools.md
+          - Safety model: safety.md
+          - Deploying a JAR: deployment-tools.md
+          - Library API: library.md
+          - Troubleshooting: troubleshooting.md
+    - Reference:
+          - Architecture: architecture.md
+          - Ecosystem: ecosystem.md
+
+extra:
+    social:
+        - icon: fontawesome/brands/github
+          link: https://github.com/Avinava/anypoint-connect
+          name: anypoint-connect on GitHub
+        - icon: fontawesome/brands/npm
+          link: https://www.npmjs.com/package/@sfdxy/anypoint-connect
+          name: '@sfdxy/anypoint-connect on npm'
