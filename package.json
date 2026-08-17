@@ -1,6 +1,6 @@
 {
     "name": "@sfdxy/anypoint-connect",
-    "version": "0.10.0",
+    "version": "0.11.0",
     "description": "CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets",
     "type": "module",
     "main": "./dist/index.js",
@@ -20,7 +20,7 @@
         "format:check": "prettier --check ."
     },
     "engines": {
-        "node": ">=18.0.0"
+        "node": ">=20.0.0"
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.12.1",
@@ -45,7 +45,7 @@
         "type": "git",
         "url": "git+https://github.com/Avinava/anypoint-connect.git"
     },
-    "homepage": "https://github.com/Avinava/anypoint-connect#readme",
+    "homepage": "https://avinava.github.io/anypoint-connect/",
     "bugs": {
         "url": "https://github.com/Avinava/anypoint-connect/issues"
     },

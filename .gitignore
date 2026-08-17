@@ -7,3 +7,6 @@ coverage/
 
 # Seed material — never commit (contains real identifiers)
 docs/PLAN-jar-deployment-tools.md
+
+# mkdocs build output
+.site/

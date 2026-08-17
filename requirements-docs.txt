@@ -1,0 +1,2 @@
+# Documentation site only. The CLI and MCP server have no Python dependency.
+mkdocs-material==9.7.7
