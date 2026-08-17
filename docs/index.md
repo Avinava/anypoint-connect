@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" alt="anypoint-connect" width="600" />
+
 # anypoint-connect
 
 A CLI, MCP server, and TypeScript library for Anypoint Platform: deploy applications, tail and analyze
