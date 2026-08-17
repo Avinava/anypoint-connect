@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@sfdxy/anypoint-connect"><img src="https://img.shields.io/npm/v/@sfdxy/anypoint-connect?style=flat-square&color=34d399" alt="npm version" /></a>
   <a href="https://github.com/Avinava/anypoint-connect/actions"><img src="https://img.shields.io/github/actions/workflow/status/Avinava/anypoint-connect/ci.yml?style=flat-square&color=38bdf8" alt="CI" /></a>
-  <a href="https://github.com/Avinava/anypoint-connect/blob/master/LICENSE"><img src="https://img.shields.io/npm/l/@sfdxy/anypoint-connect?style=flat-square&color=818cf8" alt="License" /></a>
+  <a href="https://github.com/Avinava/anypoint-connect/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@sfdxy/anypoint-connect?style=flat-square&color=818cf8" alt="License" /></a>
   <a href="https://www.npmjs.com/package/@sfdxy/anypoint-connect"><img src="https://img.shields.io/npm/dm/@sfdxy/anypoint-connect?style=flat-square&color=fbbf24" alt="Downloads" /></a>
 </p>
 
@@ -14,12 +14,15 @@
 </p>
 
 <p align="center">
-  <a href="#architecture">Architecture</a> •
-  <a href="#setup">Setup</a> •
-  <a href="#cli-reference">CLI Reference</a> •
-  <a href="#mcp-server">MCP Server</a> •
-  <a href="#programmatic-usage">Library</a>
+  <a href="https://avinava.github.io/anypoint-connect/">Documentation</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#what-it-does">Capabilities</a> •
+  <a href="#mcp-server">MCP</a> •
+  <a href="#safety">Safety</a> •
+  <a href="#ecosystem">Ecosystem</a>
 </p>
+
+---
 
 ## Quick Start
 
@@ -37,616 +40,103 @@ anc auth login
 anc auth status
 ```
 
-> **Don't have a Client ID yet?** See [Create a Connected App](#2-create-a-connected-app-in-anypoint-platform) below.
-
----
-
-## Setup
-
-### 1. Install
+No Connected App yet? The four-step setup, including the exact scopes to grant, is in
+[Getting started](https://avinava.github.io/anypoint-connect/getting-started/). Requires Node.js
+`>=20.0.0`.
 
 ```bash
-# Global install from npm (recommended)
-npm install -g @sfdxy/anypoint-connect
-```
-
-<details>
-<summary>Install from source</summary>
-
-```bash
-git clone https://github.com/Avinava/anypoint-connect.git
-cd anypoint-connect
-npm install && npm run build
-npm link   # makes "anc" available globally
-```
-
-</details>
-
-Verify the install:
-
-```bash
-anc --version
-```
-
-### 2. Create a Connected App in Anypoint Platform
-
-You need a **Connected App** in Anypoint to authenticate. Here's how to create one:
-
-1. Log in to [Anypoint Platform](https://anypoint.mulesoft.com)
-2. Go to **Access Management → Connected Apps**
-3. Click **Create app**, choose **App that acts on a user's behalf**
-4. Set the **Redirect URI** to:
-   ```
-   http://localhost:3000/api/callback
-   ```
-5. Grant these scopes:
-
-   | Scope Category | Permissions |
-   |---------------|-------------|
-   | **General** | View Organization, View Environment |
-   | **Runtime Manager** | Read Applications, Create/Modify Applications |
-   | **CloudHub** | Read Applications, Manage Applications |
-   | **Monitoring** | Read Metrics |
-   | **Design Center** | Read/Write Designer |
-   | **Exchange** | Exchange Contributor |
-   | **Audit Logs** | View Audit Logs *(optional)* |
-
-6. Copy the **Client ID** and **Client Secret** — you'll need them in the next step.
-
-### 3. Configure Credentials
-
-Run the interactive setup and paste your Client ID and Secret when prompted:
-
-```bash
-anc config init
-```
-
-```
-Anypoint Connect Setup — Profile: default
-  Credentials saved to: ~/.anypoint-connect/profiles/default/config.json
-  Tokens saved to: ~/.anypoint-connect/profiles/default/tokens.enc (AES-256-GCM)
-
-  Client ID: <paste your Client ID>
-  Client Secret: <paste your Client Secret>
-  Callback URL: (http://localhost:3000/api/callback)
-  Base URL: (https://anypoint.mulesoft.com)
-```
-
-Verify your config:
-
-```bash
-anc config show
-```
-
-### 4. Authenticate
-
-This opens your browser for OAuth login and stores encrypted tokens locally:
-
-```bash
-anc auth login
-```
-
-Check your auth status anytime:
-
-```bash
-anc auth status
-```
-
-### 5. You're Ready!
-
-```bash
-# List apps in an environment
 anc apps list --env Sandbox
-
-# Tail logs
 anc logs tail my-api --env Sandbox
-
-# Check deployment metrics
 anc monitor view --env Production
 ```
 
----
+Working across several organizations? Use named profiles —
+[Profiles and multiple orgs](https://avinava.github.io/anypoint-connect/profiles/).
 
-## Multi-Org / Multi-Profile Setup
+## What it does
 
-If you work across multiple Anypoint organizations, use **named profiles**:
+| Area | Examples |
+| --- | --- |
+| Applications | Status, deployment spec, resources, settings, deploy, redeploy, rollback, restart, scale, stop, start, delete |
+| Logs | Tail, download, error clustering with context windows, recurring patterns, statistical health |
+| Monitoring | Request metrics, percentiles, time series, per-replica, JVM memory and GC, freeform AMQL |
+| Exchange | Search, asset detail, spec download, JAR publication, environment comparison |
+| API Manager | Instances, policies, SLA tiers, alerts |
+| Design Center | Projects, files, read, update, publish |
+| Platform | Environments, entitlements, audit log |
+| Anypoint MQ | Queues, depth and throughput, dead-letter browsing, test publishing |
+| Object Store v2 | Stores, keys, values |
 
-```bash
-# Create separate profiles
-anc config init --profile org-a
-anc config init --profile org-b
+Every command is documented in the
+[CLI reference](https://avinava.github.io/anypoint-connect/cli-reference/).
 
-# Authenticate each
-anc auth login --profile org-a
-anc auth login --profile org-b
+## MCP server
 
-# Bind a project directory to a profile
-cd ~/projects/org-a-integrations
-anc config use org-a
-# Creates .anypoint-connect.json → { "profile": "org-a" }
-# All commands in this folder now auto-use "org-a"
-```
-
-### Managing Config
-
-```bash
-anc config show                      # Show config (secrets masked)
-anc config show --profile org-a      # Show specific profile
-anc config set defaultEnv Production # Update a value
-anc config profiles                  # List all profiles
-
-# Override per-session
-ANYPOINT_PROFILE=org-b anc apps list --env Sandbox
-```
-
-### Config Resolution
-
-Config uses **named profiles** for multi-org support. A profile is first resolved, then credentials within that profile:
-
-**Profile resolution** (highest priority wins):
-
-| Priority | Source | Example |
-|----------|--------|---------|
-| **1** | `--profile` CLI flag | `anc apps list --profile org-a --env Sandbox` |
-| **2** | `ANYPOINT_PROFILE` env var | `export ANYPOINT_PROFILE=org-a` |
-| **3** | `.anypoint-connect.json` in project | `{ "profile": "org-a" }` (walks up from cwd) |
-| **4** | Fallback | `"default"` |
-
-**Credential resolution** within a profile (highest priority wins):
-
-| Priority | Source | When to use |
-|----------|--------|-------------|
-| **1 (highest)** | Environment variables | CI/CD pipelines, Docker, per-session overrides |
-| **2** | Profile config.json | Day-to-day development — persists per profile |
-| **3 (lowest)** | `.env` in cwd | Legacy/project-local fallback |
-
-Storage layout:
-
-```
-~/.anypoint-connect/
-└── profiles/
-    ├── default/
-    │   ├── config.json     OAuth credentials (chmod 600)
-    │   └── tokens.enc      AES-256-GCM encrypted tokens
-    └── org-a/
-        ├── config.json
-        └── tokens.enc
-```
-
----
-
-## Architecture
-
-```mermaid
-graph LR
-    CLI["CLI — anc"] --> AC["AnypointClient"]
-    MCP["MCP Server"] --> AC
-    LIB["Library"] --> AC
-
-    AC --> HTTP["HttpClient"]
-    HTTP --> AP["Anypoint Platform API"]
-
-    AC --> CH2["CloudHub2"]
-    AC --> MON["Monitoring"]
-    AC --> LOGS["Logs"]
-    AC --> EX["Exchange"]
-    AC --> APIM["API Manager"]
-    AC --> DC["Design Center"]
-    AC --> AUDIT["Audit Log"]
-    AC --> MQ["Anypoint MQ"]
-    AC --> OS["Object Store"]
-```
-
-<details>
-<summary>Source tree</summary>
-
-```
-src/
-├── auth/              OAuth2 + encrypted token storage
-│   ├── OAuthFlow.ts         Browser callback at /api/callback
-│   ├── TokenManager.ts      Auto-refresh with 5-min buffer
-│   ├── FileStore.ts         AES-256-GCM encrypted tokens
-│   └── TokenStore.ts        Storage interface
-├── client/            HTTP + facade
-│   ├── AnypointClient.ts    Main facade (single entry point)
-│   ├── HttpClient.ts        Axios with Bearer injection
-│   ├── RateLimiter.ts       Token bucket throttling
-│   └── Cache.ts             TTL in-memory cache with observability
-├── api/               Domain API clients
-│   ├── CloudHub2Api.ts      Deploy, redeploy, restart, scale, poll
-│   ├── LogsApi.ts           Tail, download (CH2 native)
-│   ├── MonitoringApi.ts     AMQL queries (request + JVM metrics), JSON/CSV export
-│   ├── ExchangeApi.ts       Search assets, download specs
-│   ├── ApiManagerApi.ts     API instances, policies, SLA tiers
-│   ├── DesignCenterApi.ts   Projects, files, lock/save, publish
-│   ├── AuditLogApi.ts       Platform audit events (who changed what)
-│   ├── AnypointMQApi.ts     Queue/exchange management, message browsing
-│   ├── ObjectStoreApi.ts    Object Store v2 — stores, keys, values
-│   └── AccessManagementApi.ts  User, environments, org entitlements
-├── analysis/          Log analysis pipeline
-│   ├── LogAnalyzer.ts       Pipeline orchestrator
-│   ├── parser.ts            Multi-line joiner + JSON Logger parser
-│   ├── error-context.ts     Error context windows (before/after)
-│   ├── error-grouper.ts     Clusters similar errors
-│   ├── pattern-detector.ts  Recurring message templates
-│   ├── stats.ts             Level distribution, error spikes
-│   ├── types.ts             Shared type definitions
-│   └── utils.ts             Noise detection, templatization
-├── commands/          CLI commands
-│   ├── config.ts      init | show | set | path | profiles | use
-│   ├── auth.ts        login | logout | status (--profile)
-│   ├── apps.ts        list | status | restart | scale
-│   ├── deploy.ts      deploy with prod safety net
-│   ├── logs.ts        tail | download
-│   ├── monitor.ts     view | perf | trend | workers | memory | memory-trend | compare | download
-│   ├── exchange.ts    search | info | download-spec
-│   ├── api.ts         list | policies | sla-tiers
-│   └── design-center.ts  list | files | pull | push | publish
-├── safety/            Production guards
-│   └── guards.ts      Env detection, JAR validation, confirmation
-├── utils/
-│   └── config.ts      Profile-based config resolution
-├── cli.ts             CLI entry point (bin: anc)
-├── mcp.ts             MCP server entry point
-└── index.ts           Library barrel export
-```
-
-</details>
-
----
-
-## CLI Reference
-
-### Applications
+56 tools for AI agents. Set up credentials first — the server has nothing to offer an unauthenticated
+session.
 
 ```bash
-anc apps list --env Sandbox
-anc apps status my-api --env Sandbox
-anc apps restart my-api --env Production      # prod confirmation prompt
-anc apps scale my-api --env Sandbox --replicas 2
-anc apps scale my-api --env Production --replicas 3 --force  # skip confirmation
-
-# Delete is a bound two-step operation
-anc apps delete my-api --env Sandbox           # dry run; prints deployment ID
-anc apps delete my-api --env Sandbox --confirm <DEPLOYMENT_ID>
-
-# Production also requires an explicit environment acknowledgement
-anc apps delete my-api --env Production --confirm <DEPLOYMENT_ID> --allow-production
+anc config init
+anc auth login
 ```
 
-### Deploy
+Every host runs the same command; only the file and the wrapping key differ.
 
-```bash
-# Standard deploy
-anc deploy target/my-api-1.2.0-mule-application.jar \
-  --app my-api --env Sandbox --runtime 4.8.0
-
-# Production deploy — triggers safety confirmation
-anc deploy target/my-api.jar --app my-api --env Production
-#   ⚠️  PRODUCTION DEPLOYMENT
-#   App:         my-api
-#   Environment: Production
-#   Current:     v1.1.0 (APPLIED, 2 replicas)
-#   New Version: v1.2.0
-#   Type 'deploy to production' to confirm: _
-
-# CI/CD (skip confirmation)
-anc deploy app.jar --app my-api --env Production --force
-```
-
-### Logs
-
-```bash
-# Stream logs in real-time
-anc logs tail my-api --env Sandbox
-anc logs tail my-api --env Sandbox --level ERROR --search "NullPointerException"
-
-# Download logs
-anc logs download my-api --env Sandbox --from 24h
-anc logs download my-api --env Production --from 7d --level ERROR
-anc logs download my-api --env Production \
-  --from "2026-02-01T00:00:00Z" --to "2026-02-14T00:00:00Z" --output prod-logs.log
-```
-
-### Monitoring
-
-```bash
-# View metrics table (default: last 24h)
-anc monitor view --env Sandbox
-anc monitor view --env Production --app my-api --from 7d
-
-# Performance percentiles
-anc monitor perf --env Production
-
-# JVM memory usage
-anc monitor memory --env Production
-anc monitor memory --env Production --app my-api
-
-# Memory trend over time
-anc monitor memory-trend --env Production --app my-api --granularity 1h
-
-# Worker/replica metrics
-anc monitor workers --env Production --app my-api
-
-# Cross-environment comparison
-anc monitor compare
-
-# Export
-anc monitor download --env Production --from 30d --format json
-anc monitor download --env Sandbox --from 7d --format csv --output metrics.csv
-```
-
-### Exchange
-
-```bash
-anc exchange search "order" --type rest-api --limit 10
-anc exchange info my-api-spec
-anc exchange info org-id/my-api-spec --version 1.2.0
-anc exchange download-spec my-api-spec -o spec.json
-```
-
-### API Manager
-
-```bash
-anc api list --env Production
-anc api policies "order-api" --env Production
-anc api policies 18888853 --env Production
-anc api sla-tiers "order-api" --env Production
-```
-
-### Design Center
-
-```bash
-# List projects & files
-anc dc list
-anc dc files my-api-spec --branch develop
-
-# Pull a spec file (auto-decodes JSON-encoded content)
-anc dc pull my-api-spec api.raml -o local-spec.raml
-
-# Push (smart path resolution: auto-matches local filename to remote)
-anc dc push my-api-spec local-spec.raml --message "Add new endpoint"
-
-# Push with explicit remote path
-anc dc push my-api-spec local-spec.raml --path api.raml
-
-# Publish to Exchange
-anc dc publish my-api-spec --version 1.2.0 --classifier raml
-anc dc publish my-api-spec --version 2.0.0 --classifier oas3 --api-version v2
-```
-
-### Authentication
-
-```bash
-anc auth login                     # Default profile
-anc auth login --profile client-a  # Specific profile
-anc auth status                    # Check current auth
-anc auth logout                    # Clear stored tokens
-```
-
----
-
-## MCP Server
-
-The MCP server exposes all Anypoint operations as tools for AI assistants (Claude, Cursor, etc.).
-
-### Prerequisites
-
-```bash
-anc config init    # one-time setup (or --profile <name> for multi-org)
-anc auth login     # get tokens
-```
-
-### Configuration
-
-Add to your MCP client config (Claude Desktop, Gemini, Cursor, etc.):
+| Host | Where it goes | Wrapping key |
+| --- | --- | --- |
+| Claude Code | `.mcp.json`, or `claude mcp add` | `mcpServers` |
+| Claude Desktop | `claude_desktop_config.json` | `mcpServers` |
+| Codex | `.codex/config.toml`, or `codex mcp add` | `[mcp_servers.anypoint-connect]` |
+| VS Code, Copilot Chat | `.vscode/mcp.json` | `servers`, plus `"type": "stdio"` |
+| Copilot CLI, Gemini, other MCP clients | `.mcp.json` | `mcpServers` |
 
 ```json
 {
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.11.0", "mcp"]
     }
   }
 }
 ```
 
-Or if installed globally, use the CLI directly:
+Installed globally, use `"command": "anc", "args": ["mcp"]` and skip the download. No `env` block is
+needed: the active profile resolves from the project's `.anypoint-connect.json`, falling back to
+`default`. Credentials never pass through the protocol — the server holds the session, the agent calls
+tools.
 
-```json
-{
-  "mcpServers": {
-    "anypoint-connect": {
-      "command": "anc",
-      "args": ["mcp"]
-    }
-  }
-}
-```
+Per-host examples, prompts, and resources are in the
+[MCP guide](https://avinava.github.io/anypoint-connect/mcp/); the full tool table is in the
+[catalog](https://avinava.github.io/anypoint-connect/tools/).
 
-The MCP server auto-detects the active profile from the project's `.anypoint-connect.json` (or falls back to `default`). No `env` block needed.
+## Safety
 
-### MCP Tools
-
-> **Deploy safety.** The mutating deploy tools (`deploy_app`, `update_app_artifact`, `rollback_app`, `publish_app_jar`, `deploy_jar`) are **dry-run by default**: called without `confirm: true` they return a preview of exactly what would change and modify nothing. Re-call with `confirm: true` to apply. Redeploys of an existing app change **only** the artifact reference — runtime, target/space, replicas, and settings are always preserved.
-
-| Tool | Description |
-|------|-------------|
-| **Identity & Org** | |
-| `whoami` | Get authenticated user & org info |
-| `list_environments` | List all environments in the org |
-| `get_entitlements` | Get org license: vCores, MQ, Object Store, API quotas, subscription |
-| **Applications** | |
-| `list_apps` | List deployed apps with status, version, vCores, and replica count |
-| `get_app_status` | Detailed deployment status: resources (CPU/memory), autoscaling, JVM, replicas |
-| `get_deployment_spec` | Full deployment spec (ref, runtime, target kind, vCores, replica states) — look before you leap |
-| `get_app_resources` | Consolidated resource allocation view for all apps in an environment |
-| `get_app_settings` | Read application properties and secure property keys |
-| `deploy_app` | ⚠️ Create a new deployment, or safely redeploy an existing one (artifact ref only). For an existing app, prefer `update_app_artifact` |
-| `update_app_artifact` | ⚠️ Safe production redeploy — change only the artifact version, preserving runtime/target/replicas/settings |
-| `rollback_app` | ⚠️ Roll an app back to the newest distinct historical artifact, or a requested version |
-| `update_app_settings` | ⚠️ Merge application properties while preserving protected values and deployment infrastructure |
-| `restart_app` | ⚠️ Rolling restart of an application |
-| `scale_app` | ⚠️ Scale application replicas (1–8) |
-| `stop_app` | ⚠️ Stop an application without deleting the deployment |
-| `start_app` | Start a previously stopped application |
-| `delete_app` | ⚠️ Permanently delete a deployment using dry-run plus deployment-ID-bound confirmation |
-| **Logs & Analysis** | |
-| `get_logs` | Fetch recent log entries with optional keyword search |
-| `download_logs` | Download logs for a time range |
-| `analyze_errors` | Clustered error groups with before/after context windows |
-| `get_log_patterns` | Top recurring message templates with counts |
-| `get_log_stats` | Statistical health summary: error rate, spikes, noise % |
-| **Monitoring (AMQL)** | |
-| `get_metrics` | Inbound/outbound request count and response time |
-| `get_performance_metrics` | Percentile-based performance metrics (p50/p95/p99) |
-| `get_metrics_timeseries` | Time-series metrics for trending analysis |
-| `get_worker_metrics` | Per-worker/replica performance metrics |
-| `get_memory_metrics` | JVM memory usage: heap, GC stats, thread counts |
-| `get_memory_timeseries` | JVM memory time-series for leak detection and trending |
-| `compare_env_performance` | Compare performance across all environments |
-| `raw_amql_query` | Execute freeform AMQL queries for ad-hoc analysis |
-| **Exchange** | |
-| `search_exchange` | Search assets in Exchange |
-| `get_exchange_asset` | Get detailed asset info: versions, dependencies, instances, files |
-| `download_api_spec` | Download RAML/OAS spec from Exchange |
-| `publish_app_jar` | ⚠️ Upload a locally built application JAR to Exchange as a deployable asset |
-| `deploy_jar` | ⚠️ Publish a JAR and deploy it in one call (create new app, or safe artifact update) |
-| **API Manager** | |
-| `list_api_instances` | List managed API instances with governance info |
-| `get_api_policies` | Get policies and SLA tiers for an API |
-| `get_api_alerts` | View configured alerts for an API instance |
-| **Design Center** | |
-| `list_design_center_projects` | List all API spec projects |
-| `get_design_center_files` | List files in a Design Center project |
-| `read_design_center_file` | Read file content with smart path resolution |
-| `update_design_center_file` | ⚠️ Push updated file (lock/save/unlock) |
-| `publish_to_exchange` | ⚠️ Publish Design Center project to Exchange |
-| **Audit Log** | |
-| `get_audit_log` | Query platform changes: who did what, when |
-| **Anypoint MQ** | |
-| `list_queues` | List MQ destinations (queues/exchanges) in a region |
-| `get_queue_stats` | Queue depth, in-flight, and throughput stats |
-| `get_dlq_messages` | Browse dead-letter queue messages without consuming |
-| `publish_mq_message` | Publish a message to an MQ queue (test, replay, seed data) |
-| **Object Store v2** | |
-| `list_stores` | List Object Stores in an environment |
-| `get_store_keys` | List keys in an Object Store with pagination |
-| `get_store_value` | Retrieve and auto-format a value by key |
-| `put_store_value` | ⚠️ Write or update a value by key |
-| `delete_store_value` | ⚠️ Delete a key and its value |
-| **Profile** | |
-| `get_project_profile` | Show active profile, resolution source, and available profiles |
-| `set_project_profile` | Bind project directory to a named profile |
-
-### MCP Prompts
-
-| Prompt | Description |
-|--------|-------------|
-| `pre-deploy-check` | Readiness check before promoting an app between environments |
-| `troubleshoot-app` | Systematic diagnosis: replica health, error patterns, metrics anomalies |
-| `api-governance-audit` | Review policies, SLA tiers, and security gaps across all APIs |
-| `environment-overview` | Full health report: app status, error rates, performance rankings |
-| `improve-api-spec` | Guided pull→analyze→improve→push workflow for API spec quality |
-
-### MCP Resource
-
-| Resource | URI |
-|----------|-----|
-| Environments | `anypoint://environments` |
-| Cache Diagnostics | `anypoint://diagnostics/cache` |
-
-### Example Interactions
-
-- *"What apps are running in Sandbox?"*
-- *"Show me the resource allocation across all Production apps"*
-- *"Show me the last 50 error logs for my-api in Production"*
-- *"Analyze the errors in my-api in Production — what's failing and why?"*
-- *"What are the top log patterns for billing-api in Development?"*
-- *"Give me a health summary of external-sapi in Production"*
-- *"Compare Development and Production environments"*
-- *"What policies are applied to the Order API?"*
-- *"Show me the RAML spec for the order-api project"*
-- *"Improve the API descriptions for order-api"*
-- *"Scale order-service to 3 replicas in Production"*
-- *"Show me the JVM memory usage for all apps in Production"*
-- *"Is my-api leaking memory? Show me the heap trend over the past week"*
-- *"What changed in the platform in the last 24 hours?"*
-- *"Check our org entitlements — do we have MQ provisioned?"*
-- *"Show me the app settings for billing-api in Production"*
-- *"Run this AMQL query: SELECT COUNT(requests) FROM mulesoft.app.inbound..."*
-- *"What's in the dead-letter queue for order-events?"*
-- *"Search the logs for correlation ID abc-123"*
-- *"Deploy order-api v1.3.0 to Sandbox with 2 replicas"*
-- *"Publish target/example-api-1.0.0-mule-application.jar and deploy it to Sandbox"*
-- *"Bump example-api in Production to v1.4.12 (artifact only)"*
-- *"Roll example-api back to its newest distinct historical artifact"*
-- *"Redeploy billing-service to Production with the latest version from Exchange"*
-- *"Update the db.url property for order-api in Sandbox"*
-- *"Stop the test-processor app in Development"*
-- *"Start the test-processor app back up"*
-- *"What versions of order-management-api are in Exchange?"*
-- *"Are there any alerts configured for the Order API?"*
-- *"Write a watermark value to the default Object Store in Sandbox"*
-- *"Delete the stale cache key from Object Store"*
-- *"Publish a test message to the order-events queue"*
-
----
-
-## Deploying a JAR (build → publish → deploy → roll back)
-
-A locally built Mule application JAR goes to CloudHub 2.0 in two steps — publish the artifact to
-Exchange, then deploy it — or in a single `deploy_jar` call. Every mutating step is **dry-run by
-default**; add `confirm: true` to apply.
-
-**One call (recommended).** Publish and deploy together:
+Every mutating operation is **dry-run by default**: without `confirm: true` it returns a preview and
+changes nothing. Redeploying an existing app changes **only** the artifact reference, so runtime, target,
+replicas, and settings are preserved and a version bump cannot silently downgrade a runtime or halve
+capacity. `update_app_settings` PATCHes only application properties, merging protected values rather than
+blanking them. Deletion requires a deployment-ID-bound confirmation — plus a separate acknowledgement in
+production — so it fails closed if the deployment changed since you looked.
 
 ```jsonc
-// dry run — shows what would happen, changes nothing
+// preview
 deploy_jar({ "jarPath": "target/example-api-1.0.0-mule-application.jar", "appName": "example-api", "environment": "Sandbox" })
 // apply
 deploy_jar({ "jarPath": "target/example-api-1.0.0-mule-application.jar", "appName": "example-api", "environment": "Sandbox", "confirm": true })
 ```
 
-**Step by step**, for more control:
+Full model in [Safety](https://avinava.github.io/anypoint-connect/safety/); the build, publish, deploy,
+and rollback path in [Deploying a JAR](https://avinava.github.io/anypoint-connect/deployment-tools/).
 
-```jsonc
-// 1. publish the built jar to Exchange
-publish_app_jar({ "jarPath": "target/example-api-1.0.0-mule-application.jar", "confirm": true })
+## When something fails
 
-// 2. see exactly what is running before you touch it
-get_deployment_spec({ "appName": "example-api", "environment": "Production" })
+Access problems come in six distinct states — not configured, not authenticated, environment not visible,
+not permitted, transient, and ready — and they have different fixes. The error text names which one you
+are in. See [Access readiness](https://avinava.github.io/anypoint-connect/readiness/) and
+[Troubleshooting](https://avinava.github.io/anypoint-connect/troubleshooting/).
 
-// 3. safe production bump — changes only the artifact ref, waits for it to settle
-update_app_artifact({ "appName": "example-api", "environment": "Production", "version": "1.0.0", "wait": true, "confirm": true })
-
-// 4. something wrong? roll back to the newest distinct historical artifact
-rollback_app({ "appName": "example-api", "environment": "Production", "confirm": true })
-```
-
-For an **existing** app, `deploy_jar`, `deploy_app`, and `update_app_artifact` all change **only** the
-artifact reference — the runtime, target/space, replicas, and settings are preserved, so a redeploy
-can never silently downgrade the runtime or relocate the app. Infrastructure changes on an existing
-app are rejected; create a new deployment or use the dedicated settings/scale tools instead.
-
-`update_app_settings` follows the same narrow-update rule: it PATCHes only the application-properties
-configuration. Existing plain properties and protected-property placeholders are merged into the
-request, while artifact coordinates, desired state, runtime, target, replicas, and other
-configuration services are left untouched.
-
-Application deletion uses a stronger two-step confirmation. Call `delete_app` first without
-`confirm` to receive the current deployment ID and a complete preview. Re-call with `confirm: true`
-and that exact `expectedDeploymentId`; production also requires `confirmProduction: true`. If the
-application was recreated between calls, the changed deployment ID makes the operation fail closed.
-Deletion removes only the deployment and preserves its Exchange artifact and unrelated Anypoint
-resources. Use `stop_app` instead when the deployment configuration must remain available.
-
-The same flow is available from the CLI: `anc deploy <jarPath> --app <name> --env <env>`.
-
----
-
-## Programmatic Usage
+## Library
 
 ```typescript
 import { AnypointClient } from '@sfdxy/anypoint-connect';
@@ -656,60 +146,58 @@ const client = new AnypointClient({
   clientSecret: process.env.ANYPOINT_CLIENT_SECRET!,
 });
 
-// Get user info
 const me = await client.whoami();
-console.log(me.organization.name);
-
-// List environments
-const orgId = me.organization.id;
-const envs = await client.accessManagement.getEnvironments(orgId);
-
-// List apps in sandbox
-const sandbox = envs.find(e => e.name === 'Sandbox')!;
-const apps = await client.cloudHub2.getDeployments(orgId, sandbox.id);
-
-// Tail logs
-for await (const entries of client.logs.tailLogs(orgId, sandbox.id, 'my-api')) {
-  entries.forEach(e => console.log(`[${e.priority}] ${e.message}`));
-}
-
-// Get metrics
-const metrics = await client.monitoring.getAppMetrics(
-  orgId, sandbox.id,
-  Date.now() - 24 * 60 * 60 * 1000,
-  Date.now()
-);
-
-// Design Center: pull, edit, push
-const projects = await client.designCenter.getProjects(orgId);
-const spec = await client.designCenter.getFileContent(orgId, projects[0].id, 'api.raml');
-await client.designCenter.updateFile(orgId, projects[0].id, 'api.raml', updatedContent);
-await client.designCenter.publishToExchange(orgId, projects[0].id, {
-  name: 'My API', apiVersion: 'v1', version: '1.0.0', classifier: 'raml'
-});
+const envs = await client.accessManagement.getEnvironments(me.organization.id);
 ```
 
----
+The API clients give you token refresh, rate limiting, and caching, but not the confirmation gates — those
+live in the CLI and MCP layers. More in the
+[library guide](https://avinava.github.io/anypoint-connect/library/).
 
-## Release Process
+## Documentation
 
-Releases are automated via GitHub Actions:
+Published at **<https://avinava.github.io/anypoint-connect/>** with search.
+
+| Page | Contents |
+| --- | --- |
+| [Getting started](docs/getting-started.md) | Install, Connected App, scopes, credentials, authenticate |
+| [Profiles](docs/profiles.md) | Multiple organizations, resolution order, storage layout |
+| [Access readiness](docs/readiness.md) | The six access states and their fixes |
+| [CLI reference](docs/cli-reference.md) | Every command group |
+| [MCP server](docs/mcp.md) | Host setup, prompts, resources |
+| [Tool catalog](docs/tools.md) | All 56 tools, and how to choose between overlapping ones |
+| [Safety model](docs/safety.md) | Dry runs, narrow updates, bound deletion |
+| [Deploying a JAR](docs/deployment-tools.md) | Build, publish, deploy, roll back |
+| [Library API](docs/library.md) | Programmatic use |
+| [Troubleshooting](docs/troubleshooting.md) | Symptoms and causes |
+| [Architecture](docs/architecture.md) | Layers and design notes |
+
+## Ecosystem
+
+One of four MuleSoft tools that work together, and the only one that needs credentials.
+
+| Project | Role |
+| --- | --- |
+| `anypoint-connect` | Authorized Anypoint evidence and lifecycle operations |
+| [`mule-build`](https://github.com/Avinava/mule-build) | Validate, test, package, run locally, and release |
+| [`mule-lint`](https://github.com/Avinava/mule-lint) | Static analysis of Mule XML, DataWeave, YAML, and project structure |
+| [`mule-skills`](https://github.com/Avinava/mule-skills) | Agent workflows that drive all three |
+
+A complete release crosses two tools: `mule-build` produces and versions the artifact, this one puts it in
+an environment. Details on the [ecosystem page](docs/ecosystem.md).
+
+## Development
 
 ```bash
-# 1. Bump version in package.json
-npm version patch   # or minor / major
-
-# 2. Push the tag
-git push --follow-tags
-
-# 3. GitHub Actions will:
-#    - Run CI (build, test, lint)
-#    - Publish to npm as @sfdxy/anypoint-connect
-#    - Create a GitHub Release with auto-generated notes
+npm install
+npm run build
+npm test
+npm run lint
 ```
 
----
+Releases are tag-triggered: bump the version, push the tag with `git push --follow-tags`, and GitHub
+Actions runs CI, publishes to npm with provenance, and creates the release.
 
 ## License
 
-MIT
+[MIT](LICENSE)

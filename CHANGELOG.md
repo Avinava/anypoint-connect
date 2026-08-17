@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.11.0 — Documented
+
+Documentation release. No CLI, MCP, or API behavior changed.
+
+### Added
+
+- **A published documentation site** at <https://avinava.github.io/anypoint-connect/>, built with MkDocs
+  Material and deployed by GitHub Actions. The README was 715 lines and the only documentation target,
+  which made setup, the tool catalog, and the safety model compete for the same space. Eleven pages now:
+  getting started, profiles, access readiness, CLI reference, MCP setup, tool catalog, safety model,
+  deploying a JAR, library API, troubleshooting, and architecture. CI builds the site with `--strict`,
+  so a broken cross-link or an orphaned page fails a pull request.
+- **`docs/readiness.md`, naming the six access states.** Being unconfigured, unauthenticated, pointed at
+  an environment you cannot see, and missing a scope are four different problems with four different
+  fixes, and they all present as "it does not work". The states are named the same way the
+  [`mule-skills`](https://avinava.github.io/mule-skills/anypoint-access/) workflows name them, so the
+  server's errors and an agent's readiness gate describe the same situation with the same words.
+- **`docs/troubleshooting.md`** covering the failure modes that look like defects: a redirect-URI
+  mismatch stalling the browser flow, an exported environment variable silently outranking the selected
+  profile, a 403 on an unprovisioned service being correct behavior, and a dry run that appeared to do
+  nothing because it was supposed to.
+- **MCP setup for every host.** Only a generic `mcpServers` block existed, with Claude Desktop, Gemini,
+  and Cursor mentioned in prose. Claude Code, Codex, VS Code, and Copilot CLI are now documented
+  explicitly, along with which wrapping key each one wants.
+- An ecosystem page and README section placing this tool alongside `mule-build`, `mule-lint`, and
+  `mule-skills`, and stating the boundary: this is the only one that authenticates, and a complete
+  release crosses two of them.
+
+### Fixed
+
+- **`LICENSE` did not exist.** It was listed in `package.json` `files`, so npm silently omitted it, and
+  the README badge linked to `blob/master/LICENSE` — a missing file on a branch that is also not the
+  default. The file is now present and the badge points at `main`.
+- **The tool catalog was missing `compare_environments`**, which is registered and referenced by the
+  `pre-deploy-check` prompt: 55 documented against 56 registered.
+- `engines.node` claimed `>=18.0.0` while CI has only ever tested 20, 22, and 24. Corrected to
+  `>=20.0.0` rather than leaving an untested claim in the manifest.
+
+### Changed
+
+- `package.json` homepage points at the documentation site.
+- CI actions moved to `actions/checkout@v7` and `actions/setup-node@v7`.
+- The site build excludes `PLAN-*.md`, so the gitignored planning note containing real organization
+  identifiers cannot be published by a local build either.
+
 ## 0.10.0 — Bound Application Deletion
 
 ### Added
