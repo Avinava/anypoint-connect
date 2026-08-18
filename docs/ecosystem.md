@@ -1,14 +1,11 @@
 # Ecosystem
 
-`anypoint-connect` is one of four MuleSoft tools that work together. Each is independent — use one, or all
-of them.
+`anypoint-connect` is independently versioned. The canonical package matrix, supported combination,
+credentials, and end-to-end setup live in the
+[mule-skills ecosystem hub](https://avinava.github.io/mule-skills/ecosystem/).
 
-| Project | Role | Credentials | Documentation |
-| --- | --- | --- | --- |
-| [`anypoint-connect`](https://github.com/Avinava/anypoint-connect) | Authorized Anypoint Platform evidence and lifecycle operations | Anypoint login | this site |
-| [`mule-build`](https://github.com/Avinava/mule-build) | Validate, test, package, run locally, and release a Mule application | None | [mule-build docs](https://avinava.github.io/mule-build/) |
-| [`mule-lint`](https://github.com/Avinava/mule-lint) | Static analysis of Mule XML, DataWeave, YAML, and project structure | None | [mule-lint docs](https://avinava.github.io/mule-lint/) |
-| [`mule-skills`](https://github.com/Avinava/mule-skills) | Agent workflows for documentation, development, troubleshooting, operations, review, and build | None | [mule-skills docs](https://avinava.github.io/mule-skills/) |
+This page documents only the `anypoint-connect` boundary so the compatibility table is not copied
+across repositories.
 
 ## Where the boundaries are
 
