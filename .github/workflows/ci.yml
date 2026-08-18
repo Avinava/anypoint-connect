@@ -39,6 +39,9 @@ jobs:
             - name: Format check
               run: npm run format:check
 
+            - name: Audit production dependencies
+              run: npm run audit:prod
+
             - name: CLI smoke tests
               run: |
                   node dist/cli.js --help

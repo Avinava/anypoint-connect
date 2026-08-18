@@ -174,17 +174,11 @@ Published at **<https://avinava.github.io/anypoint-connect/>** with search.
 
 ## Ecosystem
 
-One of four MuleSoft tools that work together, and the only one that needs credentials.
-
-| Project | Role |
-| --- | --- |
-| `anypoint-connect` | Authorized Anypoint evidence and lifecycle operations |
-| [`mule-build`](https://github.com/Avinava/mule-build) | Validate, test, package, run locally, and release |
-| [`mule-lint`](https://github.com/Avinava/mule-lint) | Static analysis of Mule XML, DataWeave, YAML, and project structure |
-| [`mule-skills`](https://github.com/Avinava/mule-skills) | Agent workflows that drive all three |
-
-A complete release crosses two tools: `mule-build` produces and versions the artifact, this one puts it in
-an environment. Details on the [ecosystem page](docs/ecosystem.md).
+The canonical package matrix and supported combination live in the
+[`mule-skills` ecosystem hub](https://avinava.github.io/mule-skills/ecosystem/). This is the only tool
+in the set that needs Anypoint credentials. A complete release crosses two boundaries: `mule-build`
+produces and versions the artifact, while this package puts it in an environment. More detail is on
+the local [ecosystem page](docs/ecosystem.md).
 
 ## Development
 
