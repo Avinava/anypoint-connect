@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.11.1 — Dependency Security
+
+### Security
+
+- Refreshed production dependency resolutions for patched releases of Axios, Hono and its Node
+  adapter, Express middleware, schema validation, redirect handling, URI parsing, and related
+  transitive packages. `npm audit --omit=dev --audit-level=moderate` reports no production findings.
+- Updated Vitest and its coverage provider to the maintained Node 20-compatible major release; the
+  complete dependency tree now audits clean.
+- Added the production audit to CI and the release workflow so a future vulnerable runtime lockfile
+  cannot be published silently.
+
+### Operations
+
+- Release completion now proposes the exact new pin to the `mule-skills` compatibility hub through a
+  reviewable repository-dispatch pull request.
+
 ## 0.11.0 — Documented
 
 Documentation release. No CLI, MCP, or API behavior changed.
