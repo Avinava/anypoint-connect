@@ -1,7 +1,7 @@
 # Tool catalog
 
-56 MCP tools. A ⚠️ marks a mutating tool; every one of those is dry-run by default and changes nothing
-until called with `confirm: true`. See the [safety model](safety.md).
+65 MCP tools. A ⚠️ marks a mutating tool. Application tools use `confirm`; new Design Center workflows
+use single-use preview tokens. See the [safety model](safety.md).
 
 ## Identity and organization
 
@@ -77,10 +77,19 @@ until called with `confirm: true`. See the [safety model](safety.md).
 | Tool | Description |
 | --- | --- |
 | `list_design_center_projects` | API specification projects |
+| `list_design_center_branches` | Branches for an exactly identified project |
 | `get_design_center_files` | Files in a project |
 | `read_design_center_file` | File content, with smart path resolution |
 | `update_design_center_file` | ⚠️ Push an updated file (lock, save, unlock) |
-| `publish_to_exchange` | ⚠️ Publish a project to Exchange |
+| `preview_design_center_project_create` | Collision check and approval token; creates nothing |
+| `create_design_center_project` | ⚠️ Consume a preview token and create the project |
+| `preview_design_center_sync` | Hash-based create/update/unchanged plan; writes nothing |
+| `sync_design_center_files` | ⚠️ Consume a preview token for conflict-safe batch sync |
+| `preview_exchange_publication` | Bind coordinates, classifier, main file, and source hash; publishes nothing |
+| `publish_previewed_exchange_asset` | ⚠️ Publish the bound source and verify the Exchange artifact hash |
+| `explain_api_governance_plan` | Centralized governance rulesets for planned or published coordinates |
+| `get_api_governance_conformance` | Centralized conformance for exact asset versions |
+| `publish_to_exchange` | ⚠️ Legacy direct publication; prefer the previewed workflow |
 
 ## Audit log
 

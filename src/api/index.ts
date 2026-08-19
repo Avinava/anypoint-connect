@@ -34,8 +34,11 @@ export {
     type DesignCenterProject,
     type DesignCenterFile,
     type DesignCenterBranch,
+    type DesignCenterSaveFile,
     type PublishToExchangeOptions,
 } from './DesignCenterApi.js';
+export { DesignCenterWorkflow, type DesignCenterFileInput, type SyncPlanEntry } from './DesignCenterWorkflow.js';
+export { GovernanceApi, type GovernanceAssetCoordinates, type GovernanceConformanceRequest } from './GovernanceApi.js';
 export {
     AuditLogApi,
     type AuditLogEntry,
