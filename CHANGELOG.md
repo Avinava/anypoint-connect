@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.0 — API Design Workflows
+
+### Added
+
+- Single-use, 10-minute previews for Design Center project creation, multi-file synchronization, and Exchange publication.
+- Conflict-safe batch sync with exact project resolution, path guards, one branch lock, hash rechecks, post-save verification, and no delete/move/rename behavior.
+- Branch listing and API Governance plan/conformance reads.
+- Post-publication Exchange artifact hash verification.
+
+### Changed
+
+- Project names no longer use partial matching. Supply an exact name or project ID.
+- Direct `publish_to_exchange` remains available for compatibility but is marked legacy; new workflows use approval-bound publication previews.
+
 ## 0.11.1 — Dependency Security
 
 ### Security

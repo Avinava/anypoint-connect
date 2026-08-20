@@ -13,6 +13,8 @@ import { MonitoringApi } from '../api/MonitoringApi.js';
 import { ExchangeApi } from '../api/ExchangeApi.js';
 import { ApiManagerApi } from '../api/ApiManagerApi.js';
 import { DesignCenterApi } from '../api/DesignCenterApi.js';
+import { DesignCenterWorkflow } from '../api/DesignCenterWorkflow.js';
+import { GovernanceApi } from '../api/GovernanceApi.js';
 import { AuditLogApi } from '../api/AuditLogApi.js';
 import { AnypointMQApi } from '../api/AnypointMQApi.js';
 import { ObjectStoreApi } from '../api/ObjectStoreApi.js';
@@ -40,6 +42,8 @@ export class AnypointClient {
     public readonly exchange: ExchangeApi;
     public readonly apiManager: ApiManagerApi;
     public readonly designCenter: DesignCenterApi;
+    public readonly designCenterWorkflow: DesignCenterWorkflow;
+    public readonly governance: GovernanceApi;
     public readonly auditLog: AuditLogApi;
     public readonly anypointMQ: AnypointMQApi;
     public readonly objectStore: ObjectStoreApi;
@@ -67,6 +71,8 @@ export class AnypointClient {
         this.exchange = new ExchangeApi(this.httpClient, this.cache);
         this.apiManager = new ApiManagerApi(this.httpClient, this.cache);
         this.designCenter = new DesignCenterApi(this.httpClient, this.cache);
+        this.designCenterWorkflow = new DesignCenterWorkflow(this.designCenter, this.exchange);
+        this.governance = new GovernanceApi(this.httpClient);
         this.auditLog = new AuditLogApi(this.httpClient);
         this.anypointMQ = new AnypointMQApi(this.httpClient, this.cache);
         this.objectStore = new ObjectStoreApi(this.httpClient, this.cache);

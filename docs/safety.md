@@ -69,6 +69,21 @@ unrelated reason. See [Access readiness](readiness.md).
 A readiness probe is never approval to deploy. An agent that has confirmed access has confirmed access,
 nothing more.
 
+## Design Center previews are hash-bound
+
+Design Center creation, multi-file synchronization, and Exchange publication use opaque, process-local
+preview tokens. Each token expires after ten minutes, can be consumed once, and binds the exact
+organization, project, branch, inputs, and hashes that were inspected.
+
+File sync never deletes, moves, or renames content and refuses managed `exchange_modules` paths. Apply
+acquires one branch lock, rereads every target after locking, aborts the whole batch on any hash conflict,
+saves all changed files in one request, and verifies the saved content. Publication has a separate preview
+and checks the main source again before publishing, then downloads the Exchange artifact and verifies its
+published checksum.
+
+The older one-file update and direct publication tools remain for compatibility. New automated workflows
+should use the token-bound tools.
+
 ## What the safeguards do not cover
 
 - **Scope.** If the Connected App can deploy, the tool can deploy. Grant a read-only identity when that is

@@ -35,6 +35,11 @@ export interface DesignCenterBranch {
     isDefault?: boolean;
 }
 
+export interface DesignCenterSaveFile {
+    path: string;
+    content: string;
+}
+
 export interface PublishToExchangeOptions {
     name: string;
     apiVersion: string;
@@ -82,9 +87,10 @@ export class DesignCenterApi {
     /**
      * List all Design Center projects in the organization.
      */
-    async getProjects(orgId: string): Promise<DesignCenterProject[]> {
+    async getProjects(orgId: string, refresh = false): Promise<DesignCenterProject[]> {
         const ownerId = await this.getOwnerId();
         const cacheKey = `dc:projects:${orgId}`;
+        if (refresh) this.cache.delete(cacheKey);
         return this.cache.getOrCompute(cacheKey, async () => {
             return this.http.get<DesignCenterProject[]>(`${BASE}/projects`, {
                 headers: this.dcHeaders(orgId, ownerId),
@@ -102,13 +108,16 @@ export class DesignCenterApi {
         });
     }
 
-    /**
-     * Find a project by name (case-insensitive partial match).
-     */
+    /** Find a project by exact name. Partial project matching is intentionally unsafe. */
     async findByName(orgId: string, name: string): Promise<DesignCenterProject | null> {
         const projects = await this.getProjects(orgId);
-        const lower = name.toLowerCase();
-        return projects.find((p) => p.name.toLowerCase().includes(lower)) || null;
+        const exact = projects.find((project) => project.name === name);
+        if (exact) return exact;
+        const insensitive = projects.filter((project) => project.name.toLowerCase() === name.toLowerCase());
+        if (insensitive.length > 1) {
+            throw new Error(`Multiple projects have the same case-insensitive name "${name}"; use the project ID.`);
+        }
+        return insensitive[0] || null;
     }
 
     /**
@@ -116,10 +125,28 @@ export class DesignCenterApi {
      * Preferred over findByName when the project must exist.
      */
     async findByNameOrThrow(orgId: string, name: string): Promise<DesignCenterProject> {
-        const project = await this.findByName(orgId, name);
+        const projects = await this.getProjects(orgId);
+        const byId = projects.find((candidate) => candidate.id === name);
+        const project = byId || (await this.findByName(orgId, name));
         if (!project) {
             throw new Error(`Project "${name}" not found. Use list_design_center_projects to see available projects.`);
         }
+        return project;
+    }
+
+    /** Create a new API design project after an exact collision check. */
+    async createProject(orgId: string, name: string, classifier: 'raml' | 'oas'): Promise<DesignCenterProject> {
+        const projects = await this.getProjects(orgId, true);
+        if (projects.some((project) => project.name.toLowerCase() === name.toLowerCase())) {
+            throw new Error(`A Design Center project named "${name}" already exists.`);
+        }
+        const ownerId = await this.getOwnerId();
+        const project = await this.http.post<DesignCenterProject>(
+            `${BASE}/projects`,
+            { name, classifier },
+            { headers: this.dcHeaders(orgId, ownerId, { Accept: 'application/json' }) },
+        );
+        this.cache.delete(`dc:projects:${orgId}`);
         return project;
     }
 
@@ -133,6 +160,15 @@ export class DesignCenterApi {
         return this.http.get<DesignCenterBranch[]>(`${BASE}/projects/${projectId}/branches`, {
             headers: this.dcHeaders(orgId, ownerId),
         });
+    }
+
+    async createBranch(orgId: string, projectId: string, name: string, commitId?: string): Promise<DesignCenterBranch> {
+        const ownerId = await this.getOwnerId();
+        return this.http.post<DesignCenterBranch>(
+            `${BASE}/projects/${projectId}/branches`,
+            { name, ...(commitId ? { commitId } : {}) },
+            { headers: this.dcHeaders(orgId, ownerId, { Accept: 'application/json' }) },
+        );
     }
 
     // ── Files ──────────────────────────────────────
@@ -251,6 +287,16 @@ export class DesignCenterApi {
         }
     }
 
+    /** Refresh a branch lock before the service's approximately one-minute expiry. */
+    async maintainLock(orgId: string, projectId: string, branch = 'master'): Promise<void> {
+        const ownerId = await this.getOwnerId();
+        await this.http.post<void>(
+            `${BASE}/projects/${projectId}/branches/${branch}/status`,
+            {},
+            { headers: this.dcHeaders(orgId, ownerId) },
+        );
+    }
+
     /**
      * Save a file to a project branch. Requires the lock to be held.
      */
@@ -262,23 +308,44 @@ export class DesignCenterApi {
         branch = 'master',
         commitMessage?: string,
     ): Promise<void> {
+        await this.saveFiles(orgId, projectId, [{ path: filePath, content }], branch, commitMessage);
+    }
+
+    /** Save multiple files in the API's single batch operation. Requires a held lock. */
+    async saveFiles(
+        orgId: string,
+        projectId: string,
+        files: DesignCenterSaveFile[],
+        branch = 'master',
+        commitMessage?: string,
+    ): Promise<void> {
         const ownerId = await this.getOwnerId();
         try {
             await this.http.post<void>(
                 `${BASE}/projects/${projectId}/branches/${branch}/save`,
-                [
-                    {
-                        path: filePath,
-                        content,
-                        type: 'file',
-                    },
-                ],
+                files.map((file) => ({ path: file.path, content: file.content, type: 'FILE' })),
                 {
                     headers: this.dcHeaders(orgId, ownerId, commitMessage ? { 'x-commit-message': commitMessage } : {}),
                 },
             );
         } catch (e) {
-            throw new Error(`Failed to save file: ${errorMessage(e)}`);
+            throw new Error(`Failed to save files: ${errorMessage(e)}`);
+        }
+    }
+
+    async withLock<T>(orgId: string, projectId: string, branch: string, operation: () => Promise<T>): Promise<T> {
+        await this.acquireLock(orgId, projectId, branch);
+        try {
+            const result = await operation();
+            await this.releaseLock(orgId, projectId, branch);
+            return result;
+        } catch (operationError) {
+            try {
+                await this.releaseLock(orgId, projectId, branch);
+            } catch {
+                // Preserve the operation failure; the branch lock expires server-side.
+            }
+            throw operationError;
         }
     }
 
@@ -297,12 +364,9 @@ export class DesignCenterApi {
         // Clear project cache since we're modifying
         this.cache.delete(`dc:projects:${orgId}`);
 
-        await this.acquireLock(orgId, projectId, branch);
-        try {
-            await this.saveFile(orgId, projectId, filePath, content, branch, commitMessage);
-        } finally {
-            await this.releaseLock(orgId, projectId, branch);
-        }
+        await this.withLock(orgId, projectId, branch, () =>
+            this.saveFile(orgId, projectId, filePath, content, branch, commitMessage),
+        );
     }
 
     // ── Publish ────────────────────────────────────
@@ -325,7 +389,8 @@ export class DesignCenterApi {
     }
 
     /**
-     * Publish a Design Center project to Anypoint Exchange.
+     * Legacy direct publication path retained for compatibility.
+     * New callers should use the preview-bound DesignCenterWorkflow.
      *
      * The DC XP API expects all publish parameters in the JSON body, NOT in the URL path.
      * Endpoint: POST /designcenter/api-designer/projects/{projectId}/branches/{branch}/publish/exchange
@@ -334,6 +399,18 @@ export class DesignCenterApi {
      * If assetId or main file aren't specified, we auto-detect them from exchange.json.
      */
     async publishToExchange(
+        orgId: string,
+        projectId: string,
+        options: PublishToExchangeOptions,
+        branch = 'master',
+    ): Promise<{ groupId: string; assetId: string; version: string }> {
+        return this.withLock(orgId, projectId, branch, () =>
+            this.publishToExchangeLocked(orgId, projectId, options, branch),
+        );
+    }
+
+    /** Publish while the caller holds the branch lock. */
+    async publishToExchangeLocked(
         orgId: string,
         projectId: string,
         options: PublishToExchangeOptions,
@@ -348,32 +425,24 @@ export class DesignCenterApi {
         const assetId = options.assetId || (exchangeMeta?.assetId as string) || options.name;
         const mainFile = options.main || (exchangeMeta?.main as string);
 
-        // Acquire lock before publishing (required by DC API)
-        await this.acquireLock(orgId, projectId, branch);
-        try {
-            const response = await this.http
-                .post<{ groupId: string; assetId: string; version: string }>(
-                    `${BASE}/projects/${projectId}/branches/${branch}/publish/exchange`,
-                    {
-                        name: options.name,
-                        apiVersion: options.apiVersion,
-                        version: options.version,
-                        classifier: options.classifier,
-                        main: mainFile,
-                        assetId,
-                        groupId,
-                    },
-                    {
-                        headers: this.dcHeaders(orgId, ownerId),
-                    },
-                )
-                .catch((e) => {
-                    throw new Error(`Failed to publish: ${errorMessage(e)}`);
-                });
-
-            return response;
-        } finally {
-            await this.releaseLock(orgId, projectId, branch);
-        }
+        return this.http
+            .post<{ groupId: string; assetId: string; version: string }>(
+                `${BASE}/projects/${projectId}/branches/${branch}/publish/exchange`,
+                {
+                    name: options.name,
+                    apiVersion: options.apiVersion,
+                    version: options.version,
+                    classifier: options.classifier,
+                    main: mainFile,
+                    assetId,
+                    groupId,
+                },
+                {
+                    headers: this.dcHeaders(orgId, ownerId),
+                },
+            )
+            .catch((e) => {
+                throw new Error(`Failed to publish: ${errorMessage(e)}`);
+            });
     }
 }

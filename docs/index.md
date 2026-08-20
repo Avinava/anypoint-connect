@@ -36,7 +36,7 @@ anc auth status
 | Monitoring | Request and response metrics, percentiles, time series, per-replica, JVM memory and GC, freeform AMQL |
 | Exchange | Search, asset detail, spec download, JAR publication |
 | API Manager | Instances, policies, SLA tiers, alerts |
-| Design Center | Projects, files, read, update, publish |
+| Design Center | Projects, branches, safe file sync, governed publication |
 | Platform | Environments, entitlements, audit log |
 | Anypoint MQ | Queues, depth and throughput, dead-letter browsing, test publishing |
 | Object Store v2 | Stores, keys, values |

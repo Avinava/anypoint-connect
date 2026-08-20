@@ -62,7 +62,7 @@ Working across several organizations? Use named profiles —
 | Monitoring | Request metrics, percentiles, time series, per-replica, JVM memory and GC, freeform AMQL |
 | Exchange | Search, asset detail, spec download, JAR publication, environment comparison |
 | API Manager | Instances, policies, SLA tiers, alerts |
-| Design Center | Projects, files, read, update, publish |
+| Design Center | Projects, branches, safe file sync, governed publication |
 | Platform | Environments, entitlements, audit log |
 | Anypoint MQ | Queues, depth and throughput, dead-letter browsing, test publishing |
 | Object Store v2 | Stores, keys, values |
@@ -72,7 +72,7 @@ Every command is documented in the
 
 ## MCP server
 
-56 tools for AI agents. Set up credentials first — the server has nothing to offer an unauthenticated
+65 tools for AI agents. Set up credentials first — the server has nothing to offer an unauthenticated
 session.
 
 ```bash
@@ -165,7 +165,7 @@ Published at **<https://avinava.github.io/anypoint-connect/>** with search.
 | [Access readiness](docs/readiness.md) | The six access states and their fixes |
 | [CLI reference](docs/cli-reference.md) | Every command group |
 | [MCP server](docs/mcp.md) | Host setup, prompts, resources |
-| [Tool catalog](docs/tools.md) | All 56 tools, and how to choose between overlapping ones |
+| [Tool catalog](docs/tools.md) | All 65 tools, and how to choose between overlapping ones |
 | [Safety model](docs/safety.md) | Dry runs, narrow updates, bound deletion |
 | [Deploying a JAR](docs/deployment-tools.md) | Build, publish, deploy, roll back |
 | [Library API](docs/library.md) | Programmatic use |
