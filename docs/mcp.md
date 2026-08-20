@@ -1,6 +1,6 @@
 # MCP server
 
-`anc mcp` starts a stdio Model Context Protocol server exposing 56 tools, so an AI agent can read runtime
+`anc mcp` starts a stdio Model Context Protocol server exposing 65 tools, so an AI agent can read runtime
 evidence and — with explicit confirmation — perform lifecycle operations.
 
 Set up credentials first. The server has nothing to offer an unauthenticated session:
@@ -87,7 +87,7 @@ seems to need a credential in the conversation, something is configured wrong.
 
 ## Tools
 
-56 tools across identity, applications, logs and analysis, monitoring, Exchange, API Manager, Design
+65 tools across identity, applications, logs and analysis, monitoring, Exchange, API Manager, Design
 Center, audit log, Anypoint MQ, Object Store, and profile management. The full table with descriptions is
 on the [tool catalog](tools.md) page.
 

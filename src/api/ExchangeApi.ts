@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'node:crypto';
 import type { HttpClient } from '../client/HttpClient.js';
 import type { Cache } from '../client/Cache.js';
 
@@ -186,6 +187,32 @@ export class ExchangeApi {
             content: buffer.toString('utf-8'),
             classifier: specFile.classifier,
             fileName: specFile.mainFile || `${assetId}.${specFile.classifier}`,
+        };
+    }
+
+    /** Download the published spec artifact and verify its Exchange-provided MD5 when present. */
+    async downloadSpecArtifact(
+        groupId: string,
+        assetId: string,
+        version: string,
+    ): Promise<{
+        buffer: Buffer;
+        sha256: string;
+        metadataHashMatches: boolean;
+    }> {
+        const detail = await this.getAsset(groupId, assetId, version);
+        const specFile = detail.files?.find((file) =>
+            ['raml', 'oas', 'oas3', 'fat-raml', 'fat-oas'].includes(file.classifier),
+        );
+        if (!specFile) throw new Error(`No API specification artifact found for ${groupId}/${assetId}/${version}.`);
+        const downloadUrl =
+            specFile.downloadURL || `${BASE}/assets/${groupId}/${assetId}/${version}/files/${specFile.classifier}`;
+        const buffer = await this.http.download(downloadUrl);
+        const md5 = createHash('md5').update(buffer).digest('hex');
+        return {
+            buffer,
+            sha256: createHash('sha256').update(buffer).digest('hex'),
+            metadataHashMatches: specFile.md5 ? specFile.md5 === md5 : true,
         };
     }
 }
