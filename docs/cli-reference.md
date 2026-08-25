@@ -1,7 +1,8 @@
 # CLI reference
 
-The binary is `anc`. Most commands take `--env <name>`, and all of them accept `--profile <name>` to
-override the resolved [profile](profiles.md).
+The binary is `anc`. Most operational commands take `--env <name>`. Authentication and configuration
+commands accept `--profile <name>`; operational commands resolve the profile from `ANYPOINT_PROFILE`, a
+project binding, or `default` as described in [Profiles](profiles.md).
 
 ## Configuration and authentication
 
@@ -24,21 +25,21 @@ anc auth logout                       # clear stored tokens
 
 ```bash
 anc apps list --env Sandbox
-anc apps status my-api --env Sandbox
-anc apps restart my-api --env Production            # production confirmation prompt
-anc apps scale my-api --env Sandbox --replicas 2
-anc apps scale my-api --env Production --replicas 3 --force
+anc apps status sample-orders-api --env Sandbox
+anc apps restart sample-orders-api --env Production            # production confirmation prompt
+anc apps scale sample-orders-api --env Sandbox --replicas 2
+anc apps scale sample-orders-api --env Production --replicas 3 --force
 ```
 
 Deletion is a bound two-step operation, because an app name is not a stable identifier for the thing you
 inspected:
 
 ```bash
-anc apps delete my-api --env Sandbox                 # dry run; prints the deployment ID
-anc apps delete my-api --env Sandbox --confirm <DEPLOYMENT_ID>
+anc apps delete sample-orders-api --env Sandbox                 # dry run; prints the deployment ID
+anc apps delete sample-orders-api --env Sandbox --confirm <DEPLOYMENT_ID>
 
 # production requires an explicit acknowledgement as well
-anc apps delete my-api --env Production --confirm <DEPLOYMENT_ID> --allow-production
+anc apps delete sample-orders-api --env Production --confirm <DEPLOYMENT_ID> --allow-production
 ```
 
 If the deployment was recreated between the two calls, the deployment ID no longer matches and the
@@ -49,33 +50,33 @@ operation fails rather than deleting something you never looked at. See the
 
 ```bash
 # standard deploy
-anc deploy target/my-api-1.2.0-mule-application.jar \
-  --app my-api --env Sandbox --runtime 4.8.0
+anc deploy target/sample-orders-api-1.3.0-mule-application.jar \
+  --app sample-orders-api --env Sandbox --runtime 4.8.0
 
 # production deploy triggers a typed confirmation
-anc deploy target/my-api.jar --app my-api --env Production
+anc deploy target/sample-orders-api.jar --app sample-orders-api --env Production
 #   ⚠️  PRODUCTION DEPLOYMENT
-#   App:         my-api
+#   App:         sample-orders-api
 #   Environment: Production
 #   Current:     v1.1.0 (APPLIED, 2 replicas)
 #   New Version: v1.2.0
 #   Type 'deploy to production' to confirm: _
 
 # unattended
-anc deploy app.jar --app my-api --env Production --force
+anc deploy app.jar --app sample-orders-api --env Production --force
 ```
 
 ## Logs
 
 ```bash
 # stream
-anc logs tail my-api --env Sandbox
-anc logs tail my-api --env Sandbox --level ERROR --search "NullPointerException"
+anc logs tail sample-orders-api --env Sandbox
+anc logs tail sample-orders-api --env Sandbox --level ERROR --search "TimeoutException"
 
 # download a range
-anc logs download my-api --env Sandbox --from 24h
-anc logs download my-api --env Production --from 7d --level ERROR
-anc logs download my-api --env Production \
+anc logs download sample-orders-api --env Sandbox --from 24h
+anc logs download sample-orders-api --env Production --from 7d --level ERROR
+anc logs download sample-orders-api --env Production \
   --from "2026-02-01T00:00:00Z" --to "2026-02-14T00:00:00Z" --output prod-logs.log
 ```
 
@@ -86,11 +87,11 @@ keep them out of repositories.
 
 ```bash
 anc monitor view --env Sandbox                       # metrics table, last 24h
-anc monitor view --env Production --app my-api --from 7d
+anc monitor view --env Production --app sample-orders-api --from 7d
 anc monitor perf --env Production                    # percentiles
-anc monitor memory --env Production --app my-api     # JVM heap and GC
-anc monitor memory-trend --env Production --app my-api --granularity 1h
-anc monitor workers --env Production --app my-api    # per-replica
+anc monitor memory --env Production --app sample-orders-api     # JVM heap and GC
+anc monitor memory-trend --env Production --app sample-orders-api --granularity 1h
+anc monitor workers --env Production --app sample-orders-api    # per-replica
 anc monitor compare                                  # across environments
 
 anc monitor download --env Production --from 30d --format json
@@ -104,9 +105,9 @@ their own.
 
 ```bash
 anc exchange search "order" --type rest-api --limit 10
-anc exchange info my-api-spec
-anc exchange info org-id/my-api-spec --version 1.2.0
-anc exchange download-spec my-api-spec -o spec.json
+anc exchange info sample-orders-api-spec
+anc exchange info organization-id/sample-orders-api-spec --version 1.2.0
+anc exchange download-spec sample-orders-api-spec -o spec.json
 ```
 
 ## API Manager
@@ -122,18 +123,18 @@ anc api sla-tiers "order-api" --env Production
 
 ```bash
 anc dc list
-anc dc files my-api-spec --branch develop
+anc dc files sample-orders-api-spec --branch develop
 
 # pull a spec file, auto-decoding JSON-encoded content
-anc dc pull my-api-spec api.raml -o local-spec.raml
+anc dc pull sample-orders-api-spec api.raml -o local-spec.raml
 
 # push, matching the local filename to the remote path
-anc dc push my-api-spec local-spec.raml --message "Add new endpoint"
-anc dc push my-api-spec local-spec.raml --path api.raml
+anc dc push sample-orders-api-spec local-spec.raml --message "Add new endpoint"
+anc dc push sample-orders-api-spec local-spec.raml --path api.raml
 
 # publish to Exchange
-anc dc publish my-api-spec --version 1.2.0 --classifier raml
-anc dc publish my-api-spec --version 2.0.0 --classifier oas3 --api-version v2
+anc dc publish sample-orders-api-spec --version 1.2.0 --classifier raml
+anc dc publish sample-orders-api-spec --version 2.0.0 --classifier oas3 --api-version v2
 ```
 
 ## When a command fails

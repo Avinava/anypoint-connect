@@ -6,6 +6,7 @@
 import { Command } from 'commander';
 import * as readline from 'readline';
 import chalk from 'chalk';
+import password from '@inquirer/password';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import {
@@ -29,6 +30,17 @@ function ask(rl: readline.Interface, prompt: string, defaultValue?: string): Pro
             resolve(answer.trim() || defaultValue || '');
         });
     });
+}
+
+export async function promptForClientSecret(existingSecret?: string): Promise<string> {
+    const existingSecretHint = existingSecret
+        ? ` (leave blank to keep the secret ending ${existingSecret.slice(-4)})`
+        : '';
+    const enteredSecret = await password({
+        message: `Client Secret${existingSecretHint}:`,
+        mask: true,
+    });
+    return enteredSecret || existingSecret || '';
 }
 
 export function createConfigCommand(): Command {
@@ -62,12 +74,6 @@ export function createConfigCommand(): Command {
 
                 const clientId = await ask(rl, '  Client ID:', existing?.clientId);
 
-                const clientSecret = await ask(
-                    rl,
-                    '  Client Secret:',
-                    existing?.clientSecret ? '••••••' + existing.clientSecret.slice(-4) : undefined,
-                );
-
                 const callbackUrl = await ask(rl, '  Callback URL:', existing?.callbackUrl || DEFAULT_CALLBACK_URL);
 
                 const baseUrl = await ask(rl, '  Base URL:', existing?.baseUrl || 'https://anypoint.mulesoft.com');
@@ -76,9 +82,7 @@ export function createConfigCommand(): Command {
 
                 rl.close();
 
-                // If user entered the masked secret, keep the original
-                const resolvedSecret =
-                    clientSecret.startsWith('••••••') && existing?.clientSecret ? existing.clientSecret : clientSecret;
+                const resolvedSecret = await promptForClientSecret(existing?.clientSecret);
 
                 if (!clientId || !resolvedSecret) {
                     log.error('Client ID and Client Secret are required');
@@ -98,6 +102,7 @@ export function createConfigCommand(): Command {
                 console.log();
                 log.success(`Configuration saved for profile "${profileName}"!`);
                 log.kv('Location', `${getProfileDir(profileName)}/config.json`);
+                log.dim('  The Client Secret is stored in this user-only file; OAuth tokens are encrypted separately.');
                 console.log();
                 log.info('Next step: authenticate with Anypoint Platform');
                 log.dim(`  anc auth login${profileName !== 'default' ? ` --profile ${profileName}` : ''}`);

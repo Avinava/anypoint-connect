@@ -48,7 +48,7 @@ export function createAuthCommand(): Command {
         });
 
     auth.command('logout')
-        .description('Clear stored credentials')
+        .description('Clear stored OAuth tokens (keeps the Client ID and Secret)')
         .option('-p, --profile <name>', 'Profile to log out')
         .action(async (options: { profile?: string }) => {
             try {

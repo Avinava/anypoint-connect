@@ -7,7 +7,7 @@ export { AnypointClient, type AnypointClientConfig } from './client/AnypointClie
 
 // Auth
 export { TokenManager, type TokenManagerConfig, type AuthStatus } from './auth/TokenManager.js';
-export { OAuthFlow, type OAuthConfig } from './auth/OAuthFlow.js';
+export { OAuthFlow, type OAuthConfig, type OAuthCallbackOptions } from './auth/OAuthFlow.js';
 export { FileStore } from './auth/FileStore.js';
 export type { TokenStore, AnypointTokens } from './auth/TokenStore.js';
 

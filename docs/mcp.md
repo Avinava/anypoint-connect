@@ -11,6 +11,9 @@ anc auth login
 anc auth status
 ```
 
+If the Connected App does not exist yet, follow the exact fields in
+[Connected App and credentials](credentials.md). The server never receives credentials through MCP.
+
 ## Setup by host
 
 Every host runs the same command; only the file and the wrapping key differ.
@@ -30,7 +33,7 @@ The `mcpServers` form, used by Claude Code, Claude Desktop, Copilot CLI, and Gem
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.11.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.13.0", "mcp"]
     }
   }
 }
@@ -44,7 +47,7 @@ VS Code wraps the same entry in `servers` and wants an explicit transport:
     "anypoint-connect": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.11.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.13.0", "mcp"]
     }
   }
 }
@@ -56,7 +59,7 @@ extension all see it:
 ```toml
 [mcp_servers.anypoint-connect]
 command = "npx"
-args = ["-y", "@sfdxy/anypoint-connect@0.11.0", "mcp"]
+args = ["-y", "@sfdxy/anypoint-connect@0.13.0", "mcp"]
 ```
 
 Installed globally, point at the binary instead and skip the download:
@@ -120,15 +123,15 @@ Two properties matter more than the list:
 
 ```text
 What apps are running in Sandbox?
-Analyze the errors in my-api in Production — what is failing and why?
-Give me a health summary of external-sapi in Production for the last six hours.
-Is my-api leaking memory? Show the heap trend over the past week.
+Analyze the errors in sample-orders-api in Sandbox — what is failing and why?
+Give me a health summary of sample-external-api in Sandbox for the last six hours.
+Is sample-orders-api leaking memory? Show the heap trend over the past week.
 Compare Development and Production and tell me what drifted.
 What changed in the platform in the last 24 hours?
-What policies are applied to the Order API?
-Publish target/example-api-1.0.0-mule-application.jar and deploy it to Sandbox.
-Bump example-api in Production to v1.4.12, artifact only.
-Roll example-api back to its newest distinct historical artifact.
+What policies are applied to the Sample Orders API?
+Publish target/sample-orders-api-1.3.0-mule-application.jar and deploy it to Sandbox.
+Bump sample-orders-api in Sandbox to v1.3.0, artifact only.
+Roll sample-orders-api back to its newest distinct historical artifact.
 What is in the dead-letter queue for order-events?
 ```
 

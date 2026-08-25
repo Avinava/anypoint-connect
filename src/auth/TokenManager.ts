@@ -27,6 +27,7 @@ export class TokenManager {
     private readonly oauthFlow: OAuthFlow;
     private store: TokenStore;
     private cachedTokens: AnypointTokens | null = null;
+    private pendingState: string | null = null;
 
     constructor(config: TokenManagerConfig) {
         this.config = config;
@@ -105,6 +106,7 @@ export class TokenManager {
 
     getAuthorizeUrl(): string {
         const state = this.generateState();
+        this.pendingState = state;
         return this.oauthFlow.getAuthorizeUrl(state);
     }
 
@@ -112,22 +114,35 @@ export class TokenManager {
      * Perform full OAuth flow with browser
      */
     async authenticate(): Promise<AnypointTokens> {
+        if (!this.pendingState) {
+            throw new Error('Authentication was not initialized. Generate the authorization URL first.');
+        }
+
         const redirectUrl = new URL(this.config.redirectUri);
+        const hostname = this.getLoopbackHostname(redirectUrl);
         const port = parseInt(redirectUrl.port) || 3000;
         const callbackPath = redirectUrl.pathname;
+        const expectedState = this.pendingState;
 
-        // Start callback server first
-        const callbackPromise = this.oauthFlow.waitForCallback(port, callbackPath);
+        try {
+            // Start callback server first
+            const callbackPromise = this.oauthFlow.waitForCallback(port, callbackPath, 120000, {
+                expectedState,
+                hostname,
+            });
 
-        // Wait for callback and exchange code
-        const { code } = await callbackPromise;
-        const tokens = await this.oauthFlow.exchangeCode(code);
+            // Wait for callback and exchange code
+            const { code } = await callbackPromise;
+            const tokens = await this.oauthFlow.exchangeCode(code);
 
-        // Save tokens
-        await this.store.save(tokens);
-        this.cachedTokens = tokens;
+            // Save tokens
+            await this.store.save(tokens);
+            this.cachedTokens = tokens;
 
-        return tokens;
+            return tokens;
+        } finally {
+            this.pendingState = null;
+        }
     }
 
     async refresh(): Promise<AnypointTokens> {
@@ -171,5 +186,18 @@ export class TokenManager {
 
     private generateState(): string {
         return crypto.randomUUID();
+    }
+
+    private getLoopbackHostname(redirectUrl: URL): string {
+        if (redirectUrl.protocol !== 'http:') {
+            throw new Error('OAuth callback URL must use HTTP on a loopback host.');
+        }
+
+        const hostname = redirectUrl.hostname.replace(/^\[|\]$/g, '');
+        if (!['localhost', '127.0.0.1', '::1'].includes(hostname)) {
+            throw new Error('OAuth callback URL must use localhost, 127.0.0.1, or ::1.');
+        }
+
+        return hostname;
     }
 }

@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.13.0 — Secure Onboarding and Documentation
+
+### Added
+
+- A task-oriented documentation experience with a redesigned home page, beginner-friendly setup path,
+  exact Connected App configuration, administrator handoff, credential rotation, troubleshooting, and
+  copyable CLI, MCP, Bash, PowerShell, and JavaScript examples.
+- Self-contained OAuth callback pages for success and failure states, with responsive light/dark design,
+  escaped dynamic content, no external assets, and restrictive browser security headers.
+- Documentation validation for release pins, credential-shaped literals, synthetic sample names, example
+  syntax, and library dependency alignment.
+
+### Security
+
+- OAuth callbacks are bound to the one-time state that initiated login. Missing or mismatched callbacks
+  are rejected without ending the valid login attempt.
+- The callback listener accepts only HTTP loopback hosts, and callback responses disable caching,
+  referrers, framing, script execution, and content-type sniffing.
+- Interactive configuration masks the Client Secret and preserves an existing secret when the prompt is
+  left blank.
+
+### Changed
+
+- Node.js 22 is now the minimum supported runtime; Node.js 24 LTS is recommended and CI covers Node 22,
+  24, and 26.
+- Authentication documentation now matches the implemented user Authorization Code flow and its
+  `full offline_access` request. Client ID and Secret alone are explicitly not presented as headless CI
+  authentication.
+- Documentation navigation, typography, color contrast, responsive behavior, logo, and light/dark themes
+  were rebuilt for faster scanning by MuleSoft developers who do not routinely use Node.js.
+- Profile and deployment guidance now distinguishes commands that accept `--profile`, MCP dry runs, and
+  CLI operations that apply immediately outside production.
+- The repository code-review skill now encodes the authentication, credential, mutation-safety,
+  documentation, and release invariants that reviewers must preserve, without mandatory ceremony.
+- Tag-driven releases now run static, formatting, and documentation validation before npm publication.
+
 ## 0.12.0 — API Design Workflows
 
 ### Added

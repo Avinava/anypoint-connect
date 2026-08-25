@@ -22,7 +22,7 @@ jobs:
             - name: Setup Node.js
               uses: actions/setup-node@v7
               with:
-                  node-version: '20'
+                  node-version: '24'
                   registry-url: 'https://registry.npmjs.org'
 
             - name: Install dependencies
@@ -33,6 +33,12 @@ jobs:
 
             - name: Run tests
               run: npm test
+
+            - name: Run static and documentation checks
+              run: |
+                  npm run lint
+                  npm run format:check
+                  npm run docs:check
 
             - name: Audit production dependencies
               run: npm run audit:prod
@@ -74,7 +80,7 @@ jobs:
                       # Use
                       anc apps list --env Sandbox
                       anc dc list
-                      anc logs tail my-api --env Development
+                      anc logs tail sample-orders-api --env Development
                       ```
 
                       See [README.md](https://github.com/Avinava/anypoint-connect/blob/main/README.md) for full documentation.

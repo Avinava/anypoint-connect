@@ -12,6 +12,7 @@ error text names which one.
 | `Token expired and no refresh token` | The stored session cannot be renewed. `anc auth login` again |
 | `Token refresh failed` | The refresh token was revoked, or the Connected App changed. Log in again; if it recurs, check whether the app was rotated in Access Management |
 | The browser never returns | The Connected App's redirect URI does not match `http://localhost:3000/api/callback`, or port 3000 is occupied |
+| The callback says it could not be verified | The returned OAuth state did not match the login started by this CLI process. Close the tab and run `anc auth login` again; no code was accepted |
 | Commands hit the wrong organization | An exported `ANYPOINT_PROFILE` or environment variable outranks the profile you expected. `anc config show` reports the resolved source. See [Profiles](profiles.md) |
 
 ## Environments and permissions
@@ -37,7 +38,7 @@ error text names which one.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| Nothing happened when I deployed | The call was a dry run. Mutating tools require `confirm: true`; the CLI requires the typed confirmation or `--force`. See [Safety model](safety.md) |
+| An MCP deployment changed nothing | The call was a preview. Mutating MCP tools require `confirm: true`. The CLI behaves differently: non-production deploys apply, while production requires the typed confirmation or `--force`. See [Safety model](safety.md) |
 | An infrastructure change was rejected | Redeploys of an existing app change the artifact only, by design. Use the scale or settings tools, or create a new deployment |
 | `delete_app` fails with a deployment-ID mismatch | The deployment changed between your dry run and your confirmation. Re-run the dry run and use the new ID; this is the guard working |
 | A production deploy refuses to proceed | Production requires an explicit acknowledgement. Provide it deliberately, or deploy to a lower environment first |
@@ -52,3 +53,6 @@ error text names which one.
 | Every tool fails with an auth error | The server has no session. Run `anc auth login` in a terminal; the agent cannot and should not do it for you |
 | The agent used the wrong environment | Environment is a parameter, not a default. Name it in the request |
 | Tools resolve the wrong profile | The working directory is not the project you think. Check `get_project_profile` |
+
+For field-by-field Connected App setup, storage, rotation, allowlists, and the limitations of environment
+variables, see [Connected App and credentials](credentials.md).

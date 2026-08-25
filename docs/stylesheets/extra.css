@@ -1,0 +1,396 @@
+:root {
+    --anc-paper: #f4f6f8;
+    --anc-surface: #ffffff;
+    --anc-surface-muted: #eaf0f4;
+    --anc-ink: #172033;
+    --anc-muted: #526078;
+    --anc-soft: #6c7890;
+    --anc-rule: rgba(23, 32, 51, 0.14);
+    --anc-rule-strong: rgba(23, 32, 51, 0.28);
+    --anc-accent: #087ea4;
+    --anc-accent-strong: #056580;
+    --anc-accent-soft: rgba(8, 126, 164, 0.1);
+    --anc-radius-sm: 0.35rem;
+    --anc-radius-md: 0.65rem;
+    --md-primary-fg-color: #172033;
+    --md-primary-fg-color--light: #29364f;
+    --md-primary-fg-color--dark: #101728;
+    --md-accent-fg-color: #087ea4;
+    --md-default-bg-color: #f4f6f8;
+    --md-default-fg-color: #172033;
+    --md-default-fg-color--light: #526078;
+    --md-default-fg-color--lighter: #6c7890;
+    --md-default-fg-color--lightest: #d5dae2;
+}
+
+[data-md-color-scheme='slate'] {
+    --anc-paper: #111621;
+    --anc-surface: #192131;
+    --anc-surface-muted: #202b3e;
+    --anc-ink: #f2f5fa;
+    --anc-muted: #b3bed0;
+    --anc-soft: #929fb5;
+    --anc-rule: rgba(242, 245, 250, 0.14);
+    --anc-rule-strong: rgba(242, 245, 250, 0.28);
+    --anc-accent: #57c7e8;
+    --anc-accent-strong: #86d9ef;
+    --anc-accent-soft: rgba(87, 199, 232, 0.12);
+    --md-primary-fg-color: #101621;
+    --md-primary-fg-color--light: #1c2637;
+    --md-primary-fg-color--dark: #0b1019;
+    --md-accent-fg-color: #57c7e8;
+    --md-default-bg-color: #111621;
+    --md-default-fg-color: #f2f5fa;
+    --md-default-fg-color--light: #b3bed0;
+    --md-default-fg-color--lighter: #929fb5;
+    --md-default-fg-color--lightest: #344055;
+}
+
+body,
+input {
+    font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        'Segoe UI',
+        sans-serif;
+}
+
+body {
+    background: var(--anc-paper);
+    color: var(--anc-ink);
+}
+
+.md-grid {
+    max-width: 80rem;
+}
+
+.md-nav__title {
+    color: var(--anc-ink);
+}
+
+.md-nav__link {
+    color: var(--anc-muted);
+}
+
+.md-nav__link--active,
+.md-nav__link:hover,
+.md-nav__link:focus-visible {
+    color: var(--anc-accent-strong);
+}
+
+.md-typeset {
+    color: var(--anc-ink);
+    font-size: 0.82rem;
+    line-height: 1.65;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+    color: var(--anc-ink);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+}
+
+.md-typeset h1 {
+    margin-bottom: 1rem;
+    font-size: clamp(2rem, 5vw, 3.1rem);
+    line-height: 1.08;
+}
+
+.md-typeset h2 {
+    margin-top: 2.6rem;
+    padding-top: 0.2rem;
+    font-size: 1.45rem;
+}
+
+.md-typeset p,
+.md-typeset li {
+    max-width: 72ch;
+}
+.md-typeset a {
+    color: var(--anc-accent-strong);
+}
+
+.md-typeset code,
+.md-typeset pre,
+.anc-eyebrow,
+.anc-step-number,
+.anc-kicker,
+.anc-output-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.md-typeset table:not([class]) {
+    border: 1px solid var(--anc-rule);
+    border-radius: var(--anc-radius-md);
+    background: var(--anc-surface);
+}
+
+.md-typeset table:not([class]) th {
+    background: var(--anc-surface-muted);
+    color: var(--anc-ink);
+}
+
+.md-typeset table:not([class]) td,
+.md-typeset table:not([class]) th {
+    border-color: var(--anc-rule);
+}
+
+.md-typeset .admonition,
+.md-typeset details {
+    border: 1px solid var(--anc-rule);
+    border-radius: var(--anc-radius-md);
+    box-shadow: none;
+}
+
+.md-typeset pre > code {
+    border: 1px solid var(--anc-rule);
+    border-radius: var(--anc-radius-md);
+}
+
+.anc-hero {
+    margin: 0 0 2.5rem;
+    padding: clamp(2rem, 7vw, 4.5rem);
+    overflow: hidden;
+    border: 1px solid var(--anc-rule);
+    border-radius: 1rem;
+    background: linear-gradient(135deg, var(--anc-accent-soft), transparent 58%), var(--anc-surface);
+}
+
+.anc-hero h1 {
+    max-width: 15ch;
+    margin: 0.55rem 0 1rem;
+}
+
+.anc-hero .anc-lead {
+    max-width: 62ch;
+    margin-bottom: 1.5rem;
+    color: var(--anc-muted);
+    font-size: clamp(1rem, 2.2vw, 1.2rem);
+}
+
+.anc-eyebrow,
+.anc-kicker,
+.anc-output-label {
+    color: var(--anc-accent-strong);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.075em;
+    text-transform: uppercase;
+}
+
+.anc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin: 1.4rem 0;
+}
+
+.anc-button,
+.anc-button:link,
+.anc-button:visited {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.55rem;
+    padding: 0.55rem 0.9rem;
+    border: 1px solid var(--anc-rule-strong);
+    border-radius: var(--anc-radius-sm);
+    color: var(--anc-ink) !important;
+    font-weight: 650;
+}
+
+.anc-button--primary {
+    border-color: var(--anc-accent);
+    background: var(--anc-accent);
+    color: #07151b !important;
+}
+
+[data-md-color-scheme='default'] .anc-button--primary {
+    color: #ffffff !important;
+}
+
+.anc-command {
+    max-width: 44rem;
+    margin-top: 1.5rem;
+    padding: 1rem 1.15rem;
+    overflow-x: auto;
+    border: 1px solid var(--anc-rule);
+    border-radius: var(--anc-radius-md);
+    background: var(--anc-surface-muted);
+}
+
+.anc-command code {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--anc-ink);
+    white-space: pre;
+}
+
+.anc-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem;
+    margin: 1.25rem 0 2rem;
+}
+
+.anc-card,
+.anc-step,
+.anc-flow-card,
+.anc-output {
+    border: 1px solid var(--anc-rule);
+    border-radius: var(--anc-radius-md);
+    background: var(--anc-surface);
+}
+
+.anc-card {
+    display: block;
+    padding: 1.2rem;
+    color: var(--anc-ink) !important;
+}
+
+.anc-card:hover,
+.anc-card:focus-visible {
+    border-color: var(--anc-accent);
+}
+
+.anc-card h3 {
+    margin: 0.35rem 0 0.45rem;
+}
+
+.anc-card p {
+    margin: 0;
+    color: var(--anc-muted);
+    font-size: 0.78rem;
+}
+
+.anc-step {
+    position: relative;
+    margin: 1rem 0;
+    padding: 1.25rem 1.25rem 1.25rem 4.5rem;
+}
+
+.anc-step-number {
+    position: absolute;
+    top: 1.25rem;
+    left: 1.25rem;
+    display: grid;
+    width: 2.2rem;
+    height: 2.2rem;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--anc-accent-soft);
+    color: var(--anc-accent-strong);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.anc-step h2,
+.anc-step h3 {
+    margin-top: 0;
+    padding-top: 0;
+}
+
+.anc-flow {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: stretch;
+    gap: 0.65rem;
+    margin: 1.3rem 0 2rem;
+}
+
+.anc-flow-card {
+    padding: 1rem;
+}
+
+.anc-flow-card strong {
+    display: block;
+    margin-bottom: 0.35rem;
+}
+
+.anc-flow-card span {
+    color: var(--anc-muted);
+    font-size: 0.75rem;
+}
+
+.anc-flow-arrow {
+    align-self: center;
+    color: var(--anc-soft);
+    font-size: 1.2rem;
+}
+
+.anc-output {
+    margin: 0.9rem 0 1.4rem;
+    overflow: hidden;
+}
+
+.anc-output-label {
+    display: block;
+    padding: 0.55rem 0.85rem;
+    border-bottom: 1px solid var(--anc-rule);
+    background: var(--anc-surface-muted);
+}
+
+.anc-output pre {
+    margin: 0;
+    padding: 1rem;
+    overflow-x: auto;
+    color: var(--anc-ink);
+    background: var(--anc-surface);
+}
+
+.anc-note {
+    padding: 1rem 1.1rem;
+    border-left: 3px solid var(--anc-accent);
+    border-radius: 0 var(--anc-radius-sm) var(--anc-radius-sm) 0;
+    background: var(--anc-accent-soft);
+}
+
+.anc-note p:last-child {
+    margin-bottom: 0;
+}
+
+@media (max-width: 800px) {
+    .anc-grid {
+        grid-template-columns: 1fr;
+    }
+    .anc-flow {
+        grid-template-columns: 1fr;
+    }
+    .anc-flow-arrow {
+        justify-self: center;
+        transform: rotate(90deg);
+    }
+}
+
+@media (max-width: 480px) {
+    .anc-hero {
+        margin-inline: -0.25rem;
+        padding: 1.45rem;
+        border-radius: 0.75rem;
+    }
+
+    .anc-step {
+        padding: 4rem 1rem 1rem;
+    }
+    .anc-step-number {
+        top: 1rem;
+        left: 1rem;
+    }
+}
+
+@media print {
+    .anc-hero,
+    .anc-card,
+    .anc-step,
+    .anc-flow-card,
+    .anc-output {
+        break-inside: avoid;
+        box-shadow: none;
+    }
+}

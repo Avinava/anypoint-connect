@@ -1,57 +1,80 @@
-<img src="assets/logo.svg" alt="anypoint-connect" width="600" />
+<div class="anc-hero" markdown="1">
 
-# anypoint-connect
+<span class="anc-eyebrow">CLI · MCP server · JavaScript library</span>
 
-A CLI, MCP server, and TypeScript library for Anypoint Platform: deploy applications, tail and analyze
-logs, pull metrics, manage API specs, and inspect queues and Object Stores — with production safety
-nets on every mutating operation.
+# Operate Anypoint Platform with safer defaults
 
-```bash
-npm install -g @sfdxy/anypoint-connect
+<p class="anc-lead">Install once, authenticate through your organization’s Connected App, and use the same well-tested client to inspect applications, analyze logs, pull metrics, manage API assets, and perform guarded lifecycle operations.</p>
+
+<div class="anc-actions">
+<a class="anc-button anc-button--primary" href="getting-started/">Set up in about 15 minutes</a>
+<a class="anc-button" href="recipes/">See working recipes</a>
+</div>
+
+<div class="anc-command"><code>npm install --global @sfdxy/anypoint-connect
 anc config init
 anc auth login
-anc auth status
-```
+anc auth status</code></div>
 
-## Start here
+</div>
 
-| You want to | Go to |
-| --- | --- |
-| Set it up from scratch, including the Connected App | [Getting started](getting-started.md) |
-| Work across several organizations | [Profiles and multiple orgs](profiles.md) |
-| Understand what happens when access is missing | [Access readiness](readiness.md) |
-| Look up a command | [CLI reference](cli-reference.md) |
-| Let an AI agent use it | [MCP server](mcp.md) |
-| Find the right tool | [Tool catalog](tools.md) |
-| Know what can and cannot mutate production | [Safety model](safety.md) |
-| Ship a locally built JAR | [Deploying a JAR](deployment-tools.md) |
-| Fix something | [Troubleshooting](troubleshooting.md) |
+## Choose how you want to use it
+
+<div class="anc-grid">
+<a class="anc-card" href="getting-started/">
+<span class="anc-kicker">Terminal</span>
+<h3>Use the CLI</h3>
+<p>Best for operators and Mule developers who want copyable commands without writing Node.js.</p>
+</a>
+<a class="anc-card" href="mcp/">
+<span class="anc-kicker">AI tools</span>
+<h3>Run the MCP server</h3>
+<p>Let an agent inspect runtime evidence while credentials and confirmation gates remain local.</p>
+</a>
+<a class="anc-card" href="library/">
+<span class="anc-kicker">Automation</span>
+<h3>Call the library</h3>
+<p>Use the same API clients from JavaScript or TypeScript after authenticating a local profile.</p>
+</a>
+</div>
+
+## Credentials, without the mystery
+
+`anypoint-connect` uses a Connected App that **acts on behalf of a user**. The Client ID and Client
+Secret identify the app; a browser login authorizes the user; the resulting OAuth tokens are stored
+separately and refreshed automatically.
+
+<div class="anc-flow">
+<div class="anc-flow-card"><strong>Connected App</strong><span>Client ID, Client Secret, redirect URI, Full Access, Background Access</span></div>
+<div class="anc-flow-arrow" aria-hidden="true">→</div>
+<div class="anc-flow-card"><strong>Browser authorization</strong><span>The user signs in with existing Anypoint permissions and MFA</span></div>
+<div class="anc-flow-arrow" aria-hidden="true">→</div>
+<div class="anc-flow-card"><strong>Local profile</strong><span>Restricted credential file plus encrypted, refreshable OAuth tokens</span></div>
+</div>
+
+[Follow the exact Connected App fields](credentials.md), including what to ask an organization
+administrator for and how to rotate a secret safely.
 
 ## What it covers
 
-| Area | Examples |
+| Area | Typical work |
 | --- | --- |
-| Applications | Status, deployment spec, resources, settings, deploy, redeploy, rollback, restart, scale, stop, start, delete |
-| Logs | Tail, download, error clustering with context windows, recurring patterns, statistical health |
-| Monitoring | Request and response metrics, percentiles, time series, per-replica, JVM memory and GC, freeform AMQL |
-| Exchange | Search, asset detail, spec download, JAR publication |
-| API Manager | Instances, policies, SLA tiers, alerts |
-| Design Center | Projects, branches, safe file sync, governed publication |
-| Platform | Environments, entitlements, audit log |
-| Anypoint MQ | Queues, depth and throughput, dead-letter browsing, test publishing |
-| Object Store v2 | Stores, keys, values |
+| Runtime Manager | List, inspect, deploy, redeploy, roll back, restart, scale, stop, start, and delete applications |
+| Logs and monitoring | Tail logs, group errors, find patterns, pull percentiles, inspect workers, memory, and GC |
+| Exchange and Design Center | Search assets, download specifications, synchronize source, publish APIs and application JARs |
+| API Manager | Inspect instances, policies, SLA tiers, and alerts |
+| Platform services | Environments, entitlements, audit log, Anypoint MQ, and Object Store v2 |
 
-## Safety, in one paragraph
+## Safety is part of the interface
 
-Every mutating operation is dry-run by default: called without `confirm: true` it returns a preview of
-exactly what would change and modifies nothing. Redeploying an existing application changes only the
-artifact reference — runtime, target, replicas, and settings are preserved, so a redeploy cannot
-silently downgrade a runtime or relocate an app. Deletion needs a deployment-ID-bound confirmation and,
-in production, a separate acknowledgement, so it fails closed if the deployment changed underneath you.
-The full model is on the [safety page](safety.md).
+Mutating MCP tools preview by default. Artifact updates preserve runtime, target, replicas, and settings;
+deletion is bound to the deployment ID that was inspected; production operations require an additional
+acknowledgement. Read the [safety model](safety.md) before automating a change.
 
-## This is the one that needs credentials
+<div class="anc-note" markdown="1">
 
-Of the four tools in this [ecosystem](ecosystem.md), only `anypoint-connect` authenticates against
-Anypoint Platform. Set it up when you want runtime evidence or lifecycle operations; skip it if you only
-need to lint, build, package, or document a project locally.
+**Start with a read.** `anc auth status` verifies the local session, and
+`anc apps list --env Sandbox` verifies that the intended environment is visible. Authentication,
+environment visibility, permissions, and subscription entitlements are separate states with separate fixes.
+
+</div>

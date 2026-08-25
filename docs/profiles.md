@@ -52,10 +52,14 @@ A profile is resolved first, then credentials within it.
 
 | Priority | Source | Example |
 | --- | --- | --- |
-| 1 | `--profile` flag | `anc apps list --profile org-a --env Sandbox` |
+| 1 | `--profile` on auth/config commands | `anc auth status --profile org-a` |
 | 2 | `ANYPOINT_PROFILE` | `export ANYPOINT_PROFILE=org-a` |
 | 3 | `.anypoint-connect.json` in the project, walking up from the working directory | `{ "profile": "org-a" }` |
 | 4 | Fallback | `default` |
+
+Operational commands do not expose a `--profile` option. For a one-off operational override, set
+`ANYPOINT_PROFILE` for that process; for day-to-day work, bind the project directory with
+`anc config use <profile>`.
 
 **Credentials** within that profile, highest priority first:
 
