@@ -27,13 +27,16 @@ validation:
 
 theme:
     name: material
+    font: false
     icon:
         logo: material/cloud-check-outline
         repo: fontawesome/brands/github
     features:
         - content.action.edit
         - content.code.copy
+        - content.tabs.link
         - navigation.instant
+        - navigation.indexes
         - navigation.sections
         - navigation.top
         - navigation.tracking
@@ -43,15 +46,15 @@ theme:
     palette:
         - media: '(prefers-color-scheme: light)'
           scheme: default
-          primary: black
-          accent: indigo
+          primary: custom
+          accent: custom
           toggle:
               icon: material/weather-night
               name: Switch to dark mode
         - media: '(prefers-color-scheme: dark)'
           scheme: slate
-          primary: black
-          accent: indigo
+          primary: custom
+          accent: custom
           toggle:
               icon: material/weather-sunny
               name: Switch to light mode
@@ -64,27 +67,37 @@ markdown_extensions:
     - toc:
           permalink: true
     - pymdownx.details
+    - pymdownx.highlight:
+          anchor_linenums: true
+    - pymdownx.inlinehilite
+    - pymdownx.tabbed:
+          alternate_style: true
     - pymdownx.superfences:
           custom_fences:
               - name: mermaid
                 class: mermaid
                 format: !!python/name:pymdownx.superfences.fence_code_format
 
+extra_css:
+    - stylesheets/extra.css
+
 nav:
     - Home: index.md
-    - Setup:
+    - Start:
           - Getting started: getting-started.md
+          - Connected App and credentials: credentials.md
           - Profiles and multiple orgs: profiles.md
           - Access readiness: readiness.md
-    - Using it:
-          - CLI reference: cli-reference.md
+    - Guides:
+          - Common recipes: recipes.md
           - MCP server: mcp.md
-          - Tool catalog: tools.md
-          - Safety model: safety.md
           - Deploying a JAR: deployment-tools.md
-          - Library API: library.md
           - Troubleshooting: troubleshooting.md
     - Reference:
+          - CLI reference: cli-reference.md
+          - Tool catalog: tools.md
+          - Library API: library.md
+          - Safety model: safety.md
           - Architecture: architecture.md
           - Ecosystem: ecosystem.md
 

@@ -5,6 +5,7 @@
 
 import * as http from 'http';
 import type { AnypointTokens } from './TokenStore.js';
+import { OAUTH_CALLBACK_HEADERS, renderOAuthCallbackPage } from './OAuthCallbackPage.js';
 
 interface TokenResponse {
     access_token: string;
@@ -21,6 +22,13 @@ export interface OAuthConfig {
     clientSecret: string;
     redirectUri: string;
     baseUrl?: string;
+}
+
+export interface OAuthCallbackOptions {
+    /** OAuth state generated with the authorization URL. */
+    expectedState?: string;
+    /** Loopback host to bind. Defaults to localhost for compatibility. */
+    hostname?: string;
 }
 
 export class OAuthFlow {
@@ -54,6 +62,7 @@ export class OAuthFlow {
         port: number = 3000,
         callbackPath: string = '/api/callback',
         timeoutMs: number = 120000,
+        options: OAuthCallbackOptions = {},
     ): Promise<{ code: string; state: string }> {
         return new Promise((resolve, reject) => {
             const server = http.createServer((req, res) => {
@@ -66,47 +75,69 @@ export class OAuthFlow {
                     const error_description = parsedUrl.searchParams.get('error_description');
 
                     if (error) {
-                        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-                        res.end(`
-              <html>
-                <head><meta charset="utf-8"></head>
-                <body style="font-family: system-ui; padding: 40px; text-align: center; background: #1a1a2e; color: #e0e0e0;">
-                  <h1 style="color: #ff6b6b;">❌ Authentication Failed</h1>
-                  <p>${error_description || error}</p>
-                  <p style="color: #888;">You can close this window.</p>
-                </body>
-              </html>
-            `);
+                        res.writeHead(400, OAUTH_CALLBACK_HEADERS);
+                        res.end(
+                            renderOAuthCallbackPage({
+                                status: 'error',
+                                title: 'Authentication was not completed',
+                                message: 'Anypoint Platform did not authorize this local session.',
+                                detail: error_description || error,
+                            }),
+                        );
                         server.close();
                         reject(new Error(`OAuth error: ${error_description || error}`));
                         return;
                     }
 
-                    if (code && state) {
-                        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-                        res.end(`
-              <html>
-                <head><meta charset="utf-8"></head>
-                <body style="font-family: system-ui; padding: 40px; text-align: center; background: #1a1a2e; color: #e0e0e0;">
-                  <h1 style="color: #4ecdc4;">✅ Authentication Successful!</h1>
-                  <p>You can close this window and return to the terminal.</p>
-                  <script>setTimeout(() => window.close(), 2000);</script>
-                </body>
-              </html>
-            `);
-                        server.close();
-                        resolve({ code: code as string, state: state as string });
-                    } else {
-                        res.writeHead(400, { 'Content-Type': 'text/plain' });
-                        res.end('Missing code or state');
+                    if (!code || !state) {
+                        res.writeHead(400, OAUTH_CALLBACK_HEADERS);
+                        res.end(
+                            renderOAuthCallbackPage({
+                                status: 'error',
+                                title: 'The callback was incomplete',
+                                message: 'The authorization response did not contain both a code and state value.',
+                                detail: 'Return to the terminal and start the login again if it does not continue.',
+                            }),
+                        );
+                        return;
                     }
+
+                    if (options.expectedState && state !== options.expectedState) {
+                        res.writeHead(400, OAUTH_CALLBACK_HEADERS);
+                        res.end(
+                            renderOAuthCallbackPage({
+                                status: 'error',
+                                title: 'The callback could not be verified',
+                                message: 'This response did not match the login request started by the CLI.',
+                                detail: 'For your safety, no authorization code was accepted.',
+                            }),
+                        );
+                        return;
+                    }
+
+                    res.writeHead(200, OAUTH_CALLBACK_HEADERS);
+                    res.end(
+                        renderOAuthCallbackPage({
+                            status: 'success',
+                            title: 'Authentication successful',
+                            message: 'Anypoint Platform returned control to Anypoint Connect securely.',
+                        }),
+                    );
+                    server.close();
+                    resolve({ code, state });
                 } else {
-                    res.writeHead(404, { 'Content-Type': 'text/plain' });
-                    res.end('Not found');
+                    res.writeHead(404, OAUTH_CALLBACK_HEADERS);
+                    res.end(
+                        renderOAuthCallbackPage({
+                            status: 'error',
+                            title: 'Callback page not found',
+                            message: 'This local server only accepts the configured OAuth callback path.',
+                        }),
+                    );
                 }
             });
 
-            server.listen(port, () => {
+            server.listen(port, options.hostname || 'localhost', () => {
                 // Server started, waiting for callback
             });
 

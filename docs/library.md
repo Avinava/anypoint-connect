@@ -1,6 +1,8 @@
 # Library API
 
 The same client the CLI and MCP server use is exported for direct use in TypeScript or JavaScript.
+Run `anc config init` and `anc auth login` first: the constructor supplies the Connected App credentials,
+while `profileName` selects the encrypted OAuth token store created by the CLI login.
 
 ```typescript
 import { AnypointClient } from '@sfdxy/anypoint-connect';
@@ -8,6 +10,7 @@ import { AnypointClient } from '@sfdxy/anypoint-connect';
 const client = new AnypointClient({
   clientId: process.env.ANYPOINT_CLIENT_ID!,
   clientSecret: process.env.ANYPOINT_CLIENT_SECRET!,
+  profileName: process.env.ANYPOINT_PROFILE || 'default',
 });
 
 // identity and organization context
@@ -25,7 +28,7 @@ const apps = await client.cloudHub2.getDeployments(orgId, sandbox.id);
 `tailLogs` is an async iterable, so backpressure is the consumer's loop rather than a callback queue:
 
 ```typescript
-for await (const entries of client.logs.tailLogs(orgId, sandbox.id, 'my-api')) {
+for await (const entries of client.logs.tailLogs(orgId, sandbox.id, 'sample-orders-api')) {
   entries.forEach((e) => console.log(`[${e.priority}] ${e.message}`));
 }
 ```
@@ -68,3 +71,8 @@ mutating, and do not let a script delete by name without binding to a deployment
 
 Credentials come from the constructor or the environment. For interactive use, prefer the stored profile
 via the CLI rather than passing secrets around in code — see [Profiles](profiles.md).
+
+A build-free JavaScript example is available in the repository's
+[`examples/library`](https://github.com/Avinava/anypoint-connect/tree/main/examples/library) directory.
+The library does not implement a client-credentials grant; a new machine still needs a user-authorized
+profile before these calls can obtain a bearer token.

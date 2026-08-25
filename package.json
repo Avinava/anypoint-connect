@@ -1,6 +1,6 @@
 {
     "name": "@sfdxy/anypoint-connect",
-    "version": "0.12.0",
+    "version": "0.13.0",
     "description": "CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets",
     "type": "module",
     "main": "./dist/index.js",
@@ -18,12 +18,14 @@
         "lint": "tsc --noEmit",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "audit:prod": "npm audit --omit=dev --audit-level=moderate"
+        "audit:prod": "npm audit --omit=dev --audit-level=moderate",
+        "docs:check": "node scripts/check-docs.mjs"
     },
     "engines": {
-        "node": ">=20.0.0"
+        "node": ">=22.0.0"
     },
     "dependencies": {
+        "@inquirer/password": "^4.0.14",
         "@modelcontextprotocol/sdk": "^1.12.1",
         "axios": "^1.6.0",
         "chalk": "^5.3.0",
@@ -34,7 +36,7 @@
         "zod": "^3.22.0"
     },
     "devDependencies": {
-        "@types/node": "^20.10.0",
+        "@types/node": "^22.0.0",
         "@vitest/coverage-v8": "^4.1.11",
         "prettier": "^3.8.1",
         "typescript": "^5.3.3",

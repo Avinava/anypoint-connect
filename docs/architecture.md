@@ -27,7 +27,7 @@ graph LR
 
 | Layer | Responsibility |
 | --- | --- |
-| Auth | OAuth2 browser flow, AES-256-GCM encrypted token storage, automatic refresh with a five-minute buffer |
+| Auth | State-bound OAuth2 browser flow, loopback-only callback, encrypted token storage, automatic refresh with a five-minute buffer |
 | Client | `AnypointClient` facade, Axios HTTP client with bearer injection, token-bucket rate limiting, TTL cache with observability |
 | API | One client per platform domain: CloudHub 2.0, Logs, Monitoring, Exchange, API Manager, Design Center, Audit Log, Anypoint MQ, Object Store, Access Management |
 | Analysis | Log pipeline: multi-line joining, JSON logger parsing, error grouping, context windows, pattern detection, statistics |
@@ -82,6 +82,9 @@ calls is throttled the same way a scripted loop is.
 
 - **Tokens are encrypted at rest** and stored per profile, separate from credentials, so a config file can
   be inspected without exposing a session.
+- **OAuth callbacks fail closed.** The authorization URL creates a single-use state value, the local
+  callback accepts only the configured loopback path and matching state, and every HTML response escapes
+  provider text and disables caching and cross-origin loading.
 - **The cache is observable.** `anypoint://diagnostics/cache` reports hit rates, which matters when an
   agent's repeated questions should not become repeated platform calls.
 - **Log analysis happens client-side.** Grouping, context windows, and pattern detection run locally, so

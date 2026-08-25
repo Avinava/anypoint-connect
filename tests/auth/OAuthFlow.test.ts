@@ -67,6 +67,67 @@ describe('OAuthFlow', () => {
             expect(result.state).toBe('test-state');
         });
 
+        it('should reject a mismatched state and continue waiting for the valid callback', async () => {
+            const flow = new OAuthFlow(config);
+            const port = 5456 + Math.floor(Math.random() * 1000);
+
+            const callbackPromise = flow.waitForCallback(port, '/api/callback', 5000, {
+                expectedState: 'expected-state',
+            });
+
+            const mismatchedResponsePromise = new Promise<Response>((resolve, reject) => {
+                setTimeout(() => {
+                    fetch(`http://localhost:${port}/api/callback?code=wrong-code&state=wrong-state`)
+                        .then(resolve)
+                        .catch(reject);
+                }, 100);
+            });
+
+            const validResponsePromise = new Promise<Response>((resolve, reject) => {
+                setTimeout(() => {
+                    fetch(`http://localhost:${port}/api/callback?code=valid-code&state=expected-state`)
+                        .then(resolve)
+                        .catch(reject);
+                }, 200);
+            });
+
+            const [result, mismatchedResponse, validResponse] = await Promise.all([
+                callbackPromise,
+                mismatchedResponsePromise,
+                validResponsePromise,
+            ]);
+
+            expect(mismatchedResponse.status).toBe(400);
+            expect(await mismatchedResponse.text()).toContain('could not be verified');
+            expect(validResponse.status).toBe(200);
+            expect(result).toEqual({ code: 'valid-code', state: 'expected-state' });
+        });
+
+        it('should return escaped HTML and security headers for provider errors', async () => {
+            const flow = new OAuthFlow(config);
+            const port = 6456 + Math.floor(Math.random() * 1000);
+            const callbackPromise = flow.waitForCallback(port, '/api/callback', 5000);
+            const responsePromise = new Promise<Response>((resolve, reject) => {
+                setTimeout(() => {
+                    fetch(
+                        `http://localhost:${port}/api/callback?error=access_denied&error_description=${encodeURIComponent('<script>alert(1)</script>')}`,
+                    )
+                        .then(resolve)
+                        .catch(reject);
+                }, 100);
+            });
+
+            await expect(callbackPromise).rejects.toThrow('OAuth error');
+            const response = await responsePromise;
+            const body = await response.text();
+
+            expect(response.status).toBe(400);
+            expect(response.headers.get('cache-control')).toBe('no-store');
+            expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
+            expect(body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+            expect(body).not.toContain('<script>alert(1)</script>');
+        });
+
         it('should timeout after specified duration', async () => {
             const flow = new OAuthFlow(config);
             const port = 4456 + Math.floor(Math.random() * 1000);

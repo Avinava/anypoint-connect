@@ -1,54 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 240" width="100%" height="auto">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#1e293b" />
-    </linearGradient>
-    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#38bdf8" />
-      <stop offset="100%" stop-color="#818cf8" />
-    </linearGradient>
-    <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#f43f5e" />
-      <stop offset="100%" stop-color="#8b5cf6" />
-    </linearGradient>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-opacity="0.3" />
-    </filter>
-  </defs>
-
-  <!-- Background with slight shadow -->
-  <rect width="800" height="240" rx="24" fill="url(#bg)" filter="url(#shadow)" />
-
-  <!-- Terminal Window Decoration -->
-  <circle cx="40" cy="40" r="6" fill="#ef4444" />
-  <circle cx="64" cy="40" r="6" fill="#eab308" />
-  <circle cx="88" cy="40" r="6" fill="#22c55e" />
-
-  <!-- Icon (Terminal + Nodes) -->
-  <g transform="translate(70, 70)">
-    <!-- Main Box -->
-    <rect width="100" height="100" rx="24" fill="#0f172a" stroke="url(#textGrad)" stroke-width="4" filter="url(#shadow)" />
-    
-    <!-- Prompt -->
-    <path d="M 30 35 L 45 50 L 30 65" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
-    <line x1="55" y1="65" x2="75" y2="65" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" />
-    
-    <!-- Connection Dots protruding out -->
-    <circle cx="100" cy="20" r="12" fill="url(#iconGrad)" filter="url(#shadow)" />
-    <circle cx="100" cy="80" r="12" fill="url(#iconGrad)" filter="url(#shadow)" />
-    
-    <!-- Connecting lines -->
-    <path d="M 80 50 C 95 50, 95 20, 100 20" fill="none" stroke="url(#textGrad)" stroke-width="3" opacity="0.8"/>
-    <path d="M 80 50 C 95 50, 95 80, 100 80" fill="none" stroke="url(#textGrad)" stroke-width="3" opacity="0.8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 240" role="img" aria-labelledby="title description">
+  <title id="title">Anypoint Connect</title>
+  <desc id="description">CLI and MCP toolkit for Anypoint Platform</desc>
+  <rect width="800" height="240" rx="18" fill="#172033" />
+  <g transform="translate(58 57)">
+    <rect width="126" height="126" rx="26" fill="#202b3e" stroke="#57c7e8" stroke-width="3" />
+    <path d="M35 42 55 62 35 82" fill="none" stroke="#79d5b2" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M68 84h25" fill="none" stroke="#57c7e8" stroke-width="7" stroke-linecap="round" />
+    <circle cx="126" cy="34" r="9" fill="#57c7e8" />
+    <circle cx="126" cy="92" r="9" fill="#79d5b2" />
+    <path d="M99 63c17 0 15-29 27-29M99 63c17 0 15 29 27 29" fill="none" stroke="#929fb5" stroke-width="3" />
   </g>
-
-  <!-- Typography -->
-  <g transform="translate(220, 130)">
-    <text x="0" y="0" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="800" letter-spacing="-1.5">
-      <tspan fill="#f8fafc">Anypoint </tspan>
-      <tspan fill="url(#textGrad)">Connect</tspan>
-    </text>
-    <text x="0" y="45" fill="#94a3b8" font-family="monospace" font-size="20" letter-spacing="-0.5">CLI + MCP toolkit for Anypoint Platform</text>
+  <g transform="translate(226 72)">
+    <text x="0" y="0" fill="#a9b4c7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" letter-spacing="2">ANYPOINT PLATFORM TOOLKIT</text>
+    <text x="0" y="62" fill="#f2f5fa" font-family="Inter, system-ui, sans-serif" font-size="56" font-weight="700" letter-spacing="-1.5">Anypoint Connect</text>
+    <text x="0" y="102" fill="#b3bed0" font-family="Inter, system-ui, sans-serif" font-size="20">CLI · MCP server · JavaScript library</text>
   </g>
 </svg>

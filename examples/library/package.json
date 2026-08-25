@@ -1,0 +1,14 @@
+{
+    "name": "anypoint-connect-library-example",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "start": "node --env-file=.env list-apps.mjs"
+    },
+    "dependencies": {
+        "@sfdxy/anypoint-connect": "0.13.0"
+    },
+    "engines": {
+        "node": ">=22.0.0"
+    }
+}

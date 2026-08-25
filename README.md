@@ -1,196 +1,183 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="Anypoint Connect Banner" width="600" />
+  <img src="docs/assets/logo.svg" alt="Anypoint Connect — CLI and MCP toolkit for Anypoint Platform" width="640" />
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@sfdxy/anypoint-connect"><img src="https://img.shields.io/npm/v/@sfdxy/anypoint-connect?style=flat-square&color=34d399" alt="npm version" /></a>
-  <a href="https://github.com/Avinava/anypoint-connect/actions"><img src="https://img.shields.io/github/actions/workflow/status/Avinava/anypoint-connect/ci.yml?style=flat-square&color=38bdf8" alt="CI" /></a>
-  <a href="https://github.com/Avinava/anypoint-connect/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@sfdxy/anypoint-connect?style=flat-square&color=818cf8" alt="License" /></a>
-  <a href="https://www.npmjs.com/package/@sfdxy/anypoint-connect"><img src="https://img.shields.io/npm/dm/@sfdxy/anypoint-connect?style=flat-square&color=fbbf24" alt="Downloads" /></a>
+  <a href="https://www.npmjs.com/package/@sfdxy/anypoint-connect"><img src="https://img.shields.io/npm/v/@sfdxy/anypoint-connect?style=flat-square&color=087ea4" alt="npm version" /></a>
+  <a href="https://github.com/Avinava/anypoint-connect/actions"><img src="https://img.shields.io/github/actions/workflow/status/Avinava/anypoint-connect/ci.yml?style=flat-square" alt="CI status" /></a>
+  <a href="https://github.com/Avinava/anypoint-connect/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@sfdxy/anypoint-connect?style=flat-square" alt="MIT license" /></a>
 </p>
 
 <p align="center">
-  <strong>CLI + MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets.</strong>
+  <strong>Operate Anypoint Platform from a CLI, an MCP client, or JavaScript—with guarded mutations and one shared authentication layer.</strong>
 </p>
 
 <p align="center">
-  <a href="https://avinava.github.io/anypoint-connect/">Documentation</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#what-it-does">Capabilities</a> •
-  <a href="#mcp-server">MCP</a> •
-  <a href="#safety">Safety</a> •
-  <a href="#ecosystem">Ecosystem</a>
+  <a href="https://avinava.github.io/anypoint-connect/">Documentation</a> ·
+  <a href="https://avinava.github.io/anypoint-connect/getting-started/">Getting started</a> ·
+  <a href="https://avinava.github.io/anypoint-connect/credentials/">Credentials</a> ·
+  <a href="https://avinava.github.io/anypoint-connect/recipes/">Recipes</a>
 </p>
 
 ---
 
-## Quick Start
+## Start here
+
+You need Node.js `>=22`; Node.js 24 LTS is recommended. If Node and npm are unfamiliar, follow the
+[15-minute setup](https://avinava.github.io/anypoint-connect/getting-started/) instead of guessing through
+the commands below.
 
 ```bash
-# 1. Install
-npm install -g @sfdxy/anypoint-connect
+# Install
+npm install --global @sfdxy/anypoint-connect
 
-# 2. Configure (interactive — prompts for Client ID & Secret)
+# Save a Connected App Client ID and Secret
 anc config init
 
-# 3. Authenticate (opens browser for OAuth)
+# Authorize your Anypoint user in the browser
 anc auth login
 
-# 4. Verify
+# Verify the local session and one visible environment
 anc auth status
-```
-
-No Connected App yet? The four-step setup, including the exact scopes to grant, is in
-[Getting started](https://avinava.github.io/anypoint-connect/getting-started/). Requires Node.js
-`>=20.0.0`.
-
-```bash
 anc apps list --env Sandbox
-anc logs tail my-api --env Sandbox
-anc monitor view --env Production
 ```
 
-Working across several organizations? Use named profiles —
-[Profiles and multiple orgs](https://avinava.github.io/anypoint-connect/profiles/).
+The Connected App must be **App acts on behalf of a user**, use Authorization Code, redirect to
+`http://localhost:3000/api/callback`, and include **Full Access** plus **Background Access**. The
+[credential guide](https://avinava.github.io/anypoint-connect/credentials/) gives the exact UI fields,
+administrator handoff, storage model, rotation steps, and troubleshooting.
+
+## Credential model
+
+| Item | Purpose | Storage |
+| --- | --- | --- |
+| Client ID | Identifies the Connected App | Profile `config.json` |
+| Client Secret | Authenticates the local client | Profile `config.json`, restricted to the current OS user |
+| OAuth tokens | Represent the user-authorized session | AES-256-GCM encrypted `tokens.enc` |
+
+The ID and Secret do not provide access without a browser-authorized user session. Environment variables
+can override where app credentials come from, but they do not implement headless CI authentication. This
+release does not support the `client_credentials` grant, and its encrypted token file is machine-bound.
 
 ## What it does
 
 | Area | Examples |
 | --- | --- |
 | Applications | Status, deployment spec, resources, settings, deploy, redeploy, rollback, restart, scale, stop, start, delete |
-| Logs | Tail, download, error clustering with context windows, recurring patterns, statistical health |
-| Monitoring | Request metrics, percentiles, time series, per-replica, JVM memory and GC, freeform AMQL |
-| Exchange | Search, asset detail, spec download, JAR publication, environment comparison |
+| Logs | Tail, download, error clustering with context, recurring patterns, statistical health |
+| Monitoring | Request metrics, percentiles, time series, per-replica metrics, JVM memory and GC, freeform AMQL |
+| Exchange | Search, asset details, spec download, JAR publication, environment comparison |
 | API Manager | Instances, policies, SLA tiers, alerts |
-| Design Center | Projects, branches, safe file sync, governed publication |
-| Platform | Environments, entitlements, audit log |
-| Anypoint MQ | Queues, depth and throughput, dead-letter browsing, test publishing |
-| Object Store v2 | Stores, keys, values |
+| Design Center | Projects, branches, conflict-safe file synchronization, governed publication |
+| Platform services | Environments, entitlements, audit log, Anypoint MQ, Object Store v2 |
 
-Every command is documented in the
-[CLI reference](https://avinava.github.io/anypoint-connect/cli-reference/).
+Copyable task flows are in [Common recipes](https://avinava.github.io/anypoint-connect/recipes/); every CLI
+command is in the [CLI reference](https://avinava.github.io/anypoint-connect/cli-reference/).
 
 ## MCP server
 
-65 tools for AI agents. Set up credentials first — the server has nothing to offer an unauthenticated
-session.
-
-```bash
-anc config init
-anc auth login
-```
-
-Every host runs the same command; only the file and the wrapping key differ.
-
-| Host | Where it goes | Wrapping key |
-| --- | --- | --- |
-| Claude Code | `.mcp.json`, or `claude mcp add` | `mcpServers` |
-| Claude Desktop | `claude_desktop_config.json` | `mcpServers` |
-| Codex | `.codex/config.toml`, or `codex mcp add` | `[mcp_servers.anypoint-connect]` |
-| VS Code, Copilot Chat | `.vscode/mcp.json` | `servers`, plus `"type": "stdio"` |
-| Copilot CLI, Gemini, other MCP clients | `.mcp.json` | `mcpServers` |
+Authenticate in a terminal before starting the server. The MCP host never receives the Client Secret or
+OAuth tokens; it sends tool calls to the local server that owns the session.
 
 ```json
 {
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.11.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.13.0", "mcp"]
     }
   }
 }
 ```
 
-Installed globally, use `"command": "anc", "args": ["mcp"]` and skip the download. No `env` block is
-needed: the active profile resolves from the project's `.anypoint-connect.json`, falling back to
-`default`. Credentials never pass through the protocol — the server holds the session, the agent calls
-tools.
+VS Code uses a `servers` wrapper and Codex uses TOML. See the
+[MCP guide](https://avinava.github.io/anypoint-connect/mcp/) or copy a checked-in configuration from
+[`examples/mcp`](examples/mcp).
 
-Per-host examples, prompts, and resources are in the
-[MCP guide](https://avinava.github.io/anypoint-connect/mcp/); the full tool table is in the
-[catalog](https://avinava.github.io/anypoint-connect/tools/).
+Example requests use synthetic names:
+
+```text
+What applications are visible in Sandbox? Read only.
+Analyze errors for sample-orders-api in Sandbox over the last two hours.
+Preview a deployment of target/sample-orders-api-1.3.0-mule-application.jar to Sandbox; do not apply it.
+```
 
 ## Safety
 
-Every mutating operation is **dry-run by default**: without `confirm: true` it returns a preview and
-changes nothing. Redeploying an existing app changes **only** the artifact reference, so runtime, target,
-replicas, and settings are preserved and a version bump cannot silently downgrade a runtime or halve
-capacity. `update_app_settings` PATCHes only application properties, merging protected values rather than
-blanking them. Deletion requires a deployment-ID-bound confirmation — plus a separate acknowledgement in
-production — so it fails closed if the deployment changed since you looked.
+Mutating MCP tools are previews until `confirm: true` is supplied. Artifact updates preserve runtime,
+target, replicas, and settings. Deletion requires the deployment ID returned by the preview, and
+production operations require an additional acknowledgement.
 
 ```jsonc
-// preview
-deploy_jar({ "jarPath": "target/example-api-1.0.0-mule-application.jar", "appName": "example-api", "environment": "Sandbox" })
-// apply
-deploy_jar({ "jarPath": "target/example-api-1.0.0-mule-application.jar", "appName": "example-api", "environment": "Sandbox", "confirm": true })
+// Preview only
+update_app_artifact({
+  "appName": "sample-orders-api",
+  "environment": "Sandbox",
+  "version": "1.3.0"
+})
+
+// Apply the reviewed change
+update_app_artifact({
+  "appName": "sample-orders-api",
+  "environment": "Sandbox",
+  "version": "1.3.0",
+  "confirm": true
+})
 ```
 
-Full model in [Safety](https://avinava.github.io/anypoint-connect/safety/); the build, publish, deploy,
-and rollback path in [Deploying a JAR](https://avinava.github.io/anypoint-connect/deployment-tools/).
-
-## When something fails
-
-Access problems come in six distinct states — not configured, not authenticated, environment not visible,
-not permitted, transient, and ready — and they have different fixes. The error text names which one you
-are in. See [Access readiness](https://avinava.github.io/anypoint-connect/readiness/) and
-[Troubleshooting](https://avinava.github.io/anypoint-connect/troubleshooting/).
+The complete contract is in the [safety model](https://avinava.github.io/anypoint-connect/safety/).
 
 ## Library
 
-```typescript
+The library reuses a profile authenticated with `anc auth login`. The Client ID and Secret construct the
+client; the profile selects the encrypted token store.
+
+```javascript
 import { AnypointClient } from '@sfdxy/anypoint-connect';
 
 const client = new AnypointClient({
-  clientId: process.env.ANYPOINT_CLIENT_ID!,
-  clientSecret: process.env.ANYPOINT_CLIENT_SECRET!,
+  clientId: process.env.ANYPOINT_CLIENT_ID,
+  clientSecret: process.env.ANYPOINT_CLIENT_SECRET,
+  profileName: process.env.ANYPOINT_PROFILE || 'default',
 });
 
-const me = await client.whoami();
-const envs = await client.accessManagement.getEnvironments(me.organization.id);
+const identity = await client.whoami();
+const environments = await client.accessManagement.getEnvironments(identity.organization.id);
+console.log(`Authenticated; ${environments.length} environment(s) visible.`);
 ```
 
-The API clients give you token refresh, rate limiting, and caching, but not the confirmation gates — those
-live in the CLI and MCP layers. More in the
-[library guide](https://avinava.github.io/anypoint-connect/library/).
+Direct API clients include bearer injection, refresh, rate limiting, and caching. They do not include the
+CLI/MCP confirmation gates. Start with the runnable JavaScript example in
+[`examples/library`](examples/library) and read the [library guide](https://avinava.github.io/anypoint-connect/library/).
 
-## Documentation
+## Profiles and multiple organizations
 
-Published at **<https://avinava.github.io/anypoint-connect/>** with search.
+Use neutral profile names rather than customer names:
 
-| Page | Contents |
-| --- | --- |
-| [Getting started](docs/getting-started.md) | Install, Connected App, scopes, credentials, authenticate |
-| [Profiles](docs/profiles.md) | Multiple organizations, resolution order, storage layout |
-| [Access readiness](docs/readiness.md) | The six access states and their fixes |
-| [CLI reference](docs/cli-reference.md) | Every command group |
-| [MCP server](docs/mcp.md) | Host setup, prompts, resources |
-| [Tool catalog](docs/tools.md) | All 65 tools, and how to choose between overlapping ones |
-| [Safety model](docs/safety.md) | Dry runs, narrow updates, bound deletion |
-| [Deploying a JAR](docs/deployment-tools.md) | Build, publish, deploy, roll back |
-| [Library API](docs/library.md) | Programmatic use |
-| [Troubleshooting](docs/troubleshooting.md) | Symptoms and causes |
-| [Architecture](docs/architecture.md) | Layers and design notes |
+```bash
+anc config init --profile team-a
+anc auth login --profile team-a
+anc config use team-a
+```
 
-## Ecosystem
-
-The canonical package matrix and supported combination live in the
-[`mule-skills` ecosystem hub](https://avinava.github.io/mule-skills/ecosystem/). This is the only tool
-in the set that needs Anypoint credentials. A complete release crosses two boundaries: `mule-build`
-produces and versions the artifact, while this package puts it in an environment. More detail is on
-the local [ecosystem page](docs/ecosystem.md).
+The directory binding contains only a local profile label, but it can still reveal internal context. Add
+`.anypoint-connect.json` to the project's `.gitignore`. Resolution rules and storage layout are in
+[Profiles](https://avinava.github.io/anypoint-connect/profiles/).
 
 ## Development
 
 ```bash
+nvm use
 npm install
 npm run build
 npm test
 npm run lint
+npm run docs:check
+mkdocs build --strict
 ```
 
-Releases are tag-triggered: bump the version, push the tag with `git push --follow-tags`, and GitHub
-Actions runs CI, publishes to npm with provenance, and creates the release.
+CI tests Node 22, 24, and 26. Documentation is built with MkDocs Material and published through GitHub
+Pages. Releases are tag-triggered and published to npm with provenance.
 
 ## License
 

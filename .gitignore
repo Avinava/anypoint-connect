@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .env
+.anypoint-connect.json
 *.tgz
 .DS_Store
 

@@ -1,117 +1,150 @@
 # Getting started
 
-Four steps: install, create a Connected App, save its credentials, authenticate. Budget ten minutes,
-most of it in the Anypoint Platform UI.
+This path is written for MuleSoft developers who use Maven, Studio, or Runtime Manager but do not
+normally work with Node.js. You will install one command, create one Connected App, authorize it in a
+browser, and finish with a safe read-only check.
 
-## 1. Install
+**Expected time:** about 15 minutes. Most of it is in the Anypoint Platform UI.
+
+<div class="anc-step" markdown="1">
+<span class="anc-step-number">01</span>
+
+## Install Node.js and `anc`
+
+Use **Node.js 24 LTS**. Download the LTS installer for your operating system from
+[nodejs.org](https://nodejs.org/en/download), accept the option to install npm, then open a new terminal.
 
 ```bash
-npm install -g @sfdxy/anypoint-connect
+node --version
+npm --version
+```
+
+`node --version` should begin with `v24`. Node 22 is also supported; Node 20 is not.
+
+Install the CLI globally:
+
+```bash
+npm install --global @sfdxy/anypoint-connect
 anc --version
 ```
 
-Requires Node.js `>=20.0.0`.
+??? tip "If your terminal says `anc: command not found`"
 
-??? note "Install from source"
+    Close and reopen the terminal first. If the command is still missing, run `npm prefix --global` and
+    confirm that npm's global binary directory is on your `PATH`. You can continue without changing
+    `PATH` by replacing `anc` with `npx --yes @sfdxy/anypoint-connect@0.13.0` in the commands below.
 
-    ```bash
-    git clone https://github.com/Avinava/anypoint-connect.git
-    cd anypoint-connect
-    npm install && npm run build
-    npm link   # makes "anc" available globally
-    ```
+</div>
 
-## 2. Create a Connected App
+<div class="anc-step" markdown="1">
+<span class="anc-step-number">02</span>
 
-Authentication uses a Connected App in your Anypoint organization, so the tool acts as you rather than
-as a shared service identity.
+## Create the Connected App
 
-1. Log in to [Anypoint Platform](https://anypoint.mulesoft.com).
-2. Go to **Access Management → Connected Apps**.
-3. Click **Create app** and choose **App that acts on a user's behalf**.
-4. Set the **Redirect URI** to `http://localhost:3000/api/callback`.
-5. Grant the scopes you need:
+In Anypoint Platform, go to **Access Management → Connected Apps → Create app** and use these values:
 
-    | Scope category | Permissions | Needed for |
-    | --- | --- | --- |
-    | General | View Organization, View Environment | Everything. Without these, no environment resolves |
-    | Runtime Manager | Read Applications, Create/Modify Applications | Status, deploy, restart, scale |
-    | CloudHub | Read Applications, Manage Applications | CloudHub 2.0 deployments and lifecycle |
-    | Monitoring | Read Metrics | Metrics, percentiles, memory, AMQL |
-    | Design Center | Read/Write Designer | Reading and pushing API specs |
-    | Exchange | Exchange Contributor | Publishing assets and JARs |
-    | Audit Logs | View Audit Logs | Deployment and change history. Optional |
+| Field | Value |
+| --- | --- |
+| Name | `anypoint-connect-local` or another neutral internal name |
+| Type | **App acts on behalf of a user** |
+| Grant type | **Authorization Code** |
+| Website URL | `https://github.com/Avinava/anypoint-connect` |
+| Redirect URI | `http://localhost:3000/api/callback` |
+| Audience | **Members of this organization only** for an internal app |
+| Scopes | **Full Access** (`full`) and **Background Access** (`offline_access`) |
 
-6. Copy the **Client ID** and **Client Secret**.
+Save the app, then copy its **Client ID** and **Client Secret** to a secure temporary location. Do not
+paste either value into an issue, chat, or source file.
 
-Grant only what you intend to use. A read-only identity is a perfectly good setup if you never want an
-agent to be able to deploy — see the [safety model](safety.md).
+If you cannot create Connected Apps, send the exact table above to an organization administrator. The
+[credential guide](credentials.md) explains permissions, allowlists, rotation, and why these two scopes
+are required.
 
-## 3. Save the credentials
+</div>
+
+<div class="anc-step" markdown="1">
+<span class="anc-step-number">03</span>
+
+## Save the credentials locally
 
 ```bash
 anc config init
 ```
 
-The prompt writes credentials to a per-profile file and keeps tokens separate and encrypted:
+Paste the Client ID when prompted. Keep the default callback and base URLs unless your platform
+administrator has given you different values. The Client Secret prompt is masked.
 
 ```text
 Anypoint Connect Setup — Profile: default
   Credentials saved to: ~/.anypoint-connect/profiles/default/config.json
   Tokens saved to: ~/.anypoint-connect/profiles/default/tokens.enc (AES-256-GCM)
 
-  Client ID: <paste your Client ID>
-  Client Secret: <paste your Client Secret>
+  Client ID: <paste Client ID>
   Callback URL: (http://localhost:3000/api/callback)
   Base URL: (https://anypoint.mulesoft.com)
+  Default Environment (optional):
+  Client Secret: ********
 ```
 
-Confirm what was stored, with secrets masked:
+Confirm the resolved profile and masked secret:
 
 ```bash
 anc config show
 ```
 
-Working across several organizations? Use named profiles from the start — see
-[Profiles and multiple orgs](profiles.md).
+The Client Secret is stored in `config.json`, restricted to the current operating-system user. OAuth
+tokens are stored separately in encrypted form. See [where credentials live](credentials.md#where-the-files-live).
 
-## 4. Authenticate
+</div>
+
+<div class="anc-step" markdown="1">
+<span class="anc-step-number">04</span>
+
+## Authorize the session
 
 ```bash
 anc auth login
+```
+
+The CLI starts a loopback callback server and opens Anypoint Platform in your browser. Sign in normally,
+including MFA, review the requested access, and grant it. The browser shows a local success page; return
+to the terminal when it does.
+
+```bash
 anc auth status
 ```
 
-This opens a browser for OAuth and stores encrypted tokens locally. Tokens refresh automatically with a
-five-minute buffer, so day-to-day use does not prompt again.
+You should see `Authenticated`, a token expiry, and `Can Refresh: Yes`.
 
-## 5. Confirm it works
+</div>
+
+<div class="anc-step" markdown="1">
+<span class="anc-step-number">05</span>
+
+## Prove the environment is visible
+
+Use an environment name that your Anypoint user can already see:
 
 ```bash
 anc apps list --env Sandbox
-anc logs tail my-api --env Sandbox
-anc monitor view --env Production
 ```
 
-If any of those fail, the message names which of the [access states](readiness.md) you are in — being
-unconfigured, unauthenticated, and lacking a scope are three different problems with three different
-fixes.
+An empty application list is still a successful access check. An authentication error, invisible
+environment, missing permission, and missing subscription are different conditions; use
+[Access readiness](readiness.md) to identify the one you have.
 
-## Credentials in CI
+</div>
 
-Environment variables take precedence over stored profile config, which is what makes unattended use
-work without a login flow:
+## Choose your next path
 
-```bash
-export ANYPOINT_CLIENT_ID=...
-export ANYPOINT_CLIENT_SECRET=...
-```
+<div class="anc-grid">
+<a class="anc-card" href="../recipes/"><span class="anc-kicker">CLI</span><h3>Run a common task</h3><p>Application health, logs, metrics, deployment previews, and other copyable recipes.</p></a>
+<a class="anc-card" href="../mcp/"><span class="anc-kicker">MCP</span><h3>Connect an AI host</h3><p>Configure Codex, Claude, VS Code, or another stdio MCP client.</p></a>
+<a class="anc-card" href="../profiles/"><span class="anc-kicker">Teams</span><h3>Add another organization</h3><p>Use neutral named profiles and bind the correct one to each project directory.</p></a>
+</div>
 
-Never commit credentials, and never paste them into an agent conversation. The CLI holds the session;
-nothing that consumes this tool needs the secret itself.
+## Uninstalling or signing out
 
-## Next
-
-- [CLI reference](cli-reference.md) for every command
-- [MCP server](mcp.md) to let an AI agent use it
-- [Safety model](safety.md) before anything touches production
+`anc auth logout` removes OAuth tokens for the active profile but keeps the Client ID and Secret. To
+remove the package itself, run `npm uninstall --global @sfdxy/anypoint-connect`. Delete a local profile
+directory only when you intentionally want to remove its saved credentials as well.

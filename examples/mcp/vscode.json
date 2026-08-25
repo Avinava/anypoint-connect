@@ -1,0 +1,9 @@
+{
+    "servers": {
+        "anypoint-connect": {
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@sfdxy/anypoint-connect@0.13.0", "mcp"]
+        }
+    }
+}

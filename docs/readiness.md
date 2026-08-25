@@ -47,6 +47,10 @@ These are the two most often confused, and the error text distinguishes them del
 Telling someone to log in when they never created a Connected App wastes the exchange, which is why the
 messages differ.
 
+Environment variables can satisfy the configuration check, but they do not create a user-authorized
+token on a new machine. The exact distinction is covered in
+[Connected App and credentials](credentials.md#ci-and-unattended-systems).
+
 ## Entitlements are not permissions
 
 `get_entitlements` reports what the organization's subscription includes — vCores, Anypoint MQ, Object

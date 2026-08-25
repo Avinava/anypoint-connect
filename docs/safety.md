@@ -12,10 +12,10 @@ environment. Applying requires a second call.
 
 ```jsonc
 // preview: shows the change, modifies nothing
-update_app_artifact({ "appName": "example-api", "environment": "Production", "version": "1.0.0" })
+update_app_artifact({ "appName": "sample-orders-api", "environment": "Sandbox", "version": "1.3.0" })
 
 // apply
-update_app_artifact({ "appName": "example-api", "environment": "Production", "version": "1.0.0", "confirm": true })
+update_app_artifact({ "appName": "sample-orders-api", "environment": "Sandbox", "version": "1.3.0", "confirm": true })
 ```
 
 The CLI equivalent is a typed confirmation for production operations, and `--force` for unattended use.
