@@ -44,3 +44,17 @@ version and adds the judgment layer on top of it:
 Those workflows also gate on access before their first call and offer alternatives when it is missing, so
 an unauthenticated setup produces a labeled coverage gap instead of a failed session. That gate uses the
 same state names as [Access readiness](readiness.md).
+
+## Verified artifact handoff
+
+For application publication, carry `jarPath` and the build's verified `artifact` fields into
+`publish_app_jar` or `deploy_jar`. Pass `artifact.artifactId` as `assetId`, `artifact.version`
+as `assetVersion`, and `artifact.sha256` as `expectedSha256`. Resolve the Exchange group explicitly
+when it differs from the Maven group. The publication preview shows both the embedded identity
+and the chosen Exchange coordinates; explicit coordinate mappings remain supported.
+
+Without explicit asset ID/version, these MCP tools use embedded Maven metadata. They never derive
+identity from a timestamped filename or silently choose version 1.0.0. If metadata is absent,
+supply both values explicitly. A preview returns `expectedSha256`; pass it back on confirmation.
+A changed digest prevents upload. Preview and authentication requirements still apply, and a
+successful local build alone does not authorize publication or deployment.

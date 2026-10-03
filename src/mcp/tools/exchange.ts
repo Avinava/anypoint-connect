@@ -4,7 +4,8 @@
  * publish_app_jar, deploy_jar
  */
 
-import * as path from 'path';
+import { readFile } from 'node:fs/promises';
+import { inspectArtifact, verifyArtifactDigest } from '../../safety/artifact.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
@@ -243,9 +244,19 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                 assetId: z
                     .string()
                     .optional()
-                    .describe('Exchange asset ID. Default: the jar filename without the .jar extension.'),
-                assetVersion: z.string().optional().describe('Exchange asset version (default: "1.0.0").'),
+                    .describe(
+                        'Exchange asset ID. Defaults to the embedded Maven artifactId; explicit publication mappings are preserved.',
+                    ),
+                assetVersion: z
+                    .string()
+                    .optional()
+                    .describe('Exchange asset version. Defaults to the embedded Maven version.'),
                 groupId: z.string().optional().describe('Exchange group ID (default: the organization ID).'),
+                expectedSha256: z
+                    .string()
+                    .regex(/^[a-fA-F0-9]{64}$/)
+                    .optional()
+                    .describe('SHA-256 returned by the build or publication preview; rejects changed artifact bytes.'),
                 confirm: z
                     .boolean()
                     .optional()
@@ -253,7 +264,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
-        async ({ jarPath, assetId, assetVersion, groupId, confirm }) => {
+        async ({ jarPath, assetId, assetVersion, groupId, expectedSha256, confirm }) => {
             try {
                 const check = validateJarFile(jarPath);
                 if (!check.valid) {
@@ -262,13 +273,21 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
 
                 const orgId = await client.getDefaultOrgId();
                 const resolvedGroupId = groupId || orgId;
-                const resolvedAssetId = assetId || path.basename(jarPath).replace(/\.jar$/, '');
-                const resolvedVersion = assetVersion || '1.0.0';
+                const bytes = await readFile(jarPath);
+                const artifact = inspectArtifact(bytes, undefined, Boolean(assetId && assetVersion));
+                verifyArtifactDigest(bytes, expectedSha256);
+                const resolvedAssetId = assetId || artifact.coordinates?.artifactId;
+                const resolvedVersion = assetVersion || artifact.coordinates?.version;
+                if (!resolvedAssetId || !resolvedVersion) {
+                    throw new Error('Embedded Maven identity is unavailable; supply explicit assetId and assetVersion');
+                }
 
                 if (!confirm) {
                     return dryRunPreview({
                         action: 'publish app jar to Exchange',
                         jarPath,
+                        artifact,
+                        expectedSha256: artifact.sha256,
                         coordinates: {
                             groupId: resolvedGroupId,
                             assetId: resolvedAssetId,
@@ -284,6 +303,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                     resolvedAssetId,
                     resolvedVersion,
                     jarPath,
+                    artifact.sha256,
                 );
 
                 return mcpText({
@@ -318,12 +338,12 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                     .string()
                     .optional()
                     .describe(
-                        'Exchange asset ID (also used as the deployment artifactId). Default: jar filename without .jar.',
+                        'Exchange asset ID (also used as the deployment artifactId). Defaults to embedded Maven artifactId.',
                     ),
                 assetVersion: z
                     .string()
                     .optional()
-                    .describe('Exchange asset version and deployment version (default: "1.0.0").'),
+                    .describe('Exchange asset and deployment version. Defaults to the embedded Maven version.'),
                 groupId: z.string().optional().describe('Exchange/Maven group ID (default: the organization ID).'),
                 // create-only settings (rejected when the app already exists)
                 runtime: z.string().optional().describe('[new app only] Mule runtime version (default: "4.8.0").'),
@@ -348,6 +368,11 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                     .boolean()
                     .optional()
                     .describe('Wait for the deployment to reach a running state (default: false).'),
+                expectedSha256: z
+                    .string()
+                    .regex(/^[a-fA-F0-9]{64}$/)
+                    .optional()
+                    .describe('SHA-256 returned by the build or publication preview; rejects changed artifact bytes.'),
                 confirm: z
                     .boolean()
                     .optional()
@@ -370,6 +395,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
             secureProperties,
             jvmArgs,
             wait,
+            expectedSha256,
             confirm,
         }) => {
             try {
@@ -383,8 +409,14 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                 const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 const resolvedGroupId = groupId || orgId;
-                const resolvedAssetId = assetId || path.basename(jarPath).replace(/\.jar$/, '');
-                const resolvedVersion = assetVersion || '1.0.0';
+                const bytes = await readFile(jarPath);
+                const artifact = inspectArtifact(bytes, undefined, Boolean(assetId && assetVersion));
+                verifyArtifactDigest(bytes, expectedSha256);
+                const resolvedAssetId = assetId || artifact.coordinates?.artifactId;
+                const resolvedVersion = assetVersion || artifact.coordinates?.version;
+                if (!resolvedAssetId || !resolvedVersion) {
+                    throw new Error('Embedded Maven identity is unavailable; supply explicit assetId and assetVersion');
+                }
 
                 // An update must not restate infra — reject create-only settings for an existing app.
                 if (existing) {
@@ -416,6 +448,8 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                 if (!confirm) {
                     return dryRunPreview({
                         action,
+                        artifact,
+                        expectedSha256: artifact.sha256,
                         app: appName,
                         environment: env.name,
                         publish: {
@@ -449,6 +483,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                     resolvedAssetId,
                     resolvedVersion,
                     jarPath,
+                    artifact.sha256,
                 );
 
                 // 2) Deploy: safe ref-only update for an existing app, full create otherwise.

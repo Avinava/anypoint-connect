@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Refresh compatible production dependencies to resolve the audited HTTP/schema/parser findings without major upgrades.
+
+- Application publication/deployment MCP tools default to embedded Maven artifact ID and version
+  instead of guessing from a display filename or choosing a default version. Explicit Exchange
+  coordinate mappings remain supported; absent or ambiguous metadata requires both values.
+- Publication previews include the artifact SHA-256. Supplying `expectedSha256` on confirmation
+  rejects changed bytes, and the API rechecks the exact buffer before upload. Preview-first and
+  authentication behavior remain unchanged.
+
 ## 0.13.0 — Secure Onboarding and Documentation
 
 ### Added

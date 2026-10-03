@@ -71,7 +71,11 @@ is never deleted under an earlier confirmation. The CLI provides the equivalent 
 
 ## Conventions & open points
 
-- **Asset ID default:** the JAR filename without its `.jar` extension. Callers can override `assetId`.
+- **Asset identity defaults:** embedded Maven `artifactId` and `version`, independent of the JAR
+  filename. Callers can explicitly map `assetId` and `assetVersion`; supply both when metadata is
+  absent or ambiguous. The Exchange group defaults to the organization ID and can be overridden.
+- **Artifact digest:** previews return `expectedSha256`. Pass it back with `confirm: true` to bind
+  publication to the reviewed bytes. The API verifies the exact upload buffer before sending it.
 - **`assetId` vs `artifactId`:** Exchange calls the coordinate `assetId`; CloudHub calls it
   `artifactId`. They carry the same value here and are mapped explicitly at the deploy boundary.
 - **vCores:** written to `application.vCores` (the field CloudHub 2.0 surfaces and this tooling reads

@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'node:crypto';
+import { verifyArtifactDigest } from '../safety/artifact.js';
 import type { HttpClient } from '../client/HttpClient.js';
 import type { Cache } from '../client/Cache.js';
 
@@ -127,8 +128,10 @@ export class ExchangeApi {
         assetId: string,
         version: string,
         jarPath: string,
+        expectedSha256?: string,
     ): Promise<PublishAppAssetResult> {
         const buffer = await fs.promises.readFile(jarPath);
+        verifyArtifactDigest(buffer, expectedSha256);
         const fileName = path.basename(jarPath);
 
         const form = new FormData();
