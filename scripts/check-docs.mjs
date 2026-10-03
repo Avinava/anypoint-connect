@@ -8,15 +8,14 @@ const packageJson = JSON.parse(readFileSync(join(repositoryRoot, 'package.json')
 const expectedVersion = packageJson.version;
 const failures = [];
 
-const packageLock = JSON.parse(readFileSync(join(repositoryRoot, 'package-lock.json'), 'utf8'));
-if (packageLock.version !== expectedVersion || packageLock.packages?.['']?.version !== expectedVersion) {
-    failures.push('package-lock.json: root versions do not match package.json');
-}
-
-const changelog = readFileSync(join(repositoryRoot, 'CHANGELOG.md'), 'utf8');
-const latestChangelogVersion = changelog.match(/^## (\d+\.\d+\.\d+)\b/m)?.[1];
-if (latestChangelogVersion !== expectedVersion) {
-    failures.push(`CHANGELOG.md: newest release does not match ${expectedVersion}`);
+// Keep release identity checks in one place for CI, manual releases, and docs-only builds.
+try {
+    execFileSync(process.execPath, [join(repositoryRoot, 'scripts/check-release.mjs')], {
+        cwd: repositoryRoot,
+        stdio: 'pipe',
+    });
+} catch (error) {
+    failures.push(`Release metadata check failed (${error.message})`);
 }
 
 function collectFiles(path) {

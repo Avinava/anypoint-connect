@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.14.0 - 2026-10-03
 
 ### Changed
 
@@ -12,6 +12,14 @@
 - Publication previews include the artifact SHA-256. Supplying `expectedSha256` on confirmation
   rejects changed bytes, and the API rechecks the exact buffer before upload. Preview-first and
   authentication behavior remain unchanged.
+
+### Migration from 0.13.x
+
+- Review application publication/deployment coordinates before confirming: omitted artifact IDs and
+  versions now come from embedded Maven metadata, not the display filename or a default version.
+- For intentional Exchange mappings, continue supplying explicit artifact ID and version. Supply both
+  when embedded metadata is absent or ambiguous; rebuild the JAR when its metadata is malformed.
+- Confirm a publication with the preview's `expectedSha256` to reject changes to the reviewed bytes.
 
 ## 0.13.0 — Secure Onboarding and Documentation
 
