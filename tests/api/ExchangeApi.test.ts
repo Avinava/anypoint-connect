@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
+import { createHash } from 'node:crypto';
 import * as os from 'os';
 import * as path from 'path';
 import { ExchangeApi } from '../../src/api/ExchangeApi.js';
@@ -48,6 +49,22 @@ describe('ExchangeApi.publishAppAsset', () => {
             classifier: 'mule-application',
             fileName: path.basename(jarPath),
         });
+    });
+
+    it('rejects changed upload bytes before creating a multipart request', async () => {
+        await expect(
+            api.publishAppAsset('sample-org', 'sample-group', 'sample', '1.0.0', jarPath, '0'.repeat(64)),
+        ).rejects.toThrow('digest changed');
+        expect(mockPostMultipart).not.toHaveBeenCalled();
+    });
+
+    it('uploads precisely the buffer covered by the reviewed SHA-256', async () => {
+        const bytes = fs.readFileSync(jarPath);
+        const digest = createHash('sha256').update(bytes).digest('hex');
+        await api.publishAppAsset('sample-org', 'sample-group', 'sample', '1.0.0', jarPath, digest);
+        const form: FormData = mockPostMultipart.mock.calls[0][1];
+        const uploaded = form.get('files.mule-application.jar') as Blob;
+        expect(Buffer.from(await uploaded.arrayBuffer())).toEqual(bytes);
     });
 
     it('builds a multipart body with name, classifier, and the jar file part', async () => {
