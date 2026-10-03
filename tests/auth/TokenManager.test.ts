@@ -1,7 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TokenManager } from '../../src/auth/TokenManager.js';
 
 describe('TokenManager authentication initialization', () => {
+    let home: string;
+    beforeEach(() => {
+        home = mkdtempSync(join(tmpdir(), 'auth-test-home-'));
+        vi.stubEnv('HOME', home);
+    });
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        rmSync(home, { recursive: true, force: true });
+    });
     const baseConfig = {
         clientId: 'test-client-id',
         clientSecret: 'test-client-secret',
