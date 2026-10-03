@@ -93,7 +93,7 @@ Authenticate in a terminal first, then use a pinned server command:
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.13.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.14.0", "mcp"]
     }
   }
 }

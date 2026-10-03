@@ -32,7 +32,7 @@ anc --version
 
     Close and reopen the terminal first. If the command is still missing, run `npm prefix --global` and
     confirm that npm's global binary directory is on your `PATH`. You can continue without changing
-    `PATH` by replacing `anc` with `npx --yes @sfdxy/anypoint-connect@0.13.0` in the commands below.
+    `PATH` by replacing `anc` with `npx --yes @sfdxy/anypoint-connect@0.14.0` in the commands below.
 
 </div>
 
