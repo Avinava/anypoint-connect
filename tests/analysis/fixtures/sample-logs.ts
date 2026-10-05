@@ -1,5 +1,5 @@
 /**
- * Test fixtures — real log samples extracted from downloaded CloudHub logs.
+ * Test fixtures — synthetic log samples modelled on CloudHub 2.0 output.
  * Each sample covers a distinct log entry type.
  */
 

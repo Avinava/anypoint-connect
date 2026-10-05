@@ -11,3 +11,6 @@ docs/PLAN-jar-deployment-tools.md
 
 # mkdocs build output
 .site/
+
+# Local-only denylist of real identifiers checked by scripts/check-docs.mjs
+.identifier-denylist
