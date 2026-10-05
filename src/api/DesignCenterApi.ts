@@ -349,26 +349,6 @@ export class DesignCenterApi {
         }
     }
 
-    /**
-     * Atomically update a file: acquires lock → saves → releases lock.
-     * Uses try/finally to always release the lock, even on failure.
-     */
-    async updateFile(
-        orgId: string,
-        projectId: string,
-        filePath: string,
-        content: string,
-        branch = 'master',
-        commitMessage?: string,
-    ): Promise<void> {
-        // Clear project cache since we're modifying
-        this.cache.delete(`dc:projects:${orgId}`);
-
-        await this.withLock(orgId, projectId, branch, () =>
-            this.saveFile(orgId, projectId, filePath, content, branch, commitMessage),
-        );
-    }
-
     // ── Publish ────────────────────────────────────
 
     /**
