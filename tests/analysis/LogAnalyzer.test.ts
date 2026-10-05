@@ -27,6 +27,19 @@ import {
     SAMPLE_STARTUP_INFO,
     SAMPLE_ERROR_CONTEXT_CHAIN,
     SAMPLE_MIXED_LEVELS,
+    SAMPLE_PLAIN_ERROR_STACK,
+    SAMPLE_INTERLEAVED_CORRELATIONS,
+    SAMPLE_TIME_WINDOW,
+    SAMPLE_REPEATED_WARN,
+    REPEATED_WARN_TEMPLATE,
+    APP,
+    CORR_1,
+    CORR_3,
+    CORR_4,
+    FLOW_POST_ORDERS,
+    FLOW_CREATE_ORDER,
+    ERR_DOWNSTREAM,
+    MSG_ORDER_FAILED,
 } from './fixtures/sample-logs.js';
 
 // ── Parser Tests ─────────────────────────────────────────
@@ -38,10 +51,12 @@ describe('parseRawLogs', () => {
         expect(entries).toHaveLength(1);
         expect(entries[0].priority).toBe('INFO');
         expect(entries[0].loggerName).toBe('JsonLogger');
-        expect(entries[0].correlationId).toBe('c0ffee00-0000-4000-8000-000000000001');
-        expect(entries[0].elapsed).toBe(1348);
+        expect(entries[0].correlationId).toBe(CORR_1);
+        expect(entries[0].elapsed).toBe(1200);
         expect(entries[0].tracePoint).toBe('START');
-        expect(entries[0].flowName).toContain('sf-Invoice');
+        expect(entries[0].flowName).toBe(FLOW_POST_ORDERS);
+        expect(entries[0].message).toBe('Order request received');
+        expect(entries[0].threadName).toContain(`[${APP}]`);
         expect(entries[0].jsonPayload).toBeDefined();
         expect(entries[0].jsonPayload?.environment).toBe('dev');
     });
@@ -51,9 +66,12 @@ describe('parseRawLogs', () => {
 
         expect(entries).toHaveLength(1);
         expect(entries[0].priority).toBe('ERROR');
-        expect(entries[0].errorType).toBe('SALESFORCE_ACCESS_ERROR');
-        expect(entries[0].stackTrace).toContain('FIELD_CUSTOM_VALIDATION_EXCEPTION');
-        expect(entries[0].correlationId).toBe('c0ffee00-0000-4000-8000-000000000001');
+        // Top-level errorType takes precedence over content.errorType
+        expect(entries[0].errorType).toBe(ERR_DOWNSTREAM);
+        expect(entries[0].flowName).toBe(FLOW_CREATE_ORDER);
+        expect(entries[0].message).toBe(MSG_ORDER_FAILED);
+        expect(entries[0].stackTrace).toContain('Connection refused');
+        expect(entries[0].correlationId).toBe(CORR_1);
     });
 
     it('should parse HTTP listener DEBUG with continuation lines', () => {
@@ -62,7 +80,9 @@ describe('parseRawLogs', () => {
         expect(entries).toHaveLength(1);
         expect(entries[0].priority).toBe('DEBUG');
         // Continuation lines (HTTP headers) should be captured in message
-        expect(entries[0].message).toContain('READ: 1015B POST');
+        expect(entries[0].message).toContain('READ: 512B POST /api/orders');
+        expect(entries[0].message).toContain('Content-Type: application/json');
+        expect(entries[0].threadName).toBe('http.listener.01');
     });
 
     it('should parse DefaultExceptionListener with stack trace continuation', () => {
@@ -74,7 +94,22 @@ describe('parseRawLogs', () => {
         // Continuation lines should be captured in stackTrace or message
         const fullText = (entries[0].stackTrace || '') + (entries[0].message || '');
         expect(fullText).toContain('Element DSL');
-        expect(fullText).toContain('SALESFORCE_ACCESS_ERROR');
+        expect(fullText).toContain(ERR_DOWNSTREAM);
+        expect(fullText).toContain(MSG_ORDER_FAILED);
+    });
+
+    it('should collect indented stack frames of a plain-text ERROR into stackTrace', () => {
+        const entries = parseRawLogs(SAMPLE_PLAIN_ERROR_STACK);
+
+        expect(entries).toHaveLength(1);
+        expect(entries[0].priority).toBe('ERROR');
+        expect(entries[0].message).toBe('Inventory lookup failed');
+        expect(entries[0].eventId).toBeUndefined();
+        expect(entries[0].correlationId).toBeUndefined();
+        expect(entries[0].jsonPayload).toBeUndefined();
+        expect(entries[0].stackTrace).toContain('at com.example.orders.InventoryClient.lookup');
+        expect(entries[0].stackTrace).toContain('Caused by: java.net.ConnectException');
+        expect(entries[0].stackTrace).toContain('... 12 more');
     });
 
     it('should parse scheduler WARN entries', () => {
@@ -82,13 +117,16 @@ describe('parseRawLogs', () => {
 
         expect(entries).toHaveLength(1);
         expect(entries[0].priority).toBe('WARN');
-        expect(entries[0].message).toContain('Task rejected');
+        expect(entries[0].threadName).toBe('http.listener.01');
+        expect(entries[0].message).toMatch(/^Task rejected/);
+        // Only the first " - " separates thread from message
+        expect(entries[0].message).toContain(' - org.mule.runtime');
     });
 
     it('should parse multiple entries from mixed log text', () => {
         const entries = parseRawLogs(SAMPLE_MIXED_LEVELS);
 
-        expect(entries.length).toBeGreaterThanOrEqual(6);
+        expect(entries).toHaveLength(8);
         const levels = entries.map((e) => e.priority);
         expect(levels).toContain('INFO');
         expect(levels).toContain('DEBUG');
@@ -104,13 +142,13 @@ describe('parseRawLogs', () => {
     it('should parse error context chain with multiple same-correlation entries', () => {
         const entries = parseRawLogs(SAMPLE_ERROR_CONTEXT_CHAIN);
 
-        expect(entries.length).toBeGreaterThanOrEqual(4);
+        expect(entries).toHaveLength(5);
 
-        const correlated = entries.filter((e) => e.correlationId === 'c0ffee00-0000-4000-8000-000000000001');
-        expect(correlated.length).toBeGreaterThanOrEqual(4);
+        const correlated = entries.filter((e) => e.correlationId === CORR_1);
+        expect(correlated).toHaveLength(4);
 
         const errors = entries.filter((e) => e.priority === 'ERROR');
-        expect(errors.length).toBeGreaterThanOrEqual(2);
+        expect(errors).toHaveLength(3);
     });
 });
 
@@ -123,8 +161,8 @@ describe('buildErrorContexts', () => {
 
         expect(contexts.length).toBeGreaterThan(0);
         const firstCtx = contexts[0];
-        expect(firstCtx.correlationId).toBe('c0ffee00-0000-4000-8000-000000000001');
-        expect(firstCtx.before.length).toBeGreaterThan(0);
+        expect(firstCtx.correlationId).toBe(CORR_1);
+        expect(firstCtx.before).toHaveLength(2);
         // Before entries should include the flow start
         expect(firstCtx.before.some((e) => e.message?.includes('started'))).toBe(true);
     });
@@ -134,19 +172,44 @@ describe('buildErrorContexts', () => {
         const contexts = buildErrorContexts(entries);
 
         const firstCtx = contexts[0];
-        expect(firstCtx.flowTrace.length).toBeGreaterThan(0);
+        expect(firstCtx.flowTrace).toEqual([FLOW_POST_ORDERS, FLOW_CREATE_ORDER]);
+    });
+
+    it('should not mix entries from interleaved correlation IDs', () => {
+        const entries = parseRawLogs(SAMPLE_INTERLEAVED_CORRELATIONS);
+        const contexts = buildErrorContexts(entries);
+
+        expect(entries).toHaveLength(7);
+        expect(contexts).toHaveLength(1);
+        const ctx = contexts[0];
+        expect(ctx.correlationId).toBe(CORR_3);
+        expect(ctx.before).toHaveLength(2);
+        expect(ctx.before.every((e) => e.correlationId === CORR_3)).toBe(true);
+        expect(ctx.after).toHaveLength(0);
+        expect(ctx.flowTrace).toEqual([FLOW_POST_ORDERS, FLOW_CREATE_ORDER]);
     });
 
     it('should use time-window fallback when no correlationId exists', () => {
         const entries = parseRawLogs(SAMPLE_MIXED_LEVELS);
         const contexts = buildErrorContexts(entries);
 
-        expect(contexts.length).toBeGreaterThan(0);
-        // The ForwardingToListenerHandler has no JSON Logger, so may lack correlationId
+        expect(contexts).toHaveLength(2);
+        // The ForwardingToListenerHandler line has no JSON Logger body, so it lacks a correlationId
         const noCorr = contexts.find((c) => !c.correlationId);
-        if (noCorr) {
-            expect(noCorr.before.length).toBeGreaterThanOrEqual(0);
-        }
+        expect(noCorr).toBeDefined();
+        // Startup INFO lines are an hour earlier and fall outside the 30s window
+        expect(noCorr!.before).toHaveLength(5);
+        expect(noCorr!.before.some((e) => e.priority === 'INFO')).toBe(false);
+    });
+
+    it('should exclude entries outside the 30s window in time-window fallback', () => {
+        const entries = parseRawLogs(SAMPLE_TIME_WINDOW);
+        const contexts = buildErrorContexts(entries);
+
+        expect(contexts).toHaveLength(1);
+        expect(contexts[0].correlationId).toBeUndefined();
+        expect(contexts[0].before.map((e) => e.message)).toEqual(['Inventory feed batch received']);
+        expect(contexts[0].after.map((e) => e.message)).toEqual(['Inventory feed retry scheduled']);
     });
 
     it('should return empty for logs with no errors', () => {
@@ -164,13 +227,14 @@ describe('groupErrors', () => {
         const contexts = buildErrorContexts(entries);
         const groups = groupErrors(contexts);
 
-        expect(groups.length).toBeGreaterThan(0);
-        // Errors with same type should be grouped
-        const sfGroup = groups.find((g) => g.errorType === 'SALESFORCE_ACCESS_ERROR');
-        expect(sfGroup).toBeDefined();
-        expect(sfGroup!.count).toBeGreaterThanOrEqual(1);
-        expect(sfGroup!.affectedFlows.length).toBeGreaterThan(0);
-        expect(sfGroup!.samples.length).toBeLessThanOrEqual(3);
+        // Same errorType but different message templates → separate groups; JSON-less error → UNKNOWN
+        expect(groups).toHaveLength(3);
+        const downstreamGroup = groups.find((g) => g.errorType === ERR_DOWNSTREAM && g.template === MSG_ORDER_FAILED);
+        expect(downstreamGroup).toBeDefined();
+        expect(downstreamGroup!.count).toBe(1);
+        expect(downstreamGroup!.affectedFlows).toEqual([FLOW_CREATE_ORDER]);
+        expect(downstreamGroup!.samples.length).toBeLessThanOrEqual(3);
+        expect(groups.some((g) => g.errorType === 'UNKNOWN')).toBe(true);
     });
 
     it('should respect maxGroups option', () => {
@@ -202,7 +266,22 @@ describe('detectPatterns', () => {
         // Noise-inclusive should have more entries counted
         const totalWithNoise = withNoise.reduce((s, p) => s + p.count, 0);
         const totalWithoutNoise = withoutNoise.reduce((s, p) => s + p.count, 0);
-        expect(totalWithNoise).toBeGreaterThanOrEqual(totalWithoutNoise);
+        expect(totalWithNoise).toBe(8);
+        expect(totalWithoutNoise).toBe(5);
+    });
+
+    it('should collapse WARN lines that differ only in variable tokens into one template', () => {
+        const entries = parseRawLogs(SAMPLE_REPEATED_WARN);
+        const patterns = detectPatterns(entries);
+
+        expect(patterns).toHaveLength(2);
+        expect(patterns[0]).toMatchObject({
+            level: 'WARN',
+            count: 3,
+            percentage: 75,
+            template: REPEATED_WARN_TEMPLATE,
+        });
+        expect(patterns[0].loggerName).toBe('DownstreamClient');
     });
 });
 
@@ -215,9 +294,8 @@ describe('calculateStats', () => {
 
         expect(stats.totalEntries).toBe(entries.length);
         expect(stats.totalLines).toBe(10);
-        expect(stats.byLevel['INFO']).toBeGreaterThan(0);
-        expect(stats.byLevel['ERROR']).toBeGreaterThan(0);
-        expect(stats.errorRate).toBeGreaterThan(0);
+        expect(stats.byLevel).toEqual({ INFO: 2, DEBUG: 3, WARN: 1, ERROR: 2 });
+        expect(stats.errorRate).toBe(25);
         expect(stats.timeRange.start).toBeTruthy();
         expect(stats.timeRange.end).toBeTruthy();
     });
@@ -226,8 +304,16 @@ describe('calculateStats', () => {
         const entries = parseRawLogs(SAMPLE_MIXED_LEVELS);
         const stats = calculateStats(entries, 10);
 
-        // We have 3 HTTP listener DEBUG entries out of ~8
-        expect(stats.noisePercentage).toBeGreaterThan(0);
+        // 3 HTTP listener DEBUG entries out of 8
+        expect(stats.noisePercentage).toBe(37.5);
+    });
+
+    it('should count unique correlation IDs across interleaved requests', () => {
+        const entries = parseRawLogs(SAMPLE_INTERLEAVED_CORRELATIONS);
+        const stats = calculateStats(entries, 0);
+
+        expect(stats.uniqueCorrelationIds).toBe(2);
+        expect(entries.some((e) => e.correlationId === CORR_4)).toBe(true);
     });
 });
 
@@ -282,7 +368,7 @@ describe('analyzeLogs', () => {
     it('should handle the mixed levels log', () => {
         const result = analyzeLogs(SAMPLE_MIXED_LEVELS);
 
-        expect(result.entries.length).toBeGreaterThanOrEqual(6);
+        expect(result.entries).toHaveLength(8);
         expect(result.stats.byLevel['DEBUG']).toBeGreaterThan(0);
         expect(result.stats.byLevel['INFO']).toBeGreaterThan(0);
         expect(result.stats.byLevel['ERROR']).toBeGreaterThan(0);
