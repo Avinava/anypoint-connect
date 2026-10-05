@@ -2,7 +2,12 @@
  * Tests for Safety Guards
  */
 import { describe, it, expect } from 'vitest';
-import { isProductionEnv, validateJarFile, buildDeploySummary } from '../../src/safety/guards.js';
+import {
+    isProductionEnv,
+    validateJarFile,
+    buildDeploySummary,
+    confirmProductionDeploy,
+} from '../../src/safety/guards.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -115,6 +120,11 @@ describe('validateJarFile', () => {
 });
 
 describe('buildDeploySummary', () => {
+    it('shows the production banner for a platform-flagged environment with a neutral name', () => {
+        expect(buildDeploySummary('sample-app', 'Live', null, '1.0.0', true)).toContain('PRODUCTION DEPLOYMENT');
+        expect(buildDeploySummary('sample-app', 'Live', null, '1.0.0', false)).not.toContain('PRODUCTION DEPLOYMENT');
+    });
+
     it('should include app name and environment', () => {
         const summary = buildDeploySummary('my-api', 'Sandbox', null);
         expect(summary).toContain('my-api');
@@ -152,5 +162,11 @@ describe('buildDeploySummary', () => {
         const summary = buildDeploySummary('my-api', 'Sandbox', existing, '1.2.0');
         expect(summary).toContain('1.1.0');
         expect(summary).toContain('APPLIED');
+    });
+});
+
+describe('confirmProductionDeploy', () => {
+    it('skips the prompt only for environments that are not production by name or platform flag', async () => {
+        await expect(confirmProductionDeploy('Sandbox', false)).resolves.toBe(true);
     });
 });

@@ -60,7 +60,7 @@ export function createDeployCommand(): Command {
                 }
 
                 const summary = describeJarDeployment(plan);
-                console.log(buildDeploySummary(opts.app, env.name, plan.existing, plan.ref.version));
+                console.log(buildDeploySummary(opts.app, env.name, plan.existing, plan.ref.version, env.isProduction));
                 log.kv('Artifact', `${plan.ref.groupId}:${plan.ref.artifactId}:${plan.ref.version}`);
                 log.kv('SHA-256', plan.artifact.sha256);
                 log.kv('Mode', summary.deploy.mode === 'update' ? 'update artifact reference' : 'create deployment');
@@ -78,7 +78,7 @@ export function createDeployCommand(): Command {
                 }
 
                 if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
-                    if (!(await confirmProductionDeploy(env.name))) {
+                    if (!(await confirmProductionDeploy(env.name, env.isProduction))) {
                         log.warn('Deployment cancelled');
                         return;
                     }

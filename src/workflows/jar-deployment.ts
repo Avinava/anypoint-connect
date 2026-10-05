@@ -32,15 +32,9 @@ export interface CreateOnlySettings {
     jvmArgs?: string;
 }
 
-export interface JarDeploymentRequest extends CreateOnlySettings {
-    jarPath: string;
+export interface JarDeploymentRequest extends CreateOnlySettings, JarArtifactRequest {
     appName: string;
-    orgId: string;
     env: Environment;
-    assetId?: string;
-    assetVersion?: string;
-    groupId?: string;
-    expectedSha256?: string;
 }
 
 export interface JarDeploymentPlan {
@@ -58,15 +52,26 @@ export interface JarDeploymentResult {
     deployment: CH2Deployment;
 }
 
-/** Inspect the JAR and the target environment; nothing is published or deployed. */
-export async function planJarDeployment(
-    client: AnypointClient,
-    request: JarDeploymentRequest,
-): Promise<JarDeploymentPlan> {
+export interface JarArtifactRequest {
+    jarPath: string;
+    orgId: string;
+    assetId?: string;
+    assetVersion?: string;
+    groupId?: string;
+    expectedSha256?: string;
+}
+
+/**
+ * Validate a JAR, bind it to its SHA-256, and resolve its Exchange coordinates — explicit values first,
+ * then the embedded Maven identity. Shared by publication and deployment.
+ */
+export async function resolveJarArtifact(request: JarArtifactRequest): Promise<{
+    artifact: ArtifactInspection;
+    ref: JarDeploymentPlan['ref'];
+}> {
     const check = validateJarFile(request.jarPath);
     if (!check.valid) throw new Error(check.error);
 
-    const existing = await client.cloudHub2.findDetailByName(request.orgId, request.env.id, request.appName);
     const bytes = await readFile(request.jarPath);
     const artifact = inspectArtifact(bytes, undefined, Boolean(request.assetId && request.assetVersion));
     verifyArtifactDigest(bytes, request.expectedSha256);
@@ -76,6 +81,19 @@ export async function planJarDeployment(
     if (!artifactId || !version) {
         throw new Error('Embedded Maven identity is unavailable; supply an explicit asset ID and version');
     }
+    return { artifact, ref: { groupId: request.groupId || request.orgId, artifactId, version, packaging: 'jar' } };
+}
+
+/** Inspect the JAR and the target environment; nothing is published or deployed. */
+export async function planJarDeployment(
+    client: AnypointClient,
+    request: JarDeploymentRequest,
+): Promise<JarDeploymentPlan> {
+    const [resolved, existing] = await Promise.all([
+        resolveJarArtifact(request),
+        client.cloudHub2.findDetailByName(request.orgId, request.env.id, request.appName),
+    ]);
+    const { artifact, ref } = resolved;
 
     const createOnly: Array<keyof CreateOnlySettings> = [
         'runtime',
@@ -92,7 +110,7 @@ export async function planJarDeployment(
         artifact,
         existing: existing ?? null,
         mode: existing ? 'update' : 'create',
-        ref: { groupId: request.groupId || request.orgId, artifactId, version, packaging: 'jar' },
+        ref,
         rejectedSettings: existing ? createOnly.filter((key) => request[key] !== undefined) : [],
     };
 }

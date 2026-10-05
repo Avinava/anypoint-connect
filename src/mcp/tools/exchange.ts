@@ -7,9 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import { mcpError, mcpText, dryRunPreview } from './shared.js';
-import { readFile } from 'node:fs/promises';
-import { inspectArtifact, verifyArtifactDigest } from '../../safety/artifact.js';
-import { validateJarFile } from '../../safety/guards.js';
+import { resolveJarArtifact } from '../../workflows/jar-deployment.js';
 
 export function registerExchangeTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -167,21 +165,18 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
         },
         async ({ jarPath, assetId, assetVersion, groupId, expectedSha256, confirm }) => {
             try {
-                const check = validateJarFile(jarPath);
-                if (!check.valid) {
-                    return mcpText(`❌ ${check.error}`);
-                }
-
                 const orgId = await client.getDefaultOrgId();
-                const resolvedGroupId = groupId || orgId;
-                const bytes = await readFile(jarPath);
-                const artifact = inspectArtifact(bytes, undefined, Boolean(assetId && assetVersion));
-                verifyArtifactDigest(bytes, expectedSha256);
-                const resolvedAssetId = assetId || artifact.coordinates?.artifactId;
-                const resolvedVersion = assetVersion || artifact.coordinates?.version;
-                if (!resolvedAssetId || !resolvedVersion) {
-                    throw new Error('Embedded Maven identity is unavailable; supply explicit assetId and assetVersion');
-                }
+                const { artifact, ref } = await resolveJarArtifact({
+                    jarPath,
+                    orgId,
+                    assetId,
+                    assetVersion,
+                    groupId,
+                    expectedSha256,
+                });
+                const resolvedGroupId = ref.groupId;
+                const resolvedAssetId = ref.artifactId;
+                const resolvedVersion = ref.version;
 
                 if (!confirm) {
                     return dryRunPreview({
