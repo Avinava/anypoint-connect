@@ -28,7 +28,28 @@ function collectFiles(path) {
 
 const contentFiles = ['README.md', '.env.example', 'docs', 'examples']
     .flatMap(collectFiles)
-    .filter((path) => ['.md', '.json', '.toml', '.example', '.mjs', '.sh', '.ps1'].includes(extname(path)));
+    .filter((path) => ['.md', '.json', '.toml', '.example', '.mjs', '.sh', '.ps1'].includes(extname(path)))
+    .filter((path) => !relative(repositoryRoot, path).startsWith('docs/PLAN-'));
+
+// Identifiers that must never be committed (org, environment, app, or customer names) live in a
+// gitignored local file so the denylist itself never enters history. One entry per line.
+const denylistPath = join(repositoryRoot, '.identifier-denylist');
+const denylist = existsSync(denylistPath)
+    ? readFileSync(denylistPath, 'utf8')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith('#'))
+    : [];
+const scannedFiles = [...contentFiles, ...['src', 'tests', 'scripts', 'CHANGELOG.md'].flatMap(collectFiles)];
+
+for (const file of scannedFiles) {
+    const content = readFileSync(file, 'utf8').toLowerCase();
+    for (const identifier of denylist) {
+        if (content.includes(identifier.toLowerCase())) {
+            failures.push(`${relative(repositoryRoot, file)}: denylisted identifier found`);
+        }
+    }
+}
 
 for (const file of contentFiles) {
     const relativePath = relative(repositoryRoot, file);

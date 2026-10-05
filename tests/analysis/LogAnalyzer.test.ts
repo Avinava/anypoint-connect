@@ -38,10 +38,10 @@ describe('parseRawLogs', () => {
         expect(entries).toHaveLength(1);
         expect(entries[0].priority).toBe('INFO');
         expect(entries[0].loggerName).toBe('JsonLogger');
-        expect(entries[0].correlationId).toBe('ca385c00-1dea-11f1-84d3-b2a7690ccf2c');
+        expect(entries[0].correlationId).toBe('c0ffee00-0000-4000-8000-000000000001');
         expect(entries[0].elapsed).toBe(1348);
         expect(entries[0].tracePoint).toBe('START');
-        expect(entries[0].flowName).toContain('sf-CreditMemo');
+        expect(entries[0].flowName).toContain('sf-Invoice');
         expect(entries[0].jsonPayload).toBeDefined();
         expect(entries[0].jsonPayload?.environment).toBe('dev');
     });
@@ -53,7 +53,7 @@ describe('parseRawLogs', () => {
         expect(entries[0].priority).toBe('ERROR');
         expect(entries[0].errorType).toBe('SALESFORCE_ACCESS_ERROR');
         expect(entries[0].stackTrace).toContain('FIELD_CUSTOM_VALIDATION_EXCEPTION');
-        expect(entries[0].correlationId).toBe('ca385c00-1dea-11f1-84d3-b2a7690ccf2c');
+        expect(entries[0].correlationId).toBe('c0ffee00-0000-4000-8000-000000000001');
     });
 
     it('should parse HTTP listener DEBUG with continuation lines', () => {
@@ -106,7 +106,7 @@ describe('parseRawLogs', () => {
 
         expect(entries.length).toBeGreaterThanOrEqual(4);
 
-        const correlated = entries.filter((e) => e.correlationId === 'ca385c00-1dea-11f1-84d3-b2a7690ccf2c');
+        const correlated = entries.filter((e) => e.correlationId === 'c0ffee00-0000-4000-8000-000000000001');
         expect(correlated.length).toBeGreaterThanOrEqual(4);
 
         const errors = entries.filter((e) => e.priority === 'ERROR');
@@ -123,7 +123,7 @@ describe('buildErrorContexts', () => {
 
         expect(contexts.length).toBeGreaterThan(0);
         const firstCtx = contexts[0];
-        expect(firstCtx.correlationId).toBe('ca385c00-1dea-11f1-84d3-b2a7690ccf2c');
+        expect(firstCtx.correlationId).toBe('c0ffee00-0000-4000-8000-000000000001');
         expect(firstCtx.before.length).toBeGreaterThan(0);
         // Before entries should include the flow start
         expect(firstCtx.before.some((e) => e.message?.includes('started'))).toBe(true);
@@ -235,9 +235,9 @@ describe('calculateStats', () => {
 
 describe('templatize', () => {
     it('should replace UUIDs with <*>', () => {
-        const result = templatize('event:ca385c00-1dea-11f1-84d3-b2a7690ccf2c started');
+        const result = templatize('event:c0ffee00-0000-4000-8000-000000000001 started');
         expect(result).toContain('<*>');
-        expect(result).not.toContain('ca385c00');
+        expect(result).not.toContain('c0ffee00');
     });
 
     it('should replace long numbers with <*>', () => {
