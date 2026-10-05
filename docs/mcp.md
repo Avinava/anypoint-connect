@@ -1,7 +1,7 @@
 # MCP server
 
-`anc mcp` starts a stdio Model Context Protocol server exposing 65 tools, so an AI agent can read runtime
-evidence and — with explicit confirmation — perform lifecycle operations.
+`anc mcp` starts a stdio Model Context Protocol server. An MCP host can use it to read runtime evidence
+and, with explicit confirmation, publish, deploy, and change applications.
 
 Set up credentials first. The server has nothing to offer an unauthenticated session:
 
@@ -33,7 +33,7 @@ The `mcpServers` form, used by Claude Code, Claude Desktop, Copilot CLI, and Gem
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.14.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
     }
   }
 }
@@ -47,7 +47,7 @@ VS Code wraps the same entry in `servers` and wants an explicit transport:
     "anypoint-connect": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.14.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
     }
   }
 }
@@ -59,7 +59,7 @@ extension all see it:
 ```toml
 [mcp_servers.anypoint-connect]
 command = "npx"
-args = ["-y", "@sfdxy/anypoint-connect@0.14.0", "mcp"]
+args = ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
 ```
 
 Installed globally, point at the binary instead and skip the download:
@@ -90,27 +90,37 @@ seems to need a credential in the conversation, something is configured wrong.
 
 ## Tools
 
-65 tools across identity, applications, logs and analysis, monitoring, Exchange, API Manager, Design
-Center, audit log, Anypoint MQ, Object Store, and profile management. The full table with descriptions is
-on the [tool catalog](tools.md) page.
+Tools are grouped by domain: identity and organization, project profile, applications (read, deploy,
+lifecycle), logs and log analysis, monitoring, Exchange, API Manager, Design Center, API Governance, audit
+log, Anypoint MQ, and Object Store. The [tool catalog](tools.md) is generated from the server's registry
+and lists every tool with its inputs and whether it reads or writes.
 
-Two properties matter more than the list:
+Names follow one scheme: `list_*` returns a collection, `get_*` returns one thing or a computed view, and
+guarded Design Center writes come as `preview_<verb>_<noun>` paired with `<verb>_<noun>`.
 
-- **Mutating tools are dry-run by default.** Without `confirm: true` they return a preview and change
-  nothing. See the [safety model](safety.md).
-- **Readiness is checkable.** `whoami` and `list_environments` establish access state before real work,
-  which is what stops a missing scope from being reported as an application problem. See
+Properties that matter more than the list:
+
+- **Deployment tools are dry-run by default.** `deploy_jar`, `deploy_app`, `update_app_artifact`,
+  `rollback_app`, `publish_app_jar`, and `delete_app` return a preview and change nothing without
+  `confirm: true`. Restart, scale, stop, start, settings, Object Store writes, and MQ publish apply on
+  call. The [safety model](safety.md) lists every case.
+- **Design Center writes need a preview token** from the matching `preview_*` tool.
+- **Readiness is checkable.** `whoami` and `list_environments` establish access before real work, which
+  stops a missing permission from being reported as an application problem. See
   [Access readiness](readiness.md).
+- **Monitoring is consolidated.** `get_metrics`, `get_runtime_metrics`, `get_metrics_timeseries`, and
+  `raw_amql_query` cover traffic, JVM and host health, trends, and freeform queries. See
+  [Monitoring](monitoring.md).
 
 ## Prompts
 
-| Prompt | What it drives |
-| --- | --- |
-| `pre-deploy-check` | Readiness before promoting an app between environments |
-| `troubleshoot-app` | Replica health, error patterns, and metric anomalies in order |
-| `api-governance-audit` | Policies, SLA tiers, and security gaps across APIs |
-| `environment-overview` | Status, error rates, and performance rankings for an environment |
-| `improve-api-spec` | Pull, analyze, improve, and push an API specification |
+| Prompt | Arguments | What it drives |
+| --- | --- | --- |
+| `pre-deploy-check` | `appName`, `sourceEnv`, `targetEnv` | Source and target status, version drift, recent errors, and a metrics baseline before a promotion |
+| `troubleshoot-app` | `appName`, `environment`, `symptom` (optional) | Replica health, clustered errors, log patterns, per-worker metrics and time series, then runtime metrics if memory or CPU is suspected |
+| `api-governance-audit` | `environment` | Policies, SLA tiers, contracts, and security gaps across managed APIs |
+| `environment-overview` | `environment` | App inventory, failure and latency rankings, the dominant error, and runtime versions |
+| `improve-api-spec` | `project` | Read a Design Center spec, improve it, preview the sync, and apply only after approval |
 
 ## Resources
 
@@ -124,9 +134,11 @@ Two properties matter more than the list:
 ```text
 What apps are running in Sandbox?
 Analyze the errors in sample-orders-api in Sandbox — what is failing and why?
-Give me a health summary of sample-external-api in Sandbox for the last six hours.
-Is sample-orders-api leaking memory? Show the heap trend over the past week.
-Compare Development and Production and tell me what drifted.
+Give me a health summary of sample-orders-api in Sandbox for the last six hours.
+Is sample-orders-api leaking memory? Show the old-generation trend over the past week.
+Which worker of sample-orders-api in Production is slower than the others?
+Compare sample-orders-api traffic and failures across every environment.
+Compare the Development and Production deployments and tell me what drifted.
 What changed in the platform in the last 24 hours?
 What policies are applied to the Sample Orders API?
 Publish target/sample-orders-api-1.3.0-mule-application.jar and deploy it to Sandbox.

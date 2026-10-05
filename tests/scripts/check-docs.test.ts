@@ -40,6 +40,29 @@ describe('documentation release metadata gate', () => {
         expect(result.stderr).toContain(`Lockfile root ${field} must match package.json`);
     });
 
+    it('fails when the tool catalog and the registered tools diverge', () => {
+        cpSync(join(process.cwd(), 'src/mcp/tools'), join(root, 'src/mcp/tools'), { recursive: true });
+        cpSync(join(process.cwd(), 'docs/tools.md'), join(root, 'docs/tools.md'));
+        expect(check().status).toBe(0);
+
+        const catalog = readFileSync(join(root, 'docs/tools.md'), 'utf8');
+        writeFileSync(
+            join(root, 'docs/tools.md'),
+            catalog.replace(/^\| `whoami` \|.*\n/m, '') + '| `retired_tool` | read | — | Gone. |\n',
+        );
+        const result = check();
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('docs/tools.md: missing whoami');
+        expect(result.stderr).toContain('docs/tools.md: retired_tool is not registered');
+    });
+
+    it('rejects hard-coded tool counts in documentation', () => {
+        writeFileSync(join(root, 'README.md'), 'Ships 42 MCP tools.\n');
+        const result = check();
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('hard-coded tool count');
+    });
+
     it('reports release and documentation failures together', () => {
         writeFileSync(join(root, 'CHANGELOG.md'), '## 0.0.0\n');
         writeFileSync(join(root, 'README.md'), '@sfdxy/anypoint-connect@0.0.0\n');
