@@ -4,7 +4,7 @@
  */
 
 import type { EnrichedLogEntry, ErrorGroup, LogPattern, LogStats, ErrorSpike } from './types.js';
-import { isNoise } from './utils.js';
+import { isNoise } from './normalize.js';
 
 /**
  * Compute comprehensive statistics for a set of enriched entries.

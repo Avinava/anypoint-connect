@@ -30,11 +30,11 @@ export { buildErrorContexts } from './error-context.js';
 export { groupErrors } from './error-grouper.js';
 export { detectPatterns } from './pattern-detector.js';
 export { calculateStats } from './stats.js';
-export { templatize, isNoise, LEVEL_PRIORITY } from './utils.js';
+export { templatize, isNoise, LEVEL_PRIORITY } from './normalize.js';
 
 // Pipeline imports
 import type { AnalysisOptions, AnalysisResult } from './types.js';
-import { LEVEL_PRIORITY } from './utils.js';
+import { LEVEL_PRIORITY } from './normalize.js';
 import { parseRawLogs } from './parser.js';
 import { buildErrorContexts } from './error-context.js';
 import { groupErrors } from './error-grouper.js';

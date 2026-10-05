@@ -15,7 +15,7 @@ import { createExchangeCommand } from './commands/exchange.js';
 import { createApiCommand } from './commands/api.js';
 import { createDesignCenterCommand } from './commands/design-center.js';
 import { VERSION } from './version.js';
-import { migrateIfNeeded } from './utils/config.js';
+import { migrateIfNeeded } from './config/profiles.js';
 
 // Auto-migrate legacy config to profiles/default/ if needed
 migrateIfNeeded();
@@ -43,7 +43,7 @@ program
     .command('mcp')
     .description('Start the MCP (Model Context Protocol) server over stdio')
     .action(async () => {
-        const { AnypointConnectMcpServer } = await import('./mcp.js');
+        const { AnypointConnectMcpServer } = await import('./mcp/server.js');
         const server = new AnypointConnectMcpServer();
         await server.start();
     });

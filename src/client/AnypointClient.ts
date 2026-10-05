@@ -13,12 +13,12 @@ import { MonitoringApi } from '../api/MonitoringApi.js';
 import { ExchangeApi } from '../api/ExchangeApi.js';
 import { ApiManagerApi } from '../api/ApiManagerApi.js';
 import { DesignCenterApi } from '../api/DesignCenterApi.js';
-import { DesignCenterWorkflow } from '../api/DesignCenterWorkflow.js';
+import { DesignCenterWorkflow } from '../workflows/design-center.js';
 import { GovernanceApi } from '../api/GovernanceApi.js';
 import { AuditLogApi } from '../api/AuditLogApi.js';
 import { AnypointMQApi } from '../api/AnypointMQApi.js';
 import { ObjectStoreApi } from '../api/ObjectStoreApi.js';
-import { DEFAULT_CALLBACK_URL } from '../utils/config.js';
+import { DEFAULT_CALLBACK_URL } from '../config/profiles.js';
 
 export interface AnypointClientConfig {
     clientId: string;

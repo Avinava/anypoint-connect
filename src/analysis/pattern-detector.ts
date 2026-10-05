@@ -4,7 +4,7 @@
  */
 
 import type { EnrichedLogEntry, LogPattern } from './types.js';
-import { templatize, isNoise } from './utils.js';
+import { templatize, isNoise } from './normalize.js';
 
 export interface PatternDetectorOptions {
     /** Number of top patterns to return (default: 15) */
