@@ -1,6 +1,6 @@
 /**
  * Design Center CLI Commands
- * anc dc list | files | pull | push | publish
+ * anc design-center (alias: dc) list | files | pull | push | publish
  */
 
 import { Command } from 'commander';
@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { printTable } from '../utils/formatter.js';
-import { createClient } from './shared.js';
+import { confirmAction, createClient } from './shared.js';
 import type { AnypointClient } from '../client/AnypointClient.js';
 
 async function resolveProject(client: AnypointClient, orgId: string, nameOrId: string) {
@@ -25,7 +25,7 @@ async function resolveProject(client: AnypointClient, orgId: string, nameOrId: s
 }
 
 export function createDesignCenterCommand(): Command {
-    const dc = new Command('dc').description('Manage API specs in Anypoint Design Center');
+    const dc = new Command('design-center').alias('dc').description('Manage API specs in Anypoint Design Center');
 
     // ── list ────────────────────────────────────────
 
@@ -119,12 +119,13 @@ export function createDesignCenterCommand(): Command {
     // ── push ────────────────────────────────────────
 
     dc.command('push')
-        .description('Push a local file to Design Center (lock → save → unlock)')
+        .description('Preview, then sync a local file to Design Center (conflict-checked and verified)')
         .argument('<project>', 'Project name or ID')
         .argument('<localFile>', 'Local file to upload')
         .option('-p, --path <path>', 'Remote file path (overrides auto-detection)')
         .option('-b, --branch <branch>', 'Branch name', 'master')
         .option('-m, --message <msg>', 'Commit message')
+        .option('-y, --yes', 'Apply without asking for confirmation', false)
         .action(async (project: string, localFile: string, opts) => {
             try {
                 const client = createClient();
@@ -132,29 +133,39 @@ export function createDesignCenterCommand(): Command {
                 const proj = await resolveProject(client, orgId, project);
 
                 if (!fs.existsSync(localFile)) {
-                    log.error(`File not found: ${localFile}`);
-                    process.exit(1);
+                    throw new Error(`File not found: ${localFile}`);
                 }
-
                 const content = fs.readFileSync(localFile, 'utf-8');
+                const remotePath =
+                    opts.path ||
+                    (await client.designCenter.resolveFilePath(
+                        orgId,
+                        proj.id,
+                        localFile.split('/').pop() || localFile,
+                        opts.branch,
+                    ));
 
-                // Smart path resolution: verify the file exists in the project
-                let remotePath: string;
-                if (opts.path) {
-                    remotePath = opts.path;
-                } else {
-                    const basename = localFile.split('/').pop() || localFile;
-                    remotePath = await client.designCenter.resolveFilePath(orgId, proj.id, basename, opts.branch);
+                const preview = await client.designCenterWorkflow.previewSync(
+                    orgId,
+                    proj.id,
+                    [{ path: remotePath, content }],
+                    opts.branch,
+                    opts.message,
+                );
+                log.info(`${localFile} → ${preview.project}/${remotePath} [${preview.branch}]`);
+                for (const entry of preview.entries) log.kv(entry.path, entry.action);
+
+                if (preview.entries.every((entry) => entry.action === 'unchanged')) {
+                    log.success('Design Center already matches the local file; nothing to push.');
+                    return;
+                }
+                if (!opts.yes && !(await confirmAction('Push these changes to Design Center?'))) {
+                    log.warn('Push cancelled');
+                    return;
                 }
 
-                const lines = content.split('\n').length;
-                log.info(`Pushing ${localFile} → ${proj.name}/${remotePath} [${opts.branch}]`);
-                log.dim(`  ${lines} lines, ${content.length} bytes`);
-                log.dim('  Acquiring lock...');
-
-                await client.designCenter.updateFile(orgId, proj.id, remotePath, content, opts.branch, opts.message);
-
-                log.success(`Pushed to Design Center: ${remotePath}`);
+                const result = await client.designCenterWorkflow.sync(preview.previewToken);
+                log.success(`Pushed and verified ${result.changed} file(s) in ${result.project} [${result.branch}]`);
             } catch (error) {
                 log.error(`Push failed: ${errorMessage(error)}`);
                 process.exit(1);
@@ -164,24 +175,23 @@ export function createDesignCenterCommand(): Command {
     // ── publish ─────────────────────────────────────
 
     dc.command('publish')
-        .description('Publish a Design Center project to Exchange')
+        .description('Preview, then publish a Design Center project to Exchange (source-bound and verified)')
         .argument('<project>', 'Project name or ID')
         .requiredOption('--version <version>', 'Asset version (semver, e.g. 1.2.0)')
         .option('--api-version <v>', 'API version (e.g. v1)', 'v1')
         .option('--name <name>', 'Asset name in Exchange (defaults to project name)')
-        .option('--asset-id <id>', 'Asset ID in Exchange (defaults to project name)')
+        .option('--asset-id <id>', 'Asset ID in Exchange (defaults to the project exchange.json, then the name)')
         .option('--classifier <c>', 'Classifier: raml, raml-fragment, oas, oas3', 'raml')
-        .option('--main <file>', 'Main spec file name')
+        .option('--main <file>', 'Main spec file name (defaults to the project exchange.json)')
         .option('-b, --branch <branch>', 'Branch name', 'master')
+        .option('-y, --yes', 'Publish without asking for confirmation', false)
         .action(async (project: string, opts) => {
             try {
                 const client = createClient();
                 const orgId = await client.getDefaultOrgId();
                 const proj = await resolveProject(client, orgId, project);
 
-                log.info(`Publishing ${proj.name} to Exchange as v${opts.version}...`);
-
-                const result = await client.designCenter.publishToExchange(
+                const preview = await client.designCenterWorkflow.previewPublication(
                     orgId,
                     proj.id,
                     {
@@ -194,8 +204,22 @@ export function createDesignCenterCommand(): Command {
                     },
                     opts.branch,
                 );
+                log.info(`Publish ${preview.project} [${preview.branch}] to Exchange`);
+                log.kv(
+                    'Coordinates',
+                    `${preview.coordinates.groupId}:${preview.coordinates.assetId}:${preview.coordinates.version}`,
+                );
+                log.kv('Main file', preview.mainFile);
+                log.kv('Classifier', String(preview.classifier));
+                log.kv('Source SHA-256', preview.sourceHash);
 
-                log.success(`Published to Exchange!`);
+                if (!opts.yes && !(await confirmAction('Publish this asset version to Exchange?'))) {
+                    log.warn('Publish cancelled');
+                    return;
+                }
+
+                const result = await client.designCenterWorkflow.publish(preview.previewToken);
+                log.success('Published to Exchange and verified the artifact');
                 log.kv('Group ID', result.groupId);
                 log.kv('Asset ID', result.assetId);
                 log.kv('Version', result.version);

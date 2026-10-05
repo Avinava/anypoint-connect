@@ -388,27 +388,6 @@ export class DesignCenterApi {
         }
     }
 
-    /**
-     * Legacy direct publication path retained for compatibility.
-     * New callers should use the preview-bound DesignCenterWorkflow.
-     *
-     * The DC XP API expects all publish parameters in the JSON body, NOT in the URL path.
-     * Endpoint: POST /designcenter/api-designer/projects/{projectId}/branches/{branch}/publish/exchange
-     *
-     * Requires a branch lock (same as file saves). Uses lock → publish → unlock pattern.
-     * If assetId or main file aren't specified, we auto-detect them from exchange.json.
-     */
-    async publishToExchange(
-        orgId: string,
-        projectId: string,
-        options: PublishToExchangeOptions,
-        branch = 'master',
-    ): Promise<{ groupId: string; assetId: string; version: string }> {
-        return this.withLock(orgId, projectId, branch, () =>
-            this.publishToExchangeLocked(orgId, projectId, options, branch),
-        );
-    }
-
     /** Publish while the caller holds the branch lock. */
     async publishToExchangeLocked(
         orgId: string,
