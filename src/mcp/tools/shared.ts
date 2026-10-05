@@ -3,7 +3,26 @@
  * Common helpers used across all MCP tool registrars
  */
 
+import type { AnypointClient } from '../../client/AnypointClient.js';
+import type { Environment } from '../../api/AccessManagementApi.js';
 import { errorMessage } from '../../utils/errors.js';
+
+/** Resolve the default org and an environment name or ID in one step. */
+export async function resolveEnvironment(
+    client: AnypointClient,
+    environment: string,
+): Promise<{ orgId: string; env: Environment }> {
+    const orgId = await client.getDefaultOrgId();
+    const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+    return { orgId, env };
+}
+
+/** A look-back window ending now, as epoch milliseconds plus ISO strings for responses. */
+export function timeWindow(hoursBack = 24): { from: number; to: number; period: { from: string; to: string } } {
+    const to = Date.now();
+    const from = to - hoursBack * 60 * 60 * 1000;
+    return { from, to, period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() } };
+}
 
 /**
  * Build a standard MCP error response.

@@ -11,63 +11,28 @@ The setup uses three related things that are easy to conflate:
 The Client ID and Secret do **not** grant platform access on their own. A user still authorizes the app
 through the browser, and effective access cannot exceed that user's Anypoint permissions.
 
-## Before you begin
+This page is the reference for what the credentials are, where they are stored, and how to rotate or
+revoke them. To create the Connected App and log in for the first time, follow
+[Getting started](getting-started.md#create-the-connected-app); it has the exact field values.
 
-Creating the app requires Organization Administrator permission at the relevant root organization or
-business group. If you do not have it, use the [administrator handoff](#administrator-handoff) rather
-than asking for broader personal permissions.
+## Why these scopes
 
-The steps below follow MuleSoft's current
-[Connected App creation documentation](https://docs.mulesoft.com/access-management/creating-connected-apps-dev).
+| UI label | OAuth scope | Purpose |
+| --- | --- | --- |
+| Full Access | `full` | Allows anything the signing-in user is already permitted to do |
+| Background Access | `offline_access` | Issues a refresh token so the CLI does not require a browser login every hour |
 
-## Exact app configuration
+The OAuth request asks for exactly `full offline_access`. Product-specific permissions such as Runtime
+Manager, Monitoring, Exchange, or Anypoint MQ are not requested scopes: effective access is whatever the
+authorizing user already has. Authorize with a read-only Anypoint user when the toolkit must never deploy
+or change resources.
 
-1. Sign in to [Anypoint Platform](https://anypoint.mulesoft.com).
-2. Open **Access Management**, select the intended business group if necessary, and open
-   **Connected Apps → Owned Apps**.
-3. Select **Create app**.
-4. Configure the app:
+## Entering the secret
 
-    | Setting | Required value | Why |
-    | --- | --- | --- |
-    | Name | `anypoint-connect-local` or another neutral internal label | Avoid customer names in screenshots and support threads |
-    | Type | **App acts on behalf of a user** | The toolkit operates with the signing-in user's identity and permissions |
-    | Grant type | **Authorization Code** | The CLI receives a short-lived code through its local callback |
-    | Website URL | `https://github.com/Avinava/anypoint-connect` | Identifies the software requesting access |
-    | Redirect URI | `http://localhost:3000/api/callback` | Must match the CLI default exactly, including scheme, port, and path |
-    | Audience | **Members of this organization only** | Appropriate for an internal Connected App |
-
-5. Add these scopes:
-
-    | UI label | OAuth scope | Purpose |
-    | --- | --- | --- |
-    | Full Access | `full` | Allows anything the signing-in user is already permitted to do |
-    | Background Access | `offline_access` | Issues a refresh token so the CLI does not require a browser login every hour |
-
-6. Save, then use **Copy ID** and **Copy Secret**. Transfer the secret through an approved secret
-   manager, not email, a ticket, or chat.
-
-!!! important "Why the product-specific scope list was removed"
-
-    The current OAuth implementation requests `full offline_access`. Listing Runtime Manager,
-    Monitoring, Exchange, or MQ permissions as though those were the requested OAuth scopes was
-    inaccurate. Effective access is still constrained by the user who authorizes the app. Use a
-    read-only Anypoint user when the toolkit must never deploy or mutate resources.
-
-## Save and authorize
-
-Run the interactive setup so the secret does not enter shell history:
-
-```bash
-anc config init
-anc config show
-anc auth login
-anc auth status
-```
-
-Do not use `anc config set clientSecret ...` for routine secret entry: the value can remain in terminal
-history or process inspection. Re-running `anc config init` preserves an existing secret when the masked
-prompt is left blank.
+Use `anc config init`; the Client Secret prompt is masked, so the value does not enter shell history. Do
+not use `anc config set clientSecret ...` for routine secret entry: the value can remain in terminal
+history or be visible to process inspection. Re-running `anc config init` keeps an existing secret when the
+masked prompt is left blank.
 
 ## Where the files live
 

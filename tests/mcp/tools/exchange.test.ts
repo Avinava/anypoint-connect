@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { strToU8, zipSync } from 'fflate';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ExchangeApi } from '../../src/api/ExchangeApi.js';
-import { registerExchangeTools } from '../../src/mcp/tools/exchange.js';
+import { ExchangeApi } from '../../../src/api/ExchangeApi.js';
+import { registerAppDeployTools } from '../../../src/mcp/tools/apps-deploy.js';
+import { registerExchangeTools } from '../../../src/mcp/tools/exchange.js';
 
 describe('artifact publication handoff', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
@@ -47,6 +48,7 @@ describe('artifact publication handoff', () => {
             }),
         );
         registerExchangeTools(server as any, client as any);
+        registerAppDeployTools(server as any, client as any);
     });
     afterEach(() => rmSync(root, { recursive: true, force: true }));
 

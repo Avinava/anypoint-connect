@@ -25,9 +25,10 @@ flowchart LR
     Skills --> Connect
 ```
 
-A complete release therefore crosses two tools: `mule-build release` produces and versions the artifact,
-then `deploy_jar` or `publish_app_jar` plus `update_app_artifact` puts it in an environment. Keeping the
-credentialed step separate is deliberate — a build should not need platform access, and most builds do not.
+A complete release therefore crosses two tools: `mule-build` produces and versions the artifact, then
+`mule-ops` uses `deploy_jar`, or `publish_app_jar` plus `update_app_artifact`, to put it in an
+environment. Keeping the credentialed step separate is deliberate — a build should not need platform
+access, and most builds do not.
 
 ## Through mule-skills
 
@@ -36,10 +37,11 @@ version and adds the judgment layer on top of it:
 
 | Skill | Uses this tool for |
 | --- | --- |
-| `mule-ops` | Runtime health: logs, error grouping, metrics, memory, deployment history |
-| `mule-troubleshooting` | Incident telemetry correlated with source and configuration |
+| `mule-ops` | Runtime health: logs, error grouping, traffic and latency per app, worker, and route, JVM and host metrics, deployment history, and authorized publish and deploy |
+| `mule-troubleshooting` | Incident telemetry correlated with source and configuration: time series around the incident window, old-generation and GC evidence, clustered errors |
+| `mule-api-design` | Heavy use of Design Center, Exchange, and API Governance: reading and syncing specifications through preview tokens, searching and downloading Exchange assets, publishing contract versions, and checking governance rulesets and conformance |
 | `mule-review` | Optional runtime verification of a finding |
-| `mule-build` | Only for an authorized publish or deploy |
+| `mule-build` | None directly. It builds and verifies the artifact locally, then hands platform actions such as publication and deployment off to `mule-ops` |
 
 Those workflows also gate on access before their first call and offer alternatives when it is missing, so
 an unauthenticated setup produces a labeled coverage gap instead of a failed session. That gate uses the

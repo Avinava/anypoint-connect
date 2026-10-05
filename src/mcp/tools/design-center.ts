@@ -1,13 +1,12 @@
 /**
- * MCP Tool Registrar — Design Center tools
- * list_design_center_projects, get_design_center_files,
- * read_design_center_file, update_design_center_file, publish_to_exchange
+ * MCP Tool Registrar — Design Center tools (preview-bound writes)
+ * list_design_center_projects, list_design_center_branches, list_design_center_files, read_design_center_file, preview_create_design_center_project, create_design_center_project, preview_sync_design_center_files, sync_design_center_files, preview_publish_exchange_asset, publish_exchange_asset
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText } from './shared.js';
 
 export function registerDesignCenterTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -23,23 +22,14 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                 const orgId = await client.getDefaultOrgId();
                 const projects = await client.designCenter.getProjects(orgId);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                projects.map((p) => ({
-                                    name: p.name,
-                                    id: p.id,
-                                    type: p.type,
-                                    createdDate: p.createdDate,
-                                })),
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText(
+                    projects.map((p) => ({
+                        name: p.name,
+                        id: p.id,
+                        type: p.type,
+                        createdDate: p.createdDate,
+                    })),
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -47,7 +37,27 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
     );
 
     server.registerTool(
-        'get_design_center_files',
+        'list_design_center_branches',
+        {
+            title: 'List Design Center Branches',
+            description: 'Lists branches for one exactly identified Design Center project.',
+            inputSchema: { project: z.string().describe('Exact project name or project ID') },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ project }) => {
+            try {
+                const orgId = await client.getDefaultOrgId();
+                const resolved = await client.designCenter.findByNameOrThrow(orgId, project);
+                const branches = await client.designCenter.getBranches(orgId, resolved.id);
+                return mcpText({ project: resolved.name, branches });
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'list_design_center_files',
         {
             title: 'List Files in Design Center Project',
             description:
@@ -65,14 +75,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
 
                 const files = await client.designCenter.getFiles(orgId, proj.id, branch || 'master');
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ project: proj.name, branch: branch || 'master', files }, null, 2),
-                        },
-                    ],
-                };
+                return mcpText({ project: proj.name, branch: branch || 'master', files });
             } catch (error) {
                 return mcpError(error);
             }
@@ -114,66 +117,9 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                     branch || 'master',
                 );
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `File: ${resolvedPath}\nProject: ${proj.name}\nBranch: ${branch || 'master'}\n\n${content}`,
-                        },
-                    ],
-                };
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
-    );
-
-    server.registerTool(
-        'update_design_center_file',
-        {
-            title: 'Update Design Center File',
-            description:
-                'Updates a file in a Design Center project by atomically acquiring a lock, saving the new content, and releasing the lock. Use this after reading a RAML/OAS file, making changes, and wanting to push the updated spec back to Design Center. The lock ensures no concurrent edits are lost.',
-            inputSchema: {
-                project: z.string().describe('Exact project name or project ID'),
-                filePath: z.string().describe('File path within the project (e.g. "api.raml")'),
-                content: z.string().describe('The full updated file content to save'),
-                branch: z.string().optional().describe('Branch name (default: "master")'),
-                commitMessage: z.string().optional().describe('Commit message describing the change'),
-            },
-            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
-        },
-        async ({ project, filePath, content, branch, commitMessage }) => {
-            try {
-                const orgId = await client.getDefaultOrgId();
-                const proj = await client.designCenter.findByNameOrThrow(orgId, project);
-
-                // Verify the file path exists in the project (with suggestions on mismatch)
-                const resolvedPath = await client.designCenter.resolveFilePath(
-                    orgId,
-                    proj.id,
-                    filePath,
-                    branch || 'master',
+                return mcpText(
+                    `File: ${resolvedPath}\nProject: ${proj.name}\nBranch: ${branch || 'master'}\n\n${content}`,
                 );
-
-                await client.designCenter.updateFile(
-                    orgId,
-                    proj.id,
-                    resolvedPath,
-                    content,
-                    branch || 'master',
-                    commitMessage,
-                );
-
-                const lines = content.split('\n').length;
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `✅ Updated "${resolvedPath}" in ${proj.name} [${branch || 'master'}] (${lines} lines, ${content.length} bytes).`,
-                        },
-                    ],
-                };
             } catch (error) {
                 return mcpError(error);
             }
@@ -181,79 +127,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
     );
 
     server.registerTool(
-        'publish_to_exchange',
-        {
-            title: 'Publish Design Center Project to Exchange (Legacy)',
-            description:
-                'Legacy direct publication retained for compatibility. Prefer preview_exchange_publication followed by publish_previewed_exchange_asset so exact coordinates and source content are approval-bound.',
-            inputSchema: {
-                project: z.string().describe('Exact project name or project ID'),
-                version: z.string().describe('Asset version in semver format (e.g. "1.2.0")'),
-                apiVersion: z.string().optional().describe('API version label (default: "v1")'),
-                classifier: z
-                    .string()
-                    .optional()
-                    .describe('Spec type: "raml", "raml-fragment", "oas", "oas3" (default: "raml")'),
-                name: z.string().optional().describe('Asset name in Exchange (defaults to project name)'),
-                branch: z.string().optional().describe('Branch to publish from (default: "master")'),
-            },
-            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-        },
-        async ({ project, version, apiVersion, classifier, name, branch }) => {
-            try {
-                const orgId = await client.getDefaultOrgId();
-                const proj = await client.designCenter.findByNameOrThrow(orgId, project);
-
-                const result = await client.designCenter.publishToExchange(
-                    orgId,
-                    proj.id,
-                    {
-                        name: name || proj.name,
-                        apiVersion: apiVersion || 'v1',
-                        version,
-                        classifier: classifier || 'raml',
-                    },
-                    branch || 'master',
-                );
-
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `✅ Published "${proj.name}" to Exchange!\nGroup ID: ${result.groupId}\nAsset ID: ${result.assetId}\nVersion: ${result.version}`,
-                        },
-                    ],
-                };
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
-    );
-
-    server.registerTool(
-        'list_design_center_branches',
-        {
-            title: 'List Design Center Branches',
-            description: 'Lists branches for one exactly identified Design Center project.',
-            inputSchema: { project: z.string().describe('Exact project name or project ID') },
-            annotations: { readOnlyHint: true },
-        },
-        async ({ project }) => {
-            try {
-                const orgId = await client.getDefaultOrgId();
-                const resolved = await client.designCenter.findByNameOrThrow(orgId, project);
-                const branches = await client.designCenter.getBranches(orgId, resolved.id);
-                return {
-                    content: [{ type: 'text', text: JSON.stringify({ project: resolved.name, branches }, null, 2) }],
-                };
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
-    );
-
-    server.registerTool(
-        'preview_design_center_project_create',
+        'preview_create_design_center_project',
         {
             title: 'Preview Design Center Project Creation',
             description:
@@ -268,7 +142,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
             try {
                 const orgId = await client.getDefaultOrgId();
                 const preview = await client.designCenterWorkflow.previewProjectCreate(orgId, name, classifier);
-                return { content: [{ type: 'text', text: JSON.stringify(preview, null, 2) }] };
+                return mcpText(preview);
             } catch (error) {
                 return mcpError(error);
             }
@@ -282,14 +156,14 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
             description:
                 'Consumes a single-use creation preview token and rechecks exact-name collision before creating the project.',
             inputSchema: {
-                previewToken: z.string().describe('Token returned by preview_design_center_project_create'),
+                previewToken: z.string().describe('Token returned by preview_create_design_center_project'),
             },
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
         },
         async ({ previewToken }) => {
             try {
                 const project = await client.designCenterWorkflow.createProject(previewToken);
-                return { content: [{ type: 'text', text: JSON.stringify(project, null, 2) }] };
+                return mcpText(project);
             } catch (error) {
                 return mcpError(error);
             }
@@ -299,7 +173,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
     const syncFilesSchema = z.array(z.object({ path: z.string().min(1), content: z.string() })).min(1);
 
     server.registerTool(
-        'preview_design_center_sync',
+        'preview_sync_design_center_files',
         {
             title: 'Preview Design Center File Sync',
             description:
@@ -322,7 +196,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                     branch || 'master',
                     commitMessage,
                 );
-                return { content: [{ type: 'text', text: JSON.stringify(preview, null, 2) }] };
+                return mcpText(preview);
             } catch (error) {
                 return mcpError(error);
             }
@@ -335,13 +209,13 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
             title: 'Apply Previewed Design Center Sync',
             description:
                 'Consumes a single-use preview, locks once, aborts atomically on hash conflicts, batch-saves, and verifies every changed file.',
-            inputSchema: { previewToken: z.string().describe('Token returned by preview_design_center_sync') },
+            inputSchema: { previewToken: z.string().describe('Token returned by preview_sync_design_center_files') },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
         async ({ previewToken }) => {
             try {
                 const result = await client.designCenterWorkflow.sync(previewToken);
-                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+                return mcpText(result);
             } catch (error) {
                 return mcpError(error);
             }
@@ -349,7 +223,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
     );
 
     server.registerTool(
-        'preview_exchange_publication',
+        'preview_publish_exchange_asset',
         {
             title: 'Preview Exchange Publication',
             description:
@@ -376,7 +250,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                     options,
                     branch || 'master',
                 );
-                return { content: [{ type: 'text', text: JSON.stringify(preview, null, 2) }] };
+                return mcpText(preview);
             } catch (error) {
                 return mcpError(error);
             }
@@ -384,78 +258,18 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
     );
 
     server.registerTool(
-        'publish_previewed_exchange_asset',
+        'publish_exchange_asset',
         {
             title: 'Publish Previewed Exchange Asset',
             description:
                 'Consumes the publication token, rejects source drift, publishes once, then verifies the downloaded Exchange artifact hash.',
-            inputSchema: { previewToken: z.string().describe('Token returned by preview_exchange_publication') },
+            inputSchema: { previewToken: z.string().describe('Token returned by preview_publish_exchange_asset') },
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
         },
         async ({ previewToken }) => {
             try {
                 const result = await client.designCenterWorkflow.publish(previewToken);
-                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
-    );
-
-    server.registerTool(
-        'explain_api_governance_plan',
-        {
-            title: 'Explain API Governance Plan',
-            description:
-                'Reads the centralized governance rulesets that would apply to planned or published API coordinates.',
-            inputSchema: {
-                groupId: z.string(),
-                assetId: z.string(),
-                version: z.string().optional(),
-                filter: z.string().optional(),
-            },
-            annotations: { readOnlyHint: true },
-        },
-        async ({ groupId, assetId, version, filter }) => {
-            try {
-                const orgId = await client.getDefaultOrgId();
-                const ownerId = await client.designCenter.getOwnerId();
-                const result = version
-                    ? await client.governance.explainPublished(orgId, ownerId, { groupId, assetId, version })
-                    : await client.governance.explainPlanned(orgId, ownerId, { groupId, assetId, filter });
-                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
-    );
-
-    server.registerTool(
-        'get_api_governance_conformance',
-        {
-            title: 'Get API Governance Conformance',
-            description:
-                'Reads centralized governance conformance for exact API asset versions, filtered by the caller permissions.',
-            inputSchema: {
-                groupId: z.string(),
-                assetId: z.string(),
-                minorVersion: z.string(),
-                versions: z.array(z.string()).min(1),
-            },
-            annotations: { readOnlyHint: true },
-        },
-        async ({ groupId, assetId, minorVersion, versions }) => {
-            try {
-                const orgId = await client.getDefaultOrgId();
-                const ownerId = await client.designCenter.getOwnerId();
-                const result = await client.governance.conformanceStatus(orgId, ownerId, {
-                    orgId,
-                    groupId,
-                    assetId,
-                    minorVersion,
-                    versions,
-                });
-                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+                return mcpText(result);
             } catch (error) {
                 return mcpError(error);
             }

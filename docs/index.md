@@ -27,9 +27,9 @@ anc auth status</code></div>
 <p>Best for operators and Mule developers who want copyable commands without writing Node.js.</p>
 </a>
 <a class="anc-card" href="mcp/">
-<span class="anc-kicker">AI tools</span>
+<span class="anc-kicker">MCP</span>
 <h3>Run the MCP server</h3>
-<p>Let an agent inspect runtime evidence while credentials and confirmation gates remain local.</p>
+<p>Give an MCP host runtime evidence while credentials and confirmation gates remain local.</p>
 </a>
 <a class="anc-card" href="library/">
 <span class="anc-kicker">Automation</span>
@@ -59,17 +59,22 @@ administrator for and how to rotate a secret safely.
 
 | Area | Typical work |
 | --- | --- |
-| Runtime Manager | List, inspect, deploy, redeploy, roll back, restart, scale, stop, start, and delete applications |
-| Logs and monitoring | Tail logs, group errors, find patterns, pull percentiles, inspect workers, memory, and GC |
-| Exchange and Design Center | Search assets, download specifications, synchronize source, publish APIs and application JARs |
-| API Manager | Inspect instances, policies, SLA tiers, and alerts |
+| Runtime Manager | List, inspect, compare across environments, publish and deploy a JAR, redeploy, roll back, restart, scale, stop, start, and delete applications |
+| Logs | Tail and download logs, cluster errors with context, find recurring patterns, summarize log health |
+| Monitoring | Traffic, failures, and p50–p99 latency per app, worker, or route; heap, old-generation pressure, GC, CPU, and RAM per worker; incident time series; freeform AMQL. See [Monitoring](monitoring.md) |
+| Exchange and Design Center | Search assets, download specifications, preview and sync spec files, publish API and application assets |
+| API Manager and Governance | Instances, policies, SLA tiers, alerts, governance rulesets and conformance |
 | Platform services | Environments, entitlements, audit log, Anypoint MQ, and Object Store v2 |
+
+Every MCP tool is listed in the [tool catalog](tools.md); every command is in the
+[CLI reference](cli-reference.md).
 
 ## Safety is part of the interface
 
-Mutating MCP tools preview by default. Artifact updates preserve runtime, target, replicas, and settings;
-deletion is bound to the deployment ID that was inspected; production operations require an additional
-acknowledgement. Read the [safety model](safety.md) before automating a change.
+Deployment changes preview by default. Publishing binds the exact JAR bytes, redeploys change only the
+artifact reference, deletion is bound to the deployment ID that was inspected, Design Center writes need a
+single-use preview token, and production needs an additional acknowledgement. Read the
+[safety model](safety.md) before automating a change.
 
 <div class="anc-note" markdown="1">
 

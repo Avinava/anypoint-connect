@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText, timeWindow } from './shared.js';
 
 export function registerAuditTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -37,33 +37,21 @@ export function registerAuditTools(server: McpServer, client: AnypointClient) {
             try {
                 const orgId = await client.getDefaultOrgId();
 
-                const endDate = new Date().toISOString();
-                const startDate = new Date(Date.now() - (hoursBack || 24) * 60 * 60 * 1000).toISOString();
+                const { period } = timeWindow(hoursBack || 24);
 
                 const result = await client.auditLog.query(orgId, {
-                    startDate,
-                    endDate,
+                    startDate: period.from,
+                    endDate: period.to,
                     actions,
                     objectTypes,
                     limit: limit || 100,
                 });
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    total: result.total,
-                                    period: { from: startDate, to: endDate },
-                                    entries: result.data,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    total: result.total,
+                    period,
+                    entries: result.data,
+                });
             } catch (error) {
                 return mcpError(error);
             }

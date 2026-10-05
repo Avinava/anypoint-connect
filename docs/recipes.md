@@ -47,42 +47,74 @@ anc logs tail sample-orders-api --env Sandbox --level ERROR --search "TimeoutExc
 Use the least sensitive search term that identifies the failing flow. Logs can contain production data;
 do not paste raw output into a repository or public conversation.
 
-## Check performance and memory
+## Check traffic, latency, and memory
 
 ```bash
-anc monitor view --env Sandbox --app sample-orders-api --from 24h
-anc monitor perf --env Sandbox
-anc monitor memory-trend --env Sandbox --app sample-orders-api --granularity 1h
+anc monitor summary --env Sandbox --app sample-orders-api --from 24h
+anc monitor summary --env Sandbox --app sample-orders-api --by worker
+anc monitor runtime --env Sandbox --app sample-orders-api
+anc monitor trend --env Sandbox --app sample-orders-api --signal memory -g 1h --from 7d
 ```
 
-Read percentiles with request count. For memory, a sawtooth is normal collection; a rising post-GC
-baseline over a longer window is the stronger leak signal.
+Read percentiles with the request count. For memory, a sawtooth is normal collection; an
+old-generation baseline that keeps rising over several days, and an old-generation peak close to its
+limit, are the signals that matter. [Monitoring](monitoring.md) explains every field.
+
+## Investigate an incident window
+
+```bash
+anc monitor summary --env Sandbox --app sample-orders-api --by route --from 3h
+anc monitor trend --env Sandbox --app sample-orders-api --signal traffic -g 5m --from 3h
+anc monitor trend --env Sandbox --app sample-orders-api --signal gc -g 5m --from 3h
+```
+
+For an MCP agent, ask:
+
+```text
+sample-orders-api in Sandbox slowed down in the last three hours. Use get_metrics by route and by
+worker, get_metrics_timeseries at 5m for traffic and gc, and analyze_errors for the same window.
+Report what changed and when. Do not make changes.
+```
 
 ## Deploy only after inspecting the target
 
-First capture the current deployment:
+First capture the current deployment, then look at the plan without changing anything:
 
 ```bash
 anc apps status sample-orders-api --env Sandbox
+anc deploy target/sample-orders-api-1.3.0-mule-application.jar \
+  --app sample-orders-api --env Sandbox --dry-run
 ```
 
-Then run the deployment when you intend to apply it:
+The plan shows the Exchange coordinates read from the JAR's Maven metadata, its SHA-256, and whether the
+app will be created or only its artifact reference updated. Run the same command without `--dry-run`
+when you intend to publish and deploy:
 
 ```bash
 anc deploy target/sample-orders-api-1.3.0-mule-application.jar \
-  --app sample-orders-api \
-  --env Sandbox \
-  --runtime 4.8.0
+  --app sample-orders-api --env Sandbox
 ```
 
-!!! warning "This CLI command applies the change"
+!!! warning "Without `--dry-run`, this command applies the change"
 
-    The CLI prints a summary, then applies non-production deployments immediately. Production requires
-    a typed confirmation. Use an MCP `deploy_jar` call without `confirm: true` when you need a preview
-    that cannot mutate.
+    The CLI publishes the JAR and deploys it to non-production environments immediately after printing
+    the summary. Production requires typing a confirmation phrase. An MCP `deploy_jar` call without
+    `confirm: true` is a preview that cannot mutate.
 
-Unattended `--force` should be used only in a reviewed pipeline. See
-[Deploying a JAR](deployment-tools.md) for publishing, artifact-only updates, and rollback.
+Unattended `--force` belongs only in a reviewed pipeline. The [safety model](safety.md#publishing-a-jar)
+covers artifact identity, digest binding, artifact-only updates, and rollback.
+
+## Update an API specification in Design Center
+
+```bash
+anc dc pull sample-orders-api-spec api.raml -o api.raml
+# edit api.raml locally
+anc dc push sample-orders-api-spec api.raml --message "Describe order status values"
+anc dc publish sample-orders-api-spec --version 1.3.0 --classifier raml
+```
+
+`push` and `publish` print a preview and ask before writing. The push fails as a whole if anyone changed
+the file in Design Center after the preview.
 
 ## Connect an MCP host
 
@@ -93,7 +125,7 @@ Authenticate in a terminal first, then use a pinned server command:
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.14.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
     }
   }
 }
@@ -104,7 +136,7 @@ Useful first prompts:
 ```text
 What applications are visible in Sandbox? Read only.
 Analyze errors for sample-orders-api in Sandbox over the last two hours.
-Compare Development and Sandbox deployments and list version drift.
+Compare the Development and Sandbox deployments and list version drift.
 Preview the deployment of target/sample-orders-api-1.3.0-mule-application.jar to Sandbox; do not apply it.
 ```
 

@@ -1,20 +1,44 @@
 /**
  * Tests for MonitoringApi
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MonitoringApi } from '../../src/api/MonitoringApi.js';
+import { AxiosError, AxiosHeaders } from 'axios';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MonitoringApi, amqlString } from '../../src/api/MonitoringApi.js';
 import { Cache } from '../../src/client/Cache.js';
+import { AmqlQueryError } from '../../src/utils/errors.js';
+
+const ORG = '00000000-0000-4000-8000-000000000001';
+const ENV = '00000000-0000-4000-8000-000000000002';
 
 const mockPost = vi.fn();
-const mockHttpClient = {
-    get: vi.fn(),
-    post: mockPost,
-    patch: vi.fn(),
-    delete: vi.fn(),
-} as any;
+const mockHttpClient = { get: vi.fn(), post: mockPost, patch: vi.fn(), delete: vi.fn() } as any;
+
+/** Route mocked responses by the datasource and a distinguishing fragment of the query. */
+function respond(routes: Array<[RegExp, Array<Record<string, unknown>>]>) {
+    mockPost.mockImplementation(async (_url: string, body: { query: string }) => {
+        const match = routes.find(([pattern]) => pattern.test(body.query));
+        return { data: match ? match[1] : [] };
+    });
+}
+
+function queries(): string[] {
+    return mockPost.mock.calls.map((call) => call[1].query as string);
+}
+
+function platformError(status: number, message: string): AxiosError {
+    const headers = new AxiosHeaders();
+    return new AxiosError('Request failed', 'ERR_BAD_REQUEST', { headers } as any, undefined, {
+        status,
+        statusText: 'Bad Request',
+        headers,
+        config: { headers } as any,
+        data: { message, 'X-ANYPNT-TRX-ID': 'trx-1' },
+    });
+}
 
 describe('MonitoringApi', () => {
     let api: MonitoringApi;
+    const scope = { orgId: ORG, envId: ENV, from: 1000, to: 2000 };
 
     beforeEach(() => {
         vi.resetAllMocks();
@@ -22,477 +46,332 @@ describe('MonitoringApi', () => {
     });
 
     describe('search', () => {
-        it('should POST the AMQL query to the metrics endpoint', async () => {
-            mockPost.mockResolvedValue({ data: [{ 'app.name': 'test-app', request_count: 100 }] });
+        it('POSTs the query with a clamped page size and a long timeout', async () => {
+            mockPost.mockResolvedValue({ data: [{ n: 1 }] });
+            const rows = await api.search('SELECT 1', { limit: 50000, offset: 10 });
 
-            const result = await api.search('SELECT COUNT(requests) FROM "mulesoft.app.inbound"');
-            expect(mockPost).toHaveBeenCalledWith(expect.stringContaining('/metrics:search?limit=200&offset=0'), {
-                query: 'SELECT COUNT(requests) FROM "mulesoft.app.inbound"',
-            });
-            expect(result).toHaveLength(1);
+            expect(rows).toEqual([{ n: 1 }]);
+            expect(mockPost).toHaveBeenCalledWith(
+                '/observability/api/v1/metrics:search?limit=2000&offset=10',
+                { query: 'SELECT 1' },
+                { timeout: 90000 },
+            );
         });
 
-        it('should return empty array on error', async () => {
-            mockPost.mockRejectedValue(new Error('Network error'));
-            const result = await api.search('bad query');
-            expect(result).toEqual([]);
+        it('raises the platform message instead of returning no rows', async () => {
+            mockPost.mockRejectedValue(platformError(400, "'not_a_field' is not a supported attribute"));
+
+            const failure = await api.search('SELECT AVG(not_a_field)').catch((e) => e);
+            expect(failure).toBeInstanceOf(AmqlQueryError);
+            expect(failure.message).toBe("AMQL query failed (HTTP 400): 'not_a_field' is not a supported attribute");
+            expect(failure.status).toBe(400);
+            expect(failure.transactionId).toBe('trx-1');
+            expect(failure.query).toBe('SELECT AVG(not_a_field)');
         });
 
-        it('should pass custom limit', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.search('query', 500);
-            expect(mockPost).toHaveBeenCalledWith(expect.stringContaining('limit=500'), expect.anything());
-        });
-    });
-
-    describe('getInboundMetrics', () => {
-        it('should NOT include COUNT(errors) in the AMQL query', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-
-            await api.getInboundMetrics('org-1', 'env-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).not.toContain('COUNT(errors)');
-            expect(query).not.toContain('error_count');
-            expect(query).toContain('COUNT(requests)');
-            expect(query).toContain('AVG(response_time)');
-        });
-
-        it('should return mapped results without errorCount', async () => {
-            mockPost.mockResolvedValue({
-                data: [{ 'app.name': 'my-app', request_count: 500, avg_response_time: 120.5 }],
-            });
-
-            const result = await api.getInboundMetrics('org-1', 'env-1', 1000, 2000);
-            expect(result).toEqual([{ appName: 'my-app', requestCount: 500, avgResponseTime: 120.5 }]);
-            expect((result[0] as any).errorCount).toBeUndefined();
-        });
-
-        it('should include org, env, and timestamp filters', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getInboundMetrics('org-1', 'env-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain(`"sub_org.id" = 'org-1'`);
-            expect(query).toContain(`"env.id" = 'env-1'`);
-            expect(query).toContain('timestamp BETWEEN 1000 AND 2000');
-        });
-    });
-
-    describe('getOutboundMetrics', () => {
-        it('should query mulesoft.app.outbound dataset', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getOutboundMetrics('org-1', 'env-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('"mulesoft.app.outbound"');
-        });
-    });
-
-    describe('getAppMetrics', () => {
-        it('should combine inbound and outbound metrics', async () => {
+        it('follows pagination in searchAll', async () => {
             mockPost
-                .mockResolvedValueOnce({
-                    data: [{ 'app.name': 'app-1', request_count: 100, avg_response_time: 200 }],
-                })
-                .mockResolvedValueOnce({
-                    data: [{ 'app.name': 'app-1', request_count: 50, avg_response_time: 80 }],
-                });
+                .mockResolvedValueOnce({ data: [{ n: 1 }, { n: 2 }], metadata: { pagination: { next: 'more' } } })
+                .mockResolvedValueOnce({ data: [{ n: 3 }], metadata: { pagination: { next: null } } });
 
-            const result = await api.getAppMetrics('org-1', 'env-1', 1000, 2000);
-            expect(result).toHaveLength(1);
-            expect(result[0]).toEqual({
-                appName: 'app-1',
-                requestCount: 100,
-                avgResponseTime: 200,
-                outboundCount: 50,
-                outboundAvgResponseTime: 80,
-            });
-            expect((result[0] as any).errorCount).toBeUndefined();
-            expect((result[0] as any).errorRate).toBeUndefined();
-        });
-
-        it('should include outbound-only apps', async () => {
-            mockPost.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
-                data: [{ 'app.name': 'outbound-only', request_count: 30, avg_response_time: 50 }],
-            });
-
-            const result = await api.getAppMetrics('org-1', 'env-1', 1000, 2000);
-            expect(result).toHaveLength(1);
-            expect(result[0].appName).toBe('outbound-only');
-            expect(result[0].requestCount).toBe(0);
-            expect(result[0].outboundCount).toBe(30);
-        });
-
-        it('should filter by appName case-insensitively', async () => {
-            mockPost
-                .mockResolvedValueOnce({
-                    data: [
-                        { 'app.name': 'App-A', request_count: 10, avg_response_time: 100 },
-                        { 'app.name': 'App-B', request_count: 20, avg_response_time: 200 },
-                    ],
-                })
-                .mockResolvedValueOnce({ data: [] });
-
-            const result = await api.getAppMetrics('org-1', 'env-1', 1000, 2000, 'app-a');
-            expect(result).toHaveLength(1);
-            expect(result[0].appName).toBe('App-A');
+            expect(await api.searchAll('SELECT 1')).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);
+            expect(mockPost.mock.calls[1][0]).toContain('offset=2');
         });
     });
 
-    describe('getPerformanceMetrics', () => {
-        it('should query percentiles p50, p95, p99 and min/max', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getPerformanceMetrics('org-1', 'env-1', 1000, 2000);
+    describe('scope filters', () => {
+        it('escapes app names and rejects non-UUID identifiers', async () => {
+            respond([]);
+            await api.getMetrics({ ...scope, appName: "o'brien" });
+            expect(queries()[0]).toContain(`"app.name" = 'o''brien'`);
+            expect(amqlString("a'b")).toBe("'a''b'");
 
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('PERCENTILE(response_time, 0.5) AS "p50"');
-            expect(query).toContain('PERCENTILE(response_time, 0.95) AS "p95"');
-            expect(query).toContain('PERCENTILE(response_time, 0.99) AS "p99"');
-            expect(query).toContain('MAX(response_time)');
-            expect(query).toContain('MIN(response_time)');
+            await expect(api.getMetrics({ ...scope, envId: "x' OR '1'='1" })).rejects.toThrow('Invalid environment ID');
         });
 
-        it('should return mapped PerformanceMetrics', async () => {
-            mockPost.mockResolvedValue({
-                data: [
-                    {
-                        'app.name': 'perf-app',
-                        request_count: 1000,
-                        avg_response_time: 250,
-                        max_response_time: 5000,
-                        min_response_time: 2,
-                        p50: 180,
-                        p95: 1200,
-                        p99: 3500,
-                    },
+        it('compares environments by grouping on env.name when no environment is given', async () => {
+            respond([]);
+            await api.getMetrics({ orgId: ORG, from: 1000, to: 2000 });
+            for (const query of queries()) {
+                expect(query).not.toContain('"env.id"');
+                expect(query).toContain('GROUP BY "app.name", "env.name"');
+            }
+        });
+    });
+
+    describe('getMetrics', () => {
+        it('merges inbound, failures, outbound and message volume per app', async () => {
+            respond([
+                [/"failed_count".*mulesoft\.app\.inbound/, [{ 'app.name': 'orders', failed_count: 5 }]],
+                [/"failed_count".*mulesoft\.app\.outbound/, [{ 'app.name': 'orders', failed_count: 2 }]],
+                [
+                    /mulesoft\.app\.inbound/,
+                    [{ 'app.name': 'orders', request_count: 100, avg_response_time: 50, p75: 60, p90: 80, p99: 200 }],
                 ],
-            });
+                [
+                    /mulesoft\.app\.outbound/,
+                    [
+                        { 'app.name': 'orders', request_count: 40, avg_response_time: 30 },
+                        { 'app.name': 'scheduler', request_count: 7, avg_response_time: 10 },
+                    ],
+                ],
+                [/mulesoft\.message/, [{ 'app.name': 'orders', message_count: 300, message_error_count: 4 }]],
+            ]);
 
-            const result = await api.getPerformanceMetrics('org-1', 'env-1', 1000, 2000);
-            expect(result).toEqual([
-                {
-                    appName: 'perf-app',
-                    requestCount: 1000,
-                    avgResponseTime: 250,
-                    maxResponseTime: 5000,
-                    minResponseTime: 2,
-                    p50: 180,
-                    p95: 1200,
-                    p99: 3500,
-                },
+            const rows = await api.getMetrics(scope);
+            const orders = rows.find((r) => r.appName === 'orders')!;
+            expect(orders).toMatchObject({
+                requestCount: 100,
+                failedCount: 5,
+                failureRate: 0.05,
+                p75: 60,
+                p90: 80,
+                outboundCount: 40,
+                outboundFailedCount: 2,
+                messageCount: 300,
+                messageErrorCount: 4,
+            });
+            // Outbound-only apps (schedulers, batch jobs) are still reported.
+            expect(rows.find((r) => r.appName === 'scheduler')).toMatchObject({ requestCount: 0, outboundCount: 7 });
+            expect(queries().every((q) => !q.includes('mulesoft.jvm"'))).toBe(true);
+        });
+
+        it('groups by worker when asked', async () => {
+            respond([
+                [
+                    /COUNT\(requests\) AS "request_count", AVG.*mulesoft\.app\.inbound/,
+                    [
+                        { 'app.name': 'orders', 'worker.id': 'w-1', request_count: 10 },
+                        { 'app.name': 'orders', 'worker.id': 'w-2', request_count: 30 },
+                    ],
+                ],
+            ]);
+            const rows = await api.getMetrics(scope, 'worker');
+            expect(rows.map((r) => [r.workerId, r.requestCount])).toEqual([
+                ['w-2', 30],
+                ['w-1', 10],
+            ]);
+            expect(queries()[0]).toContain('GROUP BY "app.name", "worker.id"');
+        });
+    });
+
+    describe('getRouteMetrics', () => {
+        it('reports inbound and outbound routes and keeps unlabelled routes as null', async () => {
+            respond([
+                [
+                    /"failed_count".*mulesoft\.app\.outbound/,
+                    [{ 'app.name': 'orders', 'http.route': '/v1/stock', failed_count: 3 }],
+                ],
+                [/mulesoft\.app\.outbound/, [{ 'app.name': 'orders', 'http.route': '/v1/stock', request_count: 9 }]],
+                [/"request_count".*mulesoft\.app\.inbound/, [{ 'app.name': 'orders', request_count: 12 }]],
+            ]);
+
+            const routes = await api.getRouteMetrics(scope);
+            expect(routes[0]).toMatchObject({
+                direction: 'outbound',
+                route: '/v1/stock',
+                requestCount: 9,
+                failedCount: 3,
+            });
+            expect(routes[1]).toMatchObject({ direction: 'inbound', route: null, requestCount: 12, failedCount: 0 });
+        });
+    });
+
+    describe('getRuntimeMetrics', () => {
+        beforeEach(() => {
+            const worker = { 'app.name': 'orders', 'worker.id': 'w-1' };
+            respond([
+                [
+                    /mulesoft\.app\.jvm\.memory/,
+                    [
+                        {
+                            ...worker,
+                            type: 'heap',
+                            pool: 'total-heap',
+                            used_avg: 600,
+                            used_peak: 900,
+                            committed_avg: 950,
+                            limit_max: -1,
+                        },
+                        {
+                            ...worker,
+                            type: 'heap',
+                            pool: 'tenured_gen',
+                            used_avg: 360,
+                            used_peak: 480,
+                            committed_avg: 500,
+                            limit_max: 512,
+                        },
+                        {
+                            ...worker,
+                            type: 'heap',
+                            pool: 'eden_space',
+                            used_avg: 200,
+                            used_peak: 400,
+                            committed_avg: 400,
+                            limit_max: 430,
+                        },
+                        {
+                            ...worker,
+                            type: 'off-heap',
+                            pool: 'metaspace',
+                            used_avg: 280,
+                            used_peak: 281,
+                            committed_avg: 285,
+                            limit_max: -1,
+                        },
+                        { ...worker },
+                    ],
+                ],
+                [
+                    /mulesoft\.app\.jvm\.gc/,
+                    [
+                        {
+                            ...worker,
+                            name: 'MarkSweepCompact',
+                            count_max: 13,
+                            count_min: 11,
+                            duration_max: 7360,
+                            duration_min: 5871,
+                        },
+                        { ...worker, name: 'copy' },
+                    ],
+                ],
+                [/mulesoft\.app\.jvm\.cpu/, [{ ...worker, available_processors: 1, total_physical_memory: 2048 }]],
+                [
+                    /mulesoft\.app\.memory/,
+                    [
+                        {
+                            ...worker,
+                            system_cpu_avg: 0.02,
+                            system_cpu_max: 0.2,
+                            process_cpu_avg: 0.01,
+                            process_cpu_max: 0.21,
+                            free_memory_avg: 300,
+                        },
+                    ],
+                ],
             ]);
         });
 
-        it('should add app.name filter when appName is provided', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getPerformanceMetrics('org-1', 'env-1', 1000, 2000, 'my-app');
+        it('derives heap, old-generation pressure and GC deltas per worker', async () => {
+            const [worker] = await api.getRuntimeMetrics(scope);
+            expect(worker).toMatchObject({
+                appName: 'orders',
+                workerId: 'w-1',
+                heapUsedAvg: 600,
+                heapUsedPeak: 900,
+                oldGenPool: 'tenured_gen',
+                oldGenLimit: 512,
+                oldGenPeakRatio: 480 / 512,
+                metaspaceUsedAvg: 280,
+                oldGenGcCount: 2,
+                oldGenGcTimeMs: 1489,
+                availableProcessors: 1,
+                totalPhysicalMemory: 2048,
+                systemCpuLoadMax: 0.2,
+                freePhysicalMemoryAvg: 300,
+            });
+            // Collectors that never reported are dropped; unbounded pools have no limit.
+            expect(worker.gcCollectors).toEqual([
+                { collector: 'MarkSweepCompact', oldGeneration: true, collections: 2, timeMs: 1489 },
+            ]);
+            expect(worker.pools.find((p) => p.pool === 'metaspace')!.limit).toBeNull();
+        });
 
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain(`"app.name" = 'my-app'`);
+        it('never aggregates cumulative GC counters with SUM or memory sizes with MIN/MAX', async () => {
+            await api.getRuntimeMetrics(scope);
+            const gc = queries().find((q) => q.includes('mulesoft.app.jvm.gc'))!;
+            expect(gc).not.toMatch(/SUM\(/);
+            const host = queries().find((q) => q.includes('"mulesoft.app.memory"'))!;
+            expect(host).not.toMatch(/(MIN|MAX)\(free_physical_memory_size\)/);
+            const pools = queries().find((q) => q.includes('mulesoft.app.jvm.memory'))!;
+            expect(pools).toContain('MAX("limit")');
         });
     });
 
     describe('getTimeSeries', () => {
-        it('should include TIMESERIES clause with granularity', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getTimeSeries('org-1', 'env-1', 1000, 2000, 'PT5M');
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('TIMESERIES PT5M');
-            expect(query).toContain('timestamp');
-        });
-
-        it('should default to PT1H granularity', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getTimeSeries('org-1', 'env-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('TIMESERIES PT1H');
-        });
-
-        it('should return mapped TimeSeriesDataPoint', async () => {
-            mockPost.mockResolvedValue({
-                data: [
-                    {
-                        timestamp: 1700000000000,
-                        'app.name': 'ts-app',
-                        request_count: 42,
-                        avg_response_time: 300,
-                        p95: 900,
-                    },
+        it('maps the granularity and merges traffic with failures', async () => {
+            respond([
+                [/"failed_count"/, [{ timestamp: 60000, 'app.name': 'orders', failed_count: 1 }]],
+                [
+                    /"request_count"/,
+                    [
+                        { timestamp: 0, 'app.name': 'orders', request_count: 4, avg_response_time: 10, p95: 20 },
+                        { timestamp: 60000, 'app.name': 'orders', request_count: 6, avg_response_time: 12, p95: 25 },
+                    ],
                 ],
-            });
-
-            const result = await api.getTimeSeries('org-1', 'env-1', 1000, 2000);
-            expect(result).toEqual([
-                {
-                    timestamp: 1700000000000,
-                    appName: 'ts-app',
-                    requestCount: 42,
-                    avgResponseTime: 300,
-                    p95: 900,
-                },
+            ]);
+            const points = await api.getTimeSeries(scope, 'traffic', '1m');
+            expect(queries()[0]).toContain('TIMESERIES PT1M');
+            expect(points).toEqual([
+                { timestamp: 0, appName: 'orders', requestCount: 4, failedCount: 0, avgResponseTime: 10, p95: 20 },
+                { timestamp: 60000, appName: 'orders', requestCount: 6, failedCount: 1, avgResponseTime: 12, p95: 25 },
             ]);
         });
 
-        it('should use higher limit (1000) for time-series queries', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getTimeSeries('org-1', 'env-1', 1000, 2000);
-
-            expect(mockPost).toHaveBeenCalledWith(expect.stringContaining('limit=1000'), expect.anything());
-        });
-
-        it('should add app.name filter when appName is provided', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getTimeSeries('org-1', 'env-1', 1000, 2000, 'PT1H', 'filtered-app');
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain(`"app.name" = 'filtered-app'`);
-        });
-    });
-
-    describe('getWorkerMetrics', () => {
-        it('should GROUP BY app.name and worker.id', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getWorkerMetrics('org-1', 'env-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('"worker.id"');
-            expect(query).toContain('GROUP BY "app.name", "worker.id"');
-        });
-
-        it('should return mapped WorkerMetrics', async () => {
-            mockPost.mockResolvedValue({
-                data: [
-                    {
-                        'app.name': 'worker-app',
-                        'worker.id': 'replica-0',
-                        request_count: 200,
-                        avg_response_time: 150,
-                        max_response_time: 3000,
-                        p95: 800,
-                    },
-                ],
+        it('turns cumulative GC counters into per-bucket deltas and survives restarts', async () => {
+            const row = (timestamp: number, countMin: number, countMax: number, durMin: number, durMax: number) => ({
+                timestamp,
+                'app.name': 'orders',
+                'worker.id': 'w-1',
+                name: 'G1 Old Generation',
+                count_min: countMin,
+                count_max: countMax,
+                duration_min: durMin,
+                duration_max: durMax,
             });
+            respond([
+                [/mulesoft\.app\.jvm\.gc/, [row(0, 10, 11, 100, 150), row(1, 11, 13, 150, 260), row(2, 0, 1, 0, 40)]],
+            ]);
 
-            const result = await api.getWorkerMetrics('org-1', 'env-1', 1000, 2000);
-            expect(result).toEqual([
-                {
-                    appName: 'worker-app',
-                    workerId: 'replica-0',
-                    requestCount: 200,
-                    avgResponseTime: 150,
-                    maxResponseTime: 3000,
-                    p95: 800,
-                },
+            const points = await api.getTimeSeries(scope, 'gc', '1h');
+            expect(points.map((p) => [p.oldGenGcCount, p.oldGenGcTimeMs])).toEqual([
+                [1, 50],
+                [2, 110],
+                [1, 40],
             ]);
         });
-    });
 
-    describe('getCrossEnvMetrics', () => {
-        it('should NOT include env.id filter (cross-env)', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getCrossEnvMetrics('org-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).not.toContain('"env.id"');
-            expect(query).toContain(`"sub_org.id" = 'org-1'`);
-        });
-
-        it('should GROUP BY app.name and env.name', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getCrossEnvMetrics('org-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('GROUP BY "app.name", "env.name"');
-        });
-
-        it('should return mapped CrossEnvMetrics', async () => {
-            mockPost.mockResolvedValue({
-                data: [
-                    {
-                        'app.name': 'cross-app',
-                        'env.name': 'Production',
-                        request_count: 5000,
-                        avg_response_time: 100,
-                        p95: 500,
-                        p99: 1200,
-                    },
+        it('splits memory pools into heap, old generation and metaspace per worker', async () => {
+            const base = { timestamp: 0, 'app.name': 'orders', 'worker.id': 'w-1' };
+            respond([
+                [
+                    /mulesoft\.app\.jvm\.memory/,
+                    [
+                        { ...base, pool: 'total-heap', used: 600 },
+                        { ...base, pool: 'G1 Old Gen', used: 300 },
+                        { ...base, pool: 'metaspace', used: 100 },
+                        { ...base, pool: 'eden_space', used: 50 },
+                    ],
                 ],
-            });
-
-            const result = await api.getCrossEnvMetrics('org-1', 1000, 2000);
-            expect(result).toEqual([
+            ]);
+            expect(await api.getTimeSeries(scope, 'memory')).toEqual([
                 {
-                    appName: 'cross-app',
-                    envName: 'Production',
-                    requestCount: 5000,
-                    avgResponseTime: 100,
-                    p95: 500,
-                    p99: 1200,
+                    ...{ timestamp: 0, appName: 'orders', workerId: 'w-1' },
+                    heapUsed: 600,
+                    oldGenUsed: 300,
+                    metaspaceUsed: 100,
                 },
             ]);
         });
     });
 
     describe('exportMetrics', () => {
-        it('should not include error fields in export summary', async () => {
-            mockPost
-                .mockResolvedValueOnce({
-                    data: [{ 'app.name': 'export-app', request_count: 100, avg_response_time: 200 }],
-                })
-                .mockResolvedValueOnce({ data: [] });
-
-            const result = await api.exportMetrics('org-1', 'env-1', 'Dev', 1000, 2000);
-            expect(result.summary).toEqual({
-                totalRequests: 100,
-                avgResponseTime: 200,
-            });
-            expect((result.summary as any).totalErrors).toBeUndefined();
-            expect((result.summary as any).errorRate).toBeUndefined();
-        });
-    });
-
-    describe('isAvailable', () => {
-        it('should return true when search succeeds', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            expect(await api.isAvailable()).toBe(true);
-        });
-
-        it('should return true even when POST fails (search swallows errors)', async () => {
-            mockPost.mockRejectedValue(new Error('Unauthorized'));
-            // search() catches errors and returns [], so isAvailable never sees the throw
-            expect(await api.isAvailable()).toBe(true);
-        });
-    });
-
-    describe('getMemoryMetrics', () => {
-        it('should query mulesoft.jvm datasource', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('"mulesoft.jvm"');
-        });
-
-        it('should select heap, GC, and thread metrics', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('AVG(heap_used)');
-            expect(query).toContain('AVG(heap_committed)');
-            expect(query).toContain('MAX(heap_total)');
-            expect(query).toContain('SUM("gc.count")');
-            expect(query).toContain('AVG("gc.time")');
-            expect(query).toContain('AVG(thread_count)');
-        });
-
-        it('should return mapped MemoryMetrics', async () => {
-            mockPost.mockResolvedValue({
-                data: [
-                    {
-                        'app.name': 'mem-app',
-                        heap_used: 268435456,
-                        heap_committed: 536870912,
-                        heap_max: 1073741824,
-                        gc_count: 150,
-                        gc_time: 1200,
-                        thread_count: 42,
-                    },
+        it('summarizes requests, failures and the request-weighted average', async () => {
+            respond([
+                [/"failed_count".*mulesoft\.app\.inbound/, [{ 'app.name': 'a', failed_count: 1 }]],
+                [
+                    /mulesoft\.app\.inbound/,
+                    [
+                        { 'app.name': 'a', request_count: 10, avg_response_time: 100 },
+                        { 'app.name': 'b', request_count: 30, avg_response_time: 200 },
+                    ],
                 ],
-            });
-
-            const result = await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000);
-            expect(result).toEqual([
-                {
-                    appName: 'mem-app',
-                    heapUsed: 268435456,
-                    heapCommitted: 536870912,
-                    heapMax: 1073741824,
-                    gcCount: 150,
-                    gcTime: 1200,
-                    threadCount: 42,
-                },
             ]);
-        });
-
-        it('should add app.name filter when appName is provided', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000, 'my-app');
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain(`"app.name" = 'my-app'`);
-        });
-
-        it('should include org, env, and timestamp filters', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getMemoryMetrics('org-1', 'env-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain(`"sub_org.id" = 'org-1'`);
-            expect(query).toContain(`"env.id" = 'env-1'`);
-            expect(query).toContain('timestamp BETWEEN 1000 AND 2000');
-        });
-    });
-
-    describe('getMemoryTimeSeries', () => {
-        it('should query mulesoft.jvm with TIMESERIES clause', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000, 'PT5M');
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('"mulesoft.jvm"');
-            expect(query).toContain('TIMESERIES PT5M');
-        });
-
-        it('should default to PT1H granularity', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000);
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain('TIMESERIES PT1H');
-        });
-
-        it('should return mapped MemoryTimeSeriesPoint', async () => {
-            mockPost.mockResolvedValue({
-                data: [
-                    {
-                        timestamp: 1700000000000,
-                        'app.name': 'ts-mem-app',
-                        heap_used: 268435456,
-                        heap_committed: 536870912,
-                        gc_count: 10,
-                    },
-                ],
-            });
-
-            const result = await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000);
-            expect(result).toEqual([
-                {
-                    timestamp: 1700000000000,
-                    appName: 'ts-mem-app',
-                    heapUsed: 268435456,
-                    heapCommitted: 536870912,
-                    gcCount: 10,
-                },
-            ]);
-        });
-
-        it('should use higher limit (1000) for time-series queries', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000);
-
-            expect(mockPost).toHaveBeenCalledWith(expect.stringContaining('limit=1000'), expect.anything());
-        });
-
-        it('should add app.name filter when appName is provided', async () => {
-            mockPost.mockResolvedValue({ data: [] });
-            await api.getMemoryTimeSeries('org-1', 'env-1', 1000, 2000, 'PT1H', 'filtered-app');
-
-            const query = mockPost.mock.calls[0][1].query;
-            expect(query).toContain(`"app.name" = 'filtered-app'`);
+            const exported = await api.exportMetrics(ORG, ENV, 'Sandbox', 0, 1000);
+            expect(exported.summary).toEqual({ totalRequests: 40, totalFailed: 1, avgResponseTime: 175 });
+            expect(exported.environment).toBe('Sandbox');
         });
     });
 });

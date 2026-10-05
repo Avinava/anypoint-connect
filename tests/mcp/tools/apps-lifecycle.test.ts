@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerApplicationTools } from '../../src/mcp/tools/applications.js';
+import { registerAppLifecycleTools } from '../../../src/mcp/tools/apps-lifecycle.js';
 
 describe('application MCP tools', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
@@ -51,7 +51,7 @@ describe('application MCP tools', () => {
         client.cloudHub2.findDetailByName.mockResolvedValue(detail);
         client.cloudHub2.deleteDeployment.mockResolvedValue(undefined);
         client.cloudHub2.waitForDeploymentDeletion.mockResolvedValue({ verifiedAbsent: true });
-        registerApplicationTools(server as any, client as any);
+        registerAppLifecycleTools(server as any, client as any);
     });
 
     it('merges settings from full detail and delegates to the narrow configuration API', async () => {

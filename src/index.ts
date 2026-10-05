@@ -35,13 +35,24 @@ export {
 export { LogsApi, type LogEntry } from './api/LogsApi.js';
 export {
     MonitoringApi,
-    type AppMetricsSummary,
+    AMQL_MAX_LIMIT,
+    GRANULARITY,
+    GRANULARITIES,
+    TIME_SERIES_SIGNALS,
+    isGranularity,
+    amqlString,
+    type Granularity,
+    type MetricRow,
+    type MetricsScope,
+    type MetricsGroupBy,
     type MetricsExport,
-    type PerformanceMetrics,
-    type TimeSeriesDataPoint,
-    type WorkerMetrics,
-    type CrossEnvMetrics,
-    type TimeSeriesGranularity,
+    type TrafficMetrics,
+    type RouteMetrics,
+    type RuntimeMetrics,
+    type MemoryPoolMetrics,
+    type GcCollectorMetrics,
+    type TimeSeriesSignal,
+    type TimeSeriesPoint,
 } from './api/MonitoringApi.js';
 export { ExchangeApi, type ExchangeAsset, type ExchangeAssetDetail } from './api/ExchangeApi.js';
 export { ApiManagerApi, type ApiInstance, type ApiAsset, type ApiPolicy, type SlaTier } from './api/ApiManagerApi.js';
@@ -53,7 +64,7 @@ export {
     type DesignCenterSaveFile,
     type PublishToExchangeOptions,
 } from './api/DesignCenterApi.js';
-export { DesignCenterWorkflow, type DesignCenterFileInput, type SyncPlanEntry } from './api/DesignCenterWorkflow.js';
+export { DesignCenterWorkflow, type DesignCenterFileInput, type SyncPlanEntry } from './workflows/design-center.js';
 export {
     GovernanceApi,
     type GovernanceAssetCoordinates,
@@ -76,6 +87,7 @@ export {
 } from './api/ObjectStoreApi.js';
 
 // Utils
+export { AmqlQueryError, errorMessage } from './utils/errors.js';
 export { HttpClient, type HttpClientConfig } from './client/HttpClient.js';
 export { Cache, type CacheStats } from './client/Cache.js';
 export { RateLimiter, type RateLimiterConfig } from './client/RateLimiter.js';

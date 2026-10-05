@@ -8,7 +8,7 @@ import type { EnrichedLogEntry } from './types.js';
 /** Variable-like tokens to replace with <*> in pattern detection */
 const VARIABLE_PATTERNS = [
     /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, // UUIDs
-    /\b[a-zA-Z0-9]{15,18}\b/g, // Salesforce IDs
+    /\b[a-zA-Z0-9]{15,18}\b/g, // Opaque 15-18 character record IDs
     /\b\d{4}-\d{2}-\d{2}T[\d:.]+Z?\b/g, // ISO timestamps
     /\b\d+\.\d+\.\d+\.\d+\b/g, // IP addresses
     /\b\d{5,}\b/g, // Long numbers (5+ digits)

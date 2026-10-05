@@ -11,7 +11,8 @@ import {
     writeProjectConfig,
     discoverProjectConfig,
     hasSavedConfig,
-} from '../../utils/config.js';
+} from '../../config/profiles.js';
+import { mcpText } from './shared.js';
 
 export function registerProfileTools(server: McpServer) {
     server.registerTool(
@@ -27,27 +28,16 @@ export function registerProfileTools(server: McpServer) {
             const profiles = listProfiles();
             const projectConfig = discoverProjectConfig();
 
-            return {
-                content: [
-                    {
-                        type: 'text' as const,
-                        text: JSON.stringify(
-                            {
-                                activeProfile: resolved.name,
-                                resolvedVia: resolved.source,
-                                projectBinding: projectConfig?.profile || null,
-                                availableProfiles: profiles.map((p) => ({
-                                    name: p,
-                                    hasCredentials: hasSavedConfig(p),
-                                    isActive: p === resolved.name,
-                                })),
-                            },
-                            null,
-                            2,
-                        ),
-                    },
-                ],
-            };
+            return mcpText({
+                activeProfile: resolved.name,
+                resolvedVia: resolved.source,
+                projectBinding: projectConfig?.profile || null,
+                availableProfiles: profiles.map((p) => ({
+                    name: p,
+                    hasCredentials: hasSavedConfig(p),
+                    isActive: p === resolved.name,
+                })),
+            });
         },
     );
 
@@ -57,7 +47,7 @@ export function registerProfileTools(server: McpServer) {
             title: 'Set Project Profile',
             description:
                 'Binds the current project directory to a named Anypoint profile by writing .anypoint-connect.json. After this, all CLI commands and MCP tools run from this directory will automatically use the specified profile.',
-            annotations: { readOnlyHint: false },
+            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
             inputSchema: {
                 profile: z.string().describe('The profile name to bind to this project directory'),
                 directory: z
@@ -71,26 +61,16 @@ export function registerProfileTools(server: McpServer) {
                 // Validate profile exists
                 const profiles = listProfiles();
                 if (profiles.length > 0 && !profiles.includes(profile)) {
-                    return {
-                        content: [
-                            {
-                                type: 'text' as const,
-                                text: `Warning: Profile "${profile}" does not exist yet. Available profiles: ${profiles.join(', ')}. The binding was created but you'll need to run "anc config init --profile ${profile}" to set up credentials.`,
-                            },
-                        ],
-                    };
+                    return mcpText(
+                        `Warning: Profile "${profile}" does not exist yet. Available profiles: ${profiles.join(', ')}. The binding was created but you'll need to run "anc config init --profile ${profile}" to set up credentials.`,
+                    );
                 }
 
                 const filePath = writeProjectConfig(profile, directory);
 
-                return {
-                    content: [
-                        {
-                            type: 'text' as const,
-                            text: `Project bound to profile "${profile}". Config written to: ${filePath}\n\nAll CLI commands and MCP tools in this directory will now use the "${profile}" profile.`,
-                        },
-                    ],
-                };
+                return mcpText(
+                    `Project bound to profile "${profile}". Config written to: ${filePath}\n\nAll CLI commands and MCP tools in this directory will now use the "${profile}" profile.`,
+                );
             } catch (error) {
                 return {
                     content: [

@@ -21,7 +21,7 @@ import {
     writeProjectConfig,
     DEFAULT_CALLBACK_URL,
     type SavedConfig,
-} from '../utils/config.js';
+} from '../config/profiles.js';
 
 function ask(rl: readline.Interface, prompt: string, defaultValue?: string): Promise<string> {
     const display = defaultValue ? `${prompt} ${chalk.dim(`(${defaultValue})`)} ` : `${prompt} `;

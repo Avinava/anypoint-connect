@@ -63,16 +63,18 @@ release does not support the `client_credentials` grant, and its encrypted token
 
 | Area | Examples |
 | --- | --- |
-| Applications | Status, deployment spec, resources, settings, deploy, redeploy, rollback, restart, scale, stop, start, delete |
-| Logs | Tail, download, error clustering with context, recurring patterns, statistical health |
-| Monitoring | Request metrics, percentiles, time series, per-replica metrics, JVM memory and GC, freeform AMQL |
-| Exchange | Search, asset details, spec download, JAR publication, environment comparison |
-| API Manager | Instances, policies, SLA tiers, alerts |
-| Design Center | Projects, branches, conflict-safe file synchronization, governed publication |
+| Applications | Status, deployment spec, resources, settings, cross-environment comparison, publish and deploy a JAR, artifact-only redeploy, rollback, restart, scale, stop, start, delete |
+| Logs | Tail, download, error clustering with context, recurring patterns, log health statistics |
+| Monitoring | Traffic, failures, and p50–p99 latency per app, worker, or route; heap, old-generation pressure, GC, CPU, and RAM per worker; time series from 1-minute to 1-day buckets; freeform AMQL |
+| Exchange | Search, asset details, spec download, application JAR publication |
+| API Manager and Governance | Instances, policies, SLA tiers, alerts, governance rulesets and conformance |
+| Design Center | Projects, branches, file reads, preview-then-apply file sync, verified Exchange publication |
 | Platform services | Environments, entitlements, audit log, Anypoint MQ, Object Store v2 |
 
 Copyable task flows are in [Common recipes](https://avinava.github.io/anypoint-connect/recipes/); every CLI
-command is in the [CLI reference](https://avinava.github.io/anypoint-connect/cli-reference/).
+command is in the [CLI reference](https://avinava.github.io/anypoint-connect/cli-reference/), every MCP tool
+in the [tool catalog](https://avinava.github.io/anypoint-connect/tools/), and how to read runtime metrics in
+[Monitoring](https://avinava.github.io/anypoint-connect/monitoring/).
 
 ## MCP server
 
@@ -84,7 +86,7 @@ OAuth tokens; it sends tool calls to the local server that owns the session.
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.14.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
     }
   }
 }
@@ -99,13 +101,16 @@ Example requests use synthetic names:
 ```text
 What applications are visible in Sandbox? Read only.
 Analyze errors for sample-orders-api in Sandbox over the last two hours.
+Is the old generation of sample-orders-api in Production close to its limit?
 Preview a deployment of target/sample-orders-api-1.3.0-mule-application.jar to Sandbox; do not apply it.
 ```
 
 ## Safety
 
-Mutating MCP tools are previews until `confirm: true` is supplied. Artifact updates preserve runtime,
-target, replicas, and settings. Deletion requires the deployment ID returned by the preview, and
+MCP deployment tools are previews until `confirm: true` is supplied, and `anc deploy --dry-run` prints the
+same plan. Publishing reads the JAR's embedded Maven identity and binds its SHA-256. Redeploys change only
+the artifact reference, preserving runtime, target, replicas, and settings. Deletion requires the
+deployment ID returned by the preview, Design Center writes require a single-use preview token, and
 production operations require an additional acknowledgement.
 
 ```jsonc

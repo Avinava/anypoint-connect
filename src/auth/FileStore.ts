@@ -8,7 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { TokenStore, AnypointTokens } from './TokenStore.js';
-import { getProfileDir } from '../utils/config.js';
+import { getProfileDir } from '../config/profiles.js';
 
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const TOKEN_FILE_NAME = 'tokens.enc';

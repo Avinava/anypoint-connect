@@ -1,5 +1,98 @@
 # Changelog
 
+## 0.15.0 - 2026-10-05
+
+This release consolidates the MCP and CLI surface. Tool and command names changed; see the migration
+tables below.
+
+### Fixed
+
+- Memory metrics work on CloudHub 2.0. They previously queried a datasource that no longer exists and
+  silently returned nothing.
+- Monitoring queries no longer hide failures. Syntax errors, unknown attributes, unsupported
+  aggregations and oversized pages are reported with the platform's message instead of as empty results.
+- Garbage-collection activity is reported as the change inside the window. The platform exposes
+  cumulative counters, which previously inflated totals.
+- Application names in monitoring filters are escaped, and organization and environment IDs are validated
+  before they reach a query.
+- `anc deploy <jar>` publishes the JAR before deploying it. It previously validated the file but deployed
+  whatever Exchange asset matched coordinates guessed from the file name.
+- `anc design-center push` and `publish` preview first and apply through the conflict-checked, verified
+  workflow, asking for confirmation unless `--yes` is given.
+
+### Added
+
+- `get_metrics` groups by app, worker or HTTP route, compares every environment when no environment is
+  given, and reports failures, failure rate, p50/p75/p90/p95/p99, outbound failures and Mule message
+  volume.
+- `get_runtime_metrics` reports per-worker heap, old-generation usage against its limit, metaspace,
+  old-generation GC activity, CPU load and physical memory.
+- `get_metrics_timeseries` charts `traffic`, `latency`, `memory`, `cpu` or `gc` with buckets from `1m`
+  to `1d`.
+- `raw_amql_query` documents the available datasources and fields, accepts an `offset`, and allows pages
+  of up to 2,000 rows.
+- CLI: `anc monitor summary`, `runtime`, `trend --signal`, `query`; `anc deploy --dry-run`;
+  `anc api alerts`.
+- A [monitoring guide](docs/monitoring.md), and a tool catalog generated from the server's registry with
+  a documentation check that fails when the two diverge.
+- The library exports the monitoring types, `AmqlQueryError`, and a package `exports` map.
+
+### Changed
+
+- MCP tool modules are organized by domain: application read, deploy and lifecycle tools, Exchange,
+  Design Center, governance and monitoring. `deploy_jar` and `anc deploy` share one implementation.
+- Source layout: `src/workflows/` (JAR deployment, Design Center), `src/config/profiles.ts`, and
+  `src/mcp/server.ts`. `src/mcp.ts` remains the executable entry point.
+- The CLI group `dc` is now `design-center`; `dc` still works as an alias.
+- Log analysis reads stack traces from any `stackTrace`-style field in logger payloads.
+
+### Removed
+
+- `publish_to_exchange` and `update_design_center_file`. Their unpreviewed write paths are replaced by
+  the preview and apply pairs below.
+
+### Migration from 0.14.x
+
+MCP tools:
+
+| 0.14 | 0.15 |
+| --- | --- |
+| `get_metrics` | `get_metrics` (rows now include failures and percentiles) |
+| `get_performance_metrics` | `get_metrics` |
+| `get_worker_metrics` | `get_metrics` with `groupBy: "worker"` |
+| `compare_env_performance` | `get_metrics` without `environment` |
+| `get_memory_metrics` | `get_runtime_metrics` (no thread counts; the platform no longer reports them) |
+| `get_metrics_timeseries` | `get_metrics_timeseries` with `signal: "traffic"` or `"latency"` |
+| `get_memory_timeseries` | `get_metrics_timeseries` with `signal: "memory"` or `"gc"` |
+| `compare_environments` | `compare_app_deployments` |
+| `get_design_center_files` | `list_design_center_files` |
+| `get_store_keys` | `list_store_keys` |
+| `preview_design_center_project_create` | `preview_create_design_center_project` |
+| `preview_design_center_sync` | `preview_sync_design_center_files` |
+| `preview_exchange_publication` | `preview_publish_exchange_asset` |
+| `publish_previewed_exchange_asset` | `publish_exchange_asset` |
+| `publish_to_exchange` | `preview_publish_exchange_asset`, then `publish_exchange_asset` |
+| `update_design_center_file` | `preview_sync_design_center_files`, then `sync_design_center_files` |
+
+CLI:
+
+| 0.14 | 0.15 |
+| --- | --- |
+| `anc monitor view`, `perf` | `anc monitor summary` |
+| `anc monitor workers` | `anc monitor summary --by worker` |
+| `anc monitor compare` | `anc monitor summary` without `--env` |
+| `anc monitor memory` | `anc monitor runtime` |
+| `anc monitor trend` | `anc monitor trend --signal traffic` (or `latency`) |
+| `anc monitor memory-trend` | `anc monitor trend --signal memory` (or `gc`) |
+| `anc deploy --artifact-id`, `--version` | `anc deploy --asset-id`, `--asset-version` (default: the JAR's Maven identity) |
+| `anc dc push`, `publish` | unchanged names; add `--yes` in non-interactive scripts |
+
+Library: `getAppMetrics`, `getPerformanceMetrics`, `getWorkerMetrics` and `getCrossEnvMetrics` become
+`getMetrics`; `getMemoryMetrics` becomes `getRuntimeMetrics`; `getTimeSeries` and `getMemoryTimeSeries`
+become `getTimeSeries(scope, signal, granularity)`. `MonitoringApi.search` throws `AmqlQueryError`
+instead of returning `[]`. `DesignCenterApi.updateFile` and `publishToExchange` are removed in favour of
+`DesignCenterWorkflow`.
+
 ## 0.14.0 - 2026-10-03
 
 ### Changed

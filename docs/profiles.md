@@ -70,8 +70,9 @@ Operational commands do not expose a `--profile` option. For a one-off operation
 | 3 | `.env` in the working directory | Legacy project-local fallback |
 
 The most common surprise is an environment variable left exported in a shell, silently overriding the
-profile you thought you selected. `anc config show` reports the resolved source, so check there first
-when a command hits the wrong organization.
+profile you thought you selected. `anc config show` reports the active profile and how it was resolved,
+and `env | grep ANYPOINT_` shows any credential override, so check both first when a command hits the
+wrong organization.
 
 ## Storage layout
 

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { DesignCenterApi, PublishToExchangeOptions } from './DesignCenterApi.js';
-import type { ExchangeApi } from './ExchangeApi.js';
+import type { DesignCenterApi, PublishToExchangeOptions } from '../api/DesignCenterApi.js';
+import type { ExchangeApi } from '../api/ExchangeApi.js';
 
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
 

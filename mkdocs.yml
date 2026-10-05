@@ -91,7 +91,7 @@ nav:
     - Guides:
           - Common recipes: recipes.md
           - MCP server: mcp.md
-          - Deploying a JAR: deployment-tools.md
+          - Monitoring: monitoring.md
           - Troubleshooting: troubleshooting.md
     - Reference:
           - CLI reference: cli-reference.md

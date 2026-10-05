@@ -25,10 +25,11 @@ export function buildDeploySummary(
     envName: string,
     existing: CH2Deployment | null,
     newVersion?: string,
+    isProduction?: boolean,
 ): string {
     const lines: string[] = [];
 
-    if (isProductionEnv(envName)) {
+    if (isProductionEnv(envName, isProduction)) {
         lines.push(chalk.red.bold('\n  ⚠️  PRODUCTION DEPLOYMENT'));
         lines.push(chalk.red('  ════════════════════════════════════\n'));
     }
@@ -91,8 +92,8 @@ export function validateJarFile(jarPath: string): {
 /**
  * Ask for production deployment confirmation
  */
-export async function confirmProductionDeploy(envName: string): Promise<boolean> {
-    if (!isProductionEnv(envName)) return true;
+export async function confirmProductionDeploy(envName: string, isProduction?: boolean): Promise<boolean> {
+    if (!isProductionEnv(envName, isProduction)) return true;
 
     const rl = readline.createInterface({
         input: process.stdin,

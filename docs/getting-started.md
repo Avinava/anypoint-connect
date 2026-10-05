@@ -32,7 +32,7 @@ anc --version
 
     Close and reopen the terminal first. If the command is still missing, run `npm prefix --global` and
     confirm that npm's global binary directory is on your `PATH`. You can continue without changing
-    `PATH` by replacing `anc` with `npx --yes @sfdxy/anypoint-connect@0.14.0` in the commands below.
+    `PATH` by replacing `anc` with `npx --yes @sfdxy/anypoint-connect@0.15.0` in the commands below.
 
 </div>
 
@@ -41,24 +41,31 @@ anc --version
 
 ## Create the Connected App
 
-In Anypoint Platform, go to **Access Management → Connected Apps → Create app** and use these values:
+Creating the app requires Organization Administrator permission at the relevant root organization or
+business group. If you do not have it, send the [administrator handoff](credentials.md#administrator-handoff)
+checklist instead of asking for broader personal permissions.
 
-| Field | Value |
-| --- | --- |
-| Name | `anypoint-connect-local` or another neutral internal name |
-| Type | **App acts on behalf of a user** |
-| Grant type | **Authorization Code** |
-| Website URL | `https://github.com/Avinava/anypoint-connect` |
-| Redirect URI | `http://localhost:3000/api/callback` |
-| Audience | **Members of this organization only** for an internal app |
-| Scopes | **Full Access** (`full`) and **Background Access** (`offline_access`) |
+1. Sign in to [Anypoint Platform](https://anypoint.mulesoft.com).
+2. Open **Access Management**, select the intended business group if necessary, and open
+   **Connected Apps → Owned Apps → Create app**.
+3. Use these values:
 
-Save the app, then copy its **Client ID** and **Client Secret** to a secure temporary location. Do not
-paste either value into an issue, chat, or source file.
+    | Field | Value | Why |
+    | --- | --- | --- |
+    | Name | `anypoint-connect-local` or another neutral internal label | Avoid customer names in screenshots and support threads |
+    | Type | **App acts on behalf of a user** | The toolkit operates with the signing-in user's identity and permissions |
+    | Grant type | **Authorization Code** | The CLI receives a short-lived code through its local callback |
+    | Website URL | `https://github.com/Avinava/anypoint-connect` | Identifies the software requesting access |
+    | Redirect URI | `http://localhost:3000/api/callback` | Must match the CLI default exactly, including scheme, port, and path |
+    | Audience | **Members of this organization only** | Appropriate for an internal Connected App |
+    | Scopes | **Full Access** (`full`) and **Background Access** (`offline_access`) | Act with the user's existing permissions, and receive a refresh token so you are not asked to log in every hour |
 
-If you cannot create Connected Apps, send the exact table above to an organization administrator. The
-[credential guide](credentials.md) explains permissions, allowlists, rotation, and why these two scopes
-are required.
+4. Save the app, then use **Copy ID** and **Copy Secret**. Keep both in a secure temporary location or an
+   approved secret manager. Do not paste either value into an issue, chat, or source file.
+
+The [credential reference](credentials.md) explains what the ID, Secret, and tokens each prove, why
+these scopes are requested, and how to rotate the secret. MuleSoft's own steps are in the
+[Connected App documentation](https://docs.mulesoft.com/access-management/creating-connected-apps-dev).
 
 </div>
 
@@ -139,7 +146,7 @@ environment, missing permission, and missing subscription are different conditio
 
 <div class="anc-grid">
 <a class="anc-card" href="../recipes/"><span class="anc-kicker">CLI</span><h3>Run a common task</h3><p>Application health, logs, metrics, deployment previews, and other copyable recipes.</p></a>
-<a class="anc-card" href="../mcp/"><span class="anc-kicker">MCP</span><h3>Connect an AI host</h3><p>Configure Codex, Claude, VS Code, or another stdio MCP client.</p></a>
+<a class="anc-card" href="../mcp/"><span class="anc-kicker">MCP</span><h3>Connect an MCP host</h3><p>Configure Codex, Claude, VS Code, or another stdio MCP client.</p></a>
 <a class="anc-card" href="../profiles/"><span class="anc-kicker">Teams</span><h3>Add another organization</h3><p>Use neutral named profiles and bind the correct one to each project directory.</p></a>
 </div>
 

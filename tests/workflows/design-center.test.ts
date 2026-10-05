@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DesignCenterWorkflow } from '../../src/api/DesignCenterWorkflow.js';
+import { DesignCenterWorkflow } from '../../src/workflows/design-center.js';
 
 describe('DesignCenterWorkflow', () => {
     let files: Map<string, string>;

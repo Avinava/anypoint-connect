@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText, resolveEnvironment } from './shared.js';
 
 export function registerAnypointMQTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -27,18 +27,10 @@ export function registerAnypointMQTools(server: McpServer, client: AnypointClien
         },
         async ({ environment, region }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const destinations = await client.anypointMQ.listDestinations(orgId, env.id, region);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ environment: env.name, region, destinations }, null, 2),
-                        },
-                    ],
-                };
+                return mcpText({ environment: env.name, region, destinations });
             } catch (error) {
                 return mcpError(error);
             }
@@ -60,18 +52,10 @@ export function registerAnypointMQTools(server: McpServer, client: AnypointClien
         },
         async ({ environment, region, queueId }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const stats = await client.anypointMQ.getQueueStats(orgId, env.id, region, queueId);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ environment: env.name, region, queue: queueId, stats }, null, 2),
-                        },
-                    ],
-                };
+                return mcpText({ environment: env.name, region, queue: queueId, stats });
             } catch (error) {
                 return mcpError(error);
             }
@@ -94,8 +78,7 @@ export function registerAnypointMQTools(server: McpServer, client: AnypointClien
         },
         async ({ environment, region, queueId, batchSize }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const messages = await client.anypointMQ.browseMessages(
                     orgId,
                     env.id,
@@ -104,24 +87,13 @@ export function registerAnypointMQTools(server: McpServer, client: AnypointClien
                     batchSize || 10,
                 );
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    environment: env.name,
-                                    region,
-                                    queue: queueId,
-                                    messageCount: messages.length,
-                                    messages,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    environment: env.name,
+                    region,
+                    queue: queueId,
+                    messageCount: messages.length,
+                    messages,
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -149,8 +121,7 @@ export function registerAnypointMQTools(server: McpServer, client: AnypointClien
         },
         async ({ environment, region, queueId, body, headers, properties }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const result = await client.anypointMQ.publishMessage(
                     orgId,
                     env.id,
@@ -161,23 +132,12 @@ export function registerAnypointMQTools(server: McpServer, client: AnypointClien
                     properties,
                 );
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    message: `✅ Message published to queue "${queueId}" in ${env.name}`,
-                                    messageId: result.messageId,
-                                    region,
-                                    bodyLength: body.length,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    message: `✅ Message published to queue "${queueId}" in ${env.name}`,
+                    messageId: result.messageId,
+                    region,
+                    bodyLength: body.length,
+                });
             } catch (error) {
                 return mcpError(error);
             }

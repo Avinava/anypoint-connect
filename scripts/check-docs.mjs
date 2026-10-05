@@ -28,7 +28,28 @@ function collectFiles(path) {
 
 const contentFiles = ['README.md', '.env.example', 'docs', 'examples']
     .flatMap(collectFiles)
-    .filter((path) => ['.md', '.json', '.toml', '.example', '.mjs', '.sh', '.ps1'].includes(extname(path)));
+    .filter((path) => ['.md', '.json', '.toml', '.example', '.mjs', '.sh', '.ps1'].includes(extname(path)))
+    .filter((path) => !relative(repositoryRoot, path).startsWith('docs/PLAN-'));
+
+// Identifiers that must never be committed (org, environment, app, or customer names) live in a
+// gitignored local file so the denylist itself never enters history. One entry per line.
+const denylistPath = join(repositoryRoot, '.identifier-denylist');
+const denylist = existsSync(denylistPath)
+    ? readFileSync(denylistPath, 'utf8')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith('#'))
+    : [];
+const scannedFiles = [...contentFiles, ...['src', 'tests', 'scripts', 'CHANGELOG.md'].flatMap(collectFiles)];
+
+for (const file of scannedFiles) {
+    const content = readFileSync(file, 'utf8').toLowerCase();
+    for (const identifier of denylist) {
+        if (content.includes(identifier.toLowerCase())) {
+            failures.push(`${relative(repositoryRoot, file)}: denylisted identifier found`);
+        }
+    }
+}
 
 for (const file of contentFiles) {
     const relativePath = relative(repositoryRoot, file);
@@ -49,6 +70,34 @@ for (const file of contentFiles) {
         if (content.includes(identifier)) {
             failures.push(`${relativePath}: legacy sample identifier "${identifier}" found`);
         }
+    }
+}
+
+// The tool catalog is generated from the registry; fail when the registered tools and the catalog diverge.
+const registeredTools = new Set(
+    collectFiles('src/mcp/tools')
+        .flatMap((file) => [...readFileSync(file, 'utf8').matchAll(/registerTool\(\s*'([a-z_]+)'/g)])
+        .map((match) => match[1]),
+);
+const catalogPath = join(repositoryRoot, 'docs/tools.md');
+const catalogTools = new Set(
+    existsSync(catalogPath)
+        ? [...readFileSync(catalogPath, 'utf8').matchAll(/^\| `([a-z_]+)` \|/gm)].map((match) => match[1])
+        : [],
+);
+for (const tool of registeredTools) {
+    if (!catalogTools.has(tool)) failures.push(`docs/tools.md: missing ${tool}; run npm run docs:tools`);
+}
+for (const tool of catalogTools) {
+    if (!registeredTools.has(tool)) failures.push(`docs/tools.md: ${tool} is not registered; run npm run docs:tools`);
+}
+
+for (const file of contentFiles.filter((path) => extname(path) === '.md')) {
+    const count = readFileSync(file, 'utf8').match(/\b\d+ (?:MCP )?tools\b/);
+    if (count) {
+        failures.push(
+            `${relative(repositoryRoot, file)}: hard-coded tool count "${count[0]}"; link to the catalog instead`,
+        );
     }
 }
 
