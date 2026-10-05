@@ -13,7 +13,7 @@ error text names which one.
 | `Token refresh failed` | The refresh token was revoked, or the Connected App changed. Log in again; if it recurs, check whether the app was rotated in Access Management |
 | The browser never returns | The Connected App's redirect URI does not match `http://localhost:3000/api/callback`, or port 3000 is occupied |
 | The callback says it could not be verified | The returned OAuth state did not match the login started by this CLI process. Close the tab and run `anc auth login` again; no code was accepted |
-| Commands hit the wrong organization | An exported `ANYPOINT_PROFILE` or environment variable outranks the profile you expected. `anc config show` reports the resolved source. See [Profiles](profiles.md) |
+| Commands hit the wrong organization | An exported `ANYPOINT_PROFILE` or credential variable outranks the profile you expected. `anc config show` reports the active profile and how it was resolved; `env \| grep ANYPOINT_` shows overrides. See [Profiles](profiles.md) |
 
 ## Environments and permissions
 
@@ -31,15 +31,21 @@ error text names which one.
 | Fewer log entries than expected | Retention is shorter than the requested window, or the level filter excluded them. Compare the requested window with the earliest returned timestamp before drawing conclusions |
 | An error appears in the caller but not the dependency | Log level, handled errors, or retention — not proof the dependency is healthy. Widen the window or lower the level before concluding anything |
 | Percentiles look implausible | Low request counts make percentiles unstable. Read them with the request count |
-| Memory looks like a leak | A sawtooth is normal collection. A rising post-GC baseline is the signal; use `get_memory_timeseries` over a longer window |
-| Metrics are empty but the app is running | Monitoring scope missing, or the window predates the deployment |
+| Memory looks like a leak | A heap sawtooth is normal collection. Check `get_runtime_metrics` (`anc monitor runtime`): the old-generation peak against its limit, and old-generation GC count and time. Then chart `get_metrics_timeseries` with `signal: "memory"` at `1h` over several days; a baseline that keeps rising is the leak signal. See [Monitoring](monitoring.md#reading-memory) |
+| Metrics are empty but the app is running | The query ran and found nothing: the window predates the deployment, the app name does not match exactly, the environment is wrong, or the app received no HTTP traffic. Widen the window or drop the app filter |
+| A metrics call returns an error | The query did not run. The message is the platform's own: a syntax error or unknown attribute in raw AMQL, a 403 when the user lacks Monitoring access, or a timeout on a very large window. It is never reported as empty data. See [Monitoring](monitoring.md#empty-results-and-errors) |
+| `oldGenPeakRatio` is `null` | The old-generation pool reports no limit (unbounded), or no old-generation pool was reported. Read `oldGenUsedPeak` and the `pools` list instead |
 
 ## Deployments
 
 | Symptom | Cause and fix |
 | --- | --- |
-| An MCP deployment changed nothing | The call was a preview. Mutating MCP tools require `confirm: true`. The CLI behaves differently: non-production deploys apply, while production requires the typed confirmation or `--force`. See [Safety model](safety.md) |
-| An infrastructure change was rejected | Redeploys of an existing app change the artifact only, by design. Use the scale or settings tools, or create a new deployment |
+| An MCP deployment changed nothing | The call was a preview. MCP deployment tools require `confirm: true`. The CLI behaves differently: non-production deploys apply unless `--dry-run` is given, while production requires the typed confirmation or `--force`. See [Safety model](safety.md) |
+| An infrastructure change was rejected | Redeploys of an existing app change the artifact only, by design: `anc deploy` rejects `--runtime`, `--replicas`, `--vcores`, and `--region`, and `deploy_jar` rejects the same settings, for an existing app. Use the scale or settings tools, or create a new deployment |
+| `Embedded Maven identity is unavailable` | The JAR has no single, consistent `pom.properties`. Supply both the asset ID and version (`--asset-id` and `--asset-version`, or `assetId` and `assetVersion`) |
+| Publication refused after a preview | The JAR's SHA-256 no longer matches `expectedSha256`: the file was rebuilt. Preview again and review the new digest |
+| A Design Center push or publish was aborted | Someone changed the file or branch after the preview, or the token expired (ten minutes) or was already used. Preview again |
+| `anc dc push` says the terminal is not interactive | It needs a confirmation. Review the preview, then rerun with `--yes` |
 | `delete_app` fails with a deployment-ID mismatch | The deployment changed between your dry run and your confirmation. Re-run the dry run and use the new ID; this is the guard working |
 | A production deploy refuses to proceed | Production requires an explicit acknowledgement. Provide it deliberately, or deploy to a lower environment first |
 | Deploy succeeded but the app is unhealthy | A confirmed deploy of a broken artifact is still a successful deploy. Check `get_app_status`, then `analyze_errors` |

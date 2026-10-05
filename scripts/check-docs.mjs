@@ -73,6 +73,34 @@ for (const file of contentFiles) {
     }
 }
 
+// The tool catalog is generated from the registry; fail when the registered tools and the catalog diverge.
+const registeredTools = new Set(
+    collectFiles('src/mcp/tools')
+        .flatMap((file) => [...readFileSync(file, 'utf8').matchAll(/registerTool\(\s*'([a-z_]+)'/g)])
+        .map((match) => match[1]),
+);
+const catalogPath = join(repositoryRoot, 'docs/tools.md');
+const catalogTools = new Set(
+    existsSync(catalogPath)
+        ? [...readFileSync(catalogPath, 'utf8').matchAll(/^\| `([a-z_]+)` \|/gm)].map((match) => match[1])
+        : [],
+);
+for (const tool of registeredTools) {
+    if (!catalogTools.has(tool)) failures.push(`docs/tools.md: missing ${tool}; run npm run docs:tools`);
+}
+for (const tool of catalogTools) {
+    if (!registeredTools.has(tool)) failures.push(`docs/tools.md: ${tool} is not registered; run npm run docs:tools`);
+}
+
+for (const file of contentFiles.filter((path) => extname(path) === '.md')) {
+    const count = readFileSync(file, 'utf8').match(/\b\d+ (?:MCP )?tools\b/);
+    if (count) {
+        failures.push(
+            `${relative(repositoryRoot, file)}: hard-coded tool count "${count[0]}"; link to the catalog instead`,
+        );
+    }
+}
+
 const libraryPackagePath = join(repositoryRoot, 'examples/library/package.json');
 const libraryPackage = JSON.parse(readFileSync(libraryPackagePath, 'utf8'));
 if (libraryPackage.dependencies?.['@sfdxy/anypoint-connect'] !== expectedVersion) {
