@@ -207,7 +207,7 @@ export function createAppsCommand(): Command {
                 }
 
                 if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
-                    const confirmed = await confirmProductionDeploy(env.name);
+                    const confirmed = await confirmProductionDeploy(env.name, env.isProduction);
                     if (!confirmed) {
                         log.warn('Restart cancelled');
                         return;
@@ -248,7 +248,7 @@ export function createAppsCommand(): Command {
                 }
 
                 if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
-                    const confirmed = await confirmProductionDeploy(env.name);
+                    const confirmed = await confirmProductionDeploy(env.name, env.isProduction);
                     if (!confirmed) {
                         log.warn('Scale cancelled');
                         return;
