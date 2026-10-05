@@ -14,3 +14,4 @@ docs/PLAN-jar-deployment-tools.md
 
 # Local-only denylist of real identifiers checked by scripts/check-docs.mjs
 .identifier-denylist
+.claude/worktrees/

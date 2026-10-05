@@ -1,128 +1,92 @@
 /**
  * Deploy CLI Command
- * anc deploy <jarPath> --app <name> --env <envName> [--runtime <version>] [--replicas <n>] [--region <target>] [--force]
+ * anc deploy <jarPath> --app <name> --env <envName> [--runtime <version>] [--replicas <n>] [--region <target>]
+ *            [--vcores <size>] [--asset-id <id>] [--asset-version <v>] [--group-id <id>] [--dry-run] [--force]
+ *
+ * Publishes the JAR to Exchange using its embedded Maven identity, then creates the deployment
+ * or — for an existing app — changes only its artifact reference.
  */
 
 import { Command } from 'commander';
-import * as fs from 'fs';
-import * as path from 'path';
 import ora from 'ora';
 import chalk from 'chalk';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { isProductionEnv, buildDeploySummary, confirmProductionDeploy } from '../safety/guards.js';
-import { buildCreatePayload, mergeForArtifactUpdate } from '../safety/deployment.js';
+import { DEFAULT_REGION, DEFAULT_RUNTIME, DEFAULT_VCORES, VALID_VCORES } from '../safety/deployment.js';
+import { describeJarDeployment, executeJarDeployment, planJarDeployment } from '../workflows/jar-deployment.js';
 import { createClient } from './shared.js';
 
 export function createDeployCommand(): Command {
-    const deploy = new Command('deploy')
-        .description('Deploy an application to CloudHub 2.0')
-        .argument('[jarPath]', 'Path to the application JAR file')
+    return new Command('deploy')
+        .description('Publish a Mule application JAR to Exchange and deploy it to CloudHub 2.0')
+        .argument('<jarPath>', 'Path to the built application JAR')
         .requiredOption('-a, --app <name>', 'Application name')
         .requiredOption('-e, --env <name>', 'Target environment')
-        .option('-r, --runtime <version>', 'Mule runtime version', '4.8.0')
-        .option('--replicas <n>', 'Number of replicas', '1')
-        .option('--group-id <id>', 'Maven group ID')
-        .option('--artifact-id <id>', 'Maven artifact ID')
-        .option('--version <v>', 'Application version')
-        .option('--vcores <size>', 'vCore size (0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 3, 4)', '0.1')
-        .option(
-            '--region <target>',
-            'CloudHub 2.0 target (e.g. "cloudhub-us-east-2", "cloudhub-eu-west-1")',
-            'cloudhub-us-east-2',
-        )
-        .option('--force', 'Skip production confirmation prompt', false)
-        .action(async (jarPath: string | undefined, opts) => {
+        .option('--asset-id <id>', 'Exchange asset ID (default: the JAR’s embedded Maven artifactId)')
+        .option('--asset-version <v>', 'Exchange asset version (default: the JAR’s embedded Maven version)')
+        .option('--group-id <id>', 'Exchange group ID (default: the organization ID)')
+        .option('-r, --runtime <version>', `[new app only] Mule runtime version (default: ${DEFAULT_RUNTIME})`)
+        .option('--replicas <n>', '[new app only] Number of replicas (default: 1)')
+        .option('--vcores <size>', `[new app only] vCore size: ${VALID_VCORES.join(', ')} (default: ${DEFAULT_VCORES})`)
+        .option('--region <target>', `[new app only] CloudHub 2.0 target (default: ${DEFAULT_REGION})`)
+        .option('--dry-run', 'Show what would be published and deployed, then stop', false)
+        .option('--force', 'Skip the production confirmation prompt', false)
+        .action(async (jarPath: string, opts) => {
             try {
                 const client = createClient();
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
 
-                // Check for existing deployment
-                const existing = await client.cloudHub2.findDetailByName(orgId, env.id, opts.app);
+                const plan = await planJarDeployment(client, {
+                    jarPath,
+                    appName: opts.app,
+                    orgId,
+                    env,
+                    assetId: opts.assetId,
+                    assetVersion: opts.assetVersion,
+                    groupId: opts.groupId,
+                    runtime: opts.runtime,
+                    replicas: opts.replicas ? parseInt(opts.replicas, 10) : undefined,
+                    region: opts.region,
+                    vcores: opts.vcores,
+                });
 
-                // If no JAR provided but app exists, show status
-                if (!jarPath && existing) {
-                    log.info('No JAR path provided. Showing current deployment status:');
-                    log.kv('App', existing.name);
-                    log.kv('Status', existing.status);
-                    log.kv('Version', existing.application?.ref?.version || '-');
+                if (plan.rejectedSettings.length > 0) {
+                    throw new Error(
+                        `"${opts.app}" already exists in ${env.name}; deploy changes only its artifact. ` +
+                            `Drop ${plan.rejectedSettings.map((s) => `--${s}`).join(', ')} or use \`anc apps\` to change settings.`,
+                    );
+                }
+
+                const summary = describeJarDeployment(plan);
+                console.log(buildDeploySummary(opts.app, env.name, plan.existing, plan.ref.version));
+                log.kv('Artifact', `${plan.ref.groupId}:${plan.ref.artifactId}:${plan.ref.version}`);
+                log.kv('SHA-256', plan.artifact.sha256);
+                log.kv('Mode', summary.deploy.mode === 'update' ? 'update artifact reference' : 'create deployment');
+                if (summary.deploy.mode === 'create') {
+                    log.kv('Runtime', summary.deploy.runtime);
+                    log.kv(
+                        'Target',
+                        `${summary.deploy.region}, ${summary.deploy.vcores} vCores × ${summary.deploy.replicas}`,
+                    );
+                }
+
+                if (opts.dryRun) {
+                    log.info('Dry run — nothing was published or deployed.');
                     return;
                 }
 
-                if (!jarPath) {
-                    log.error('JAR file path is required for new deployments');
-                    process.exit(1);
-                }
-
-                // Validate JAR file
-                const resolvedPath = path.resolve(jarPath);
-                if (!fs.existsSync(resolvedPath)) {
-                    log.error(`JAR file not found: ${resolvedPath}`);
-                    process.exit(1);
-                }
-
-                if (!resolvedPath.endsWith('.jar')) {
-                    log.error('File must have .jar extension');
-                    process.exit(1);
-                }
-
-                const stat = fs.statSync(resolvedPath);
-                if (stat.size === 0) {
-                    log.error('JAR file is empty');
-                    process.exit(1);
-                }
-
-                // Extract version from filename if not provided
-                const basename = path.basename(resolvedPath);
-                const match = basename.match(/^(.+?)-(\d+\.\d+\.\d+(?:-.+?)?)-mule-application\.jar$/);
-                const artifactId = opts.artifactId || match?.[1] || opts.app;
-                const version = opts.version || match?.[2] || '1.0.0';
-                const groupId = opts.groupId || orgId;
-
-                // ── Safety Check ─────────────────────────────────
-                console.log(buildDeploySummary(opts.app, env.name, existing, version));
-
                 if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
-                    const confirmed = await confirmProductionDeploy(env.name);
-                    if (!confirmed) {
+                    if (!(await confirmProductionDeploy(env.name))) {
                         log.warn('Deployment cancelled');
                         return;
                     }
                 }
 
-                // ── Deploy ───────────────────────────────────────
-                const spinner = ora('Deploying...').start();
-
-                let deployment;
-                if (existing) {
-                    // Safe redeploy: PATCH only the artifact ref so the live runtime, target/space,
-                    // replicas, and settings are preserved (previously this clobbered them).
-                    spinner.text = 'Updating artifact reference on existing deployment...';
-                    const merged = mergeForArtifactUpdate(existing, { groupId, artifactId, version });
-                    deployment = await client.cloudHub2.updateArtifactRef(
-                        orgId,
-                        env.id,
-                        existing.id,
-                        merged.application.ref,
-                    );
-                } else {
-                    spinner.text = 'Creating new deployment...';
-                    const payload = buildCreatePayload({
-                        appName: opts.app,
-                        groupId,
-                        artifactId,
-                        version,
-                        runtime: opts.runtime,
-                        replicas: parseInt(opts.replicas) || 1,
-                        region: opts.region,
-                        vcores: opts.vcores,
-                    });
-                    deployment = await client.cloudHub2.createDeployment(orgId, env.id, payload);
-                }
-
-                // Poll for status
-                spinner.text = 'Waiting for deployment to apply...';
+                const spinner = ora('Publishing to Exchange and deploying...').start();
+                const { published, deployment } = await executeJarDeployment(client, plan);
+                spinner.text = `Published ${published.assetId} v${published.version}; waiting for deployment...`;
 
                 try {
                     const final = await client.cloudHub2.waitForDeployment(
@@ -134,14 +98,15 @@ export function createDeployCommand(): Command {
                             spinner.text = `Status: ${status} (replicas: ${replicaStates})`;
                         },
                     );
-
-                    spinner.succeed(`Deployed ${chalk.bold(opts.app)} v${version} → ${chalk.green(final.status)}`);
+                    spinner.succeed(
+                        `Deployed ${chalk.bold(opts.app)} v${plan.ref.version} → ${chalk.green(final.status)}`,
+                    );
                 } catch (err) {
                     spinner.fail(`Deployment issue: ${errorMessage(err)}`);
                     log.dim(`  Deployment ID: ${deployment.id}`);
                     log.dim(`  Check status: anc apps status ${opts.app} --env ${opts.env}`);
-                    if (existing) {
-                        log.dim(`  Previous version: ${existing.application?.ref?.version || 'unknown'}`);
+                    if (plan.existing) {
+                        log.dim(`  Previous version: ${plan.existing.application?.ref?.version || 'unknown'}`);
                     }
                 }
             } catch (error) {
@@ -149,6 +114,4 @@ export function createDeployCommand(): Command {
                 process.exit(1);
             }
         });
-
-    return deploy;
 }
