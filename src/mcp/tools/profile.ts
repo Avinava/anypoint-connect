@@ -57,7 +57,7 @@ export function registerProfileTools(server: McpServer) {
             title: 'Set Project Profile',
             description:
                 'Binds the current project directory to a named Anypoint profile by writing .anypoint-connect.json. After this, all CLI commands and MCP tools run from this directory will automatically use the specified profile.',
-            annotations: { readOnlyHint: false },
+            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
             inputSchema: {
                 profile: z.string().describe('The profile name to bind to this project directory'),
                 directory: z

@@ -15,13 +15,16 @@ import { VERSION } from './version.js';
 
 import {
     registerIdentityTools,
-    registerApplicationTools,
+    registerAppReadTools,
+    registerAppLifecycleTools,
+    registerAppDeployTools,
     registerLogTools,
     registerAnalysisTools,
     registerMonitoringTools,
     registerExchangeTools,
     registerApiManagerTools,
     registerDesignCenterTools,
+    registerGovernanceTools,
     registerProfileTools,
     registerAuditTools,
     registerAnypointMQTools,
@@ -55,13 +58,16 @@ export class AnypointConnectMcpServer {
 
         // Register tools by domain
         registerIdentityTools(this.server, this.client);
-        registerApplicationTools(this.server, this.client);
+        registerAppReadTools(this.server, this.client);
+        registerAppLifecycleTools(this.server, this.client);
+        registerAppDeployTools(this.server, this.client);
         registerLogTools(this.server, this.client);
         registerAnalysisTools(this.server, this.client);
         registerMonitoringTools(this.server, this.client);
         registerExchangeTools(this.server, this.client);
         registerApiManagerTools(this.server, this.client);
         registerDesignCenterTools(this.server, this.client);
+        registerGovernanceTools(this.server, this.client);
         registerProfileTools(this.server);
         registerAuditTools(this.server, this.client);
         registerAnypointMQTools(this.server, this.client);

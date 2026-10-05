@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerMonitoringTools } from '../../src/mcp/tools/monitoring.js';
-import { AmqlQueryError } from '../../src/utils/errors.js';
+import { registerMonitoringTools } from '../../../src/mcp/tools/monitoring.js';
+import { AmqlQueryError } from '../../../src/utils/errors.js';
 
 describe('monitoring MCP tools', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
