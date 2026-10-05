@@ -33,7 +33,7 @@ export function registerPrompts(server: McpServer) {
 2. **Target status**: Use get_app_status to check if "${appName}" exists in ${targetEnv} — note the current version and replica count.
 3. **Version comparison**: Use compare_environments to compare ${sourceEnv} vs ${targetEnv} and highlight the version difference for this app.
 4. **Error check**: Use get_logs to fetch the last 50 ERROR-level logs from ${sourceEnv} — flag any recent errors that might indicate instability.
-5. **Metrics baseline**: Use get_metrics for "${appName}" in ${sourceEnv} with the last 24 hours — report error rate and average response time.
+5. **Metrics baseline**: Use get_metrics for "${appName}" in ${sourceEnv} with the last 24 hours — report failure rate (failedCount / requestCount), p95 latency, and outbound failures.
 
 Produce a GO / NO-GO recommendation with rationale. If there are concerns, list them as action items before proceeding.`,
                     },
@@ -72,7 +72,7 @@ Produce a GO / NO-GO recommendation with rationale. If there are concerns, list 
 1. **Deployment health**: Use get_app_status to check replica states — look for FAILED or PARTIAL_STARTED replicas, recent restarts, or version mismatches.
 2. **Error analysis**: Use analyze_errors to get clustered error groups with full context (what happened before and after each error). Focus on the top 3 error types and their causal chains.
 3. **Log patterns**: Use get_log_patterns to understand normal vs abnormal activity — look for unexpected patterns or missing expected patterns.
-4. **Performance check**: Use get_metrics for the last 4 hours — look for spikes in error count, elevated response times, or sudden drops in request volume.
+4. **Performance check**: Use get_metrics for the last 4 hours (groupBy "worker" to spot a single bad replica) and get_metrics_timeseries with signal "traffic" at "5m" — look for failure spikes, elevated p95, or sudden drops in request volume. If memory or CPU is suspected, use get_runtime_metrics and check old-generation peak vs limit and old-generation GC activity.
 5. **Health stats**: Use get_log_stats for a quick statistical summary — check error rate, error spikes, and noise levels.
 6. **Root cause analysis**: Based on the evidence, identify the most likely root cause from common MuleSoft issues:
    - DataWeave transformation errors (MULE:EXPRESSION)
@@ -146,7 +146,7 @@ End with prioritized recommendations for improving governance posture.`,
                         text: `Generate a health overview report for the ${environment} environment:
 
 1. **App inventory**: Use list_apps to get all deployed applications. Count total apps, how many are APPLIED/RUNNING vs FAILED/DEPLOYING.
-2. **Error landscape**: Use get_metrics for all apps over the last 24 hours. Rank apps by error count (highest first). Flag any app with error rate above 1%.
+2. **Error landscape**: Use get_metrics for all apps over the last 24 hours. Rank apps by failedCount (highest first). Flag any app with failureRate above 1%.
 3. **Performance**: From the same metrics, identify the 3 slowest apps by average response time. Note any above 1000ms.
 4. **Top errors**: For the app with the most errors, use analyze_errors to get clustered error groups with context — identify the dominant error pattern and what causes it.
 5. **Health stats**: Use get_log_stats for the worst-performing app to get error rate, spikes, and noise percentage.

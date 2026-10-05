@@ -1,60 +1,60 @@
 /**
  * MCP Tool Registrar — Monitoring tools
- * get_metrics, get_performance_metrics, get_metrics_timeseries,
- * get_worker_metrics, compare_environments
+ * get_metrics, get_runtime_metrics, get_metrics_timeseries, raw_amql_query
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError } from './shared.js';
+import { AMQL_MAX_LIMIT, GRANULARITIES, TIME_SERIES_SIGNALS } from '../../api/MonitoringApi.js';
+import { mcpError, mcpText, resolveEnvironment, timeWindow } from './shared.js';
+
+const hoursBackSchema = z
+    .number()
+    .positive()
+    .optional()
+    .describe('Time window in hours ending now (default: 24). Use 1 for recent activity, 168 for weekly trends.');
+
+const appNameSchema = z.string().optional().describe('Limit to one application name. Omit for every app.');
 
 export function registerMonitoringTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
         'get_metrics',
         {
-            title: 'Get Application Metrics',
+            title: 'Get Traffic Metrics',
             description:
-                'Fetches runtime performance metrics for applications in an environment using Anypoint Monitoring AMQL queries. Returns inbound request count, average response time (ms), outbound request count, and outbound average response time. Use this to identify performance bottlenecks or traffic patterns.',
+                'Traffic, latency and failures from Anypoint Monitoring. Per app (default), per worker/replica, or per HTTP route: inbound request count, failed count and failure rate, average/min/max and p50/p75/p90/p95/p99 response time (ms), outbound call count/failures/average, and Mule message count/errors. Omit `environment` to compare every environment side by side. Use groupBy "worker" to spot an unhealthy or overloaded replica, and "route" to find which inbound or outbound route is failing.',
             inputSchema: {
-                environment: z.string().describe('Environment name or ID'),
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('Time window in hours (default: 24). Use 1 for recent, 168 for weekly trends.'),
-                appName: z
+                environment: z
                     .string()
                     .optional()
-                    .describe('Filter to a specific application name. Omit to get metrics for all apps.'),
+                    .describe('Environment name or ID. Omit to compare every environment.'),
+                hoursBack: hoursBackSchema,
+                appName: appNameSchema,
+                groupBy: z.enum(['app', 'worker', 'route']).optional().describe('Row grouping (default: "app").'),
             },
             annotations: { readOnlyHint: true },
         },
-        async ({ environment, hoursBack, appName }) => {
+        async ({ environment, hoursBack, appName, groupBy = 'app' }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { from, to, period } = timeWindow(hoursBack);
+                const resolved = environment ? await resolveEnvironment(client, environment) : undefined;
+                const orgId = resolved?.orgId ?? (await client.getDefaultOrgId());
+                const scope = { orgId, envId: resolved?.env.id, from, to, appName };
 
-                const to = Date.now();
-                const from = to - (hoursBack || 24) * 60 * 60 * 1000;
-
-                const metrics = await client.monitoring.getAppMetrics(orgId, env.id, from, to, appName);
-
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    environment: env.name,
-                                    period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-                                    apps: metrics,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                if (groupBy === 'route') {
+                    return mcpText({
+                        environment: resolved?.env.name ?? 'all',
+                        period,
+                        routes: await client.monitoring.getRouteMetrics(scope),
+                    });
+                }
+                return mcpText({
+                    environment: resolved?.env.name ?? 'all',
+                    period,
+                    groupBy,
+                    rows: await client.monitoring.getMetrics(scope, groupBy),
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -62,52 +62,27 @@ export function registerMonitoringTools(server: McpServer, client: AnypointClien
     );
 
     server.registerTool(
-        'get_performance_metrics',
+        'get_runtime_metrics',
         {
-            title: 'Get Performance Metrics (Percentiles)',
+            title: 'Get Runtime (JVM and Host) Metrics',
             description:
-                'Fetches detailed percentile-based performance metrics per application: p50, p95, p99 response times, min/max latency, and request count. Use this for SLA validation, identifying tail latency issues, and performance baselining. For basic request counts and averages, use get_metrics instead.',
+                'JVM and host health per worker/replica: total heap used (avg/peak) and committed; the old-generation pool with its limit and peak-to-limit ratio (the memory-pressure and leak signal); metaspace; old-generation GC collections and GC time inside the window; CPU count and physical RAM; system and process CPU load (avg/max); and average free physical memory. Memory sizes are bytes, CPU loads are 0–1 fractions, GC time is milliseconds.',
             inputSchema: {
-                environment: z
-                    .string()
-                    .describe('Environment name (e.g. "Development", "Production") or environment ID'),
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('Time window in hours (default: 24). Use 1 for recent, 168 for weekly trends'),
-                appName: z
-                    .string()
-                    .optional()
-                    .describe('Filter to a specific application name. Omit to get metrics for all apps'),
+                environment: z.string().describe('Environment name or ID'),
+                hoursBack: hoursBackSchema,
+                appName: appNameSchema,
             },
             annotations: { readOnlyHint: true },
         },
         async ({ environment, hoursBack, appName }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-
-                const to = Date.now();
-                const from = to - (hoursBack || 24) * 60 * 60 * 1000;
-
-                const metrics = await client.monitoring.getPerformanceMetrics(orgId, env.id, from, to, appName);
-
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    environment: env.name,
-                                    period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-                                    apps: metrics,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                const { orgId, env } = await resolveEnvironment(client, environment);
+                const { from, to, period } = timeWindow(hoursBack);
+                return mcpText({
+                    environment: env.name,
+                    period,
+                    workers: await client.monitoring.getRuntimeMetrics({ orgId, envId: env.id, from, to, appName }),
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -119,212 +94,29 @@ export function registerMonitoringTools(server: McpServer, client: AnypointClien
         {
             title: 'Get Metrics Time Series',
             description:
-                'Fetches time-series metrics for trending analysis. Returns timestamped buckets with request count, average response time, and p95 latency per app. Use this to spot degradation trends, traffic spikes, or correlate performance changes with deployments.',
+                'Bucketed metrics for trend and incident analysis. Signals: "traffic" (requests, failed, avg and p95 latency per app), "latency" (p50/p75/p90/p95/p99 per app), "memory" (heap, old-generation and metaspace bytes per worker), "cpu" (system/process CPU load and free physical memory per worker), "gc" (collections and GC milliseconds per bucket per worker, old-generation split out). Use "1m" or "5m" buckets for incident windows of a few hours and "1h"/"1d" for multi-day trends such as a rising old-generation baseline.',
             inputSchema: {
-                environment: z
-                    .string()
-                    .describe('Environment name (e.g. "Development", "Production") or environment ID'),
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('Time window in hours (default: 24). Use 1 for recent, 168 for weekly trends'),
+                environment: z.string().describe('Environment name or ID'),
+                signal: z.enum(TIME_SERIES_SIGNALS as [string, ...string[]]).describe('Which signal to chart'),
+                hoursBack: hoursBackSchema,
                 granularity: z
-                    .enum(['5m', '15m', '30m', '1h', '1d'])
+                    .enum(GRANULARITIES as [string, ...string[]])
                     .optional()
-                    .describe('Time bucket size (default: "1h"). Use "5m" for short windows, "1d" for weekly'),
-                appName: z
-                    .string()
-                    .optional()
-                    .describe('Filter to a specific application name. Omit to get time series for all apps'),
+                    .describe('Bucket size (default: "1h").'),
+                appName: appNameSchema,
             },
             annotations: { readOnlyHint: true },
         },
-        async ({ environment, hoursBack, granularity, appName }) => {
+        async ({ environment, signal, hoursBack, granularity = '1h', appName }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-
-                const to = Date.now();
-                const from = to - (hoursBack || 24) * 60 * 60 * 1000;
-
-                const granularityMap: Record<string, 'PT5M' | 'PT15M' | 'PT30M' | 'PT1H' | 'P1D'> = {
-                    '5m': 'PT5M',
-                    '15m': 'PT15M',
-                    '30m': 'PT30M',
-                    '1h': 'PT1H',
-                    '1d': 'P1D',
-                };
-                const g = granularityMap[granularity || '1h'];
-
-                const data = await client.monitoring.getTimeSeries(orgId, env.id, from, to, g, appName);
-
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    environment: env.name,
-                                    period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-                                    granularity: granularity || '1h',
-                                    dataPoints: data,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
-    );
-
-    server.registerTool(
-        'get_worker_metrics',
-        {
-            title: 'Get Worker/Replica Metrics',
-            description:
-                'Fetches per-worker (per-replica) performance metrics: request count, average response time, max latency, and p95 for each worker ID. Use this to detect unhealthy replicas, identify load imbalance between workers, or pinpoint specific instances with elevated latency.',
-            inputSchema: {
-                environment: z
-                    .string()
-                    .describe('Environment name (e.g. "Development", "Production") or environment ID'),
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('Time window in hours (default: 24). Use 1 for recent, 168 for weekly trends'),
-                appName: z
-                    .string()
-                    .optional()
-                    .describe('Filter to a specific application name. Omit to get worker metrics for all apps'),
-            },
-            annotations: { readOnlyHint: true },
-        },
-        async ({ environment, hoursBack, appName }) => {
-            try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-
-                const to = Date.now();
-                const from = to - (hoursBack || 24) * 60 * 60 * 1000;
-
-                const metrics = await client.monitoring.getWorkerMetrics(orgId, env.id, from, to, appName);
-
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    environment: env.name,
-                                    period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-                                    workers: metrics,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
-    );
-
-    server.registerTool(
-        'compare_env_performance',
-        {
-            title: 'Compare Environment Performance',
-            description:
-                'Compares application response-time performance across all environments (Development, Sandbox, Production) without requiring an environment filter. Returns per-app, per-environment metrics including request count, average response time, p95, and p99 latency. Use this to validate that staging matches production behavior, spot environment-specific degradation, or baseline performance across the org.',
-            inputSchema: {
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('Time window in hours (default: 24). Use 1 for recent, 168 for weekly trends'),
-            },
-            annotations: { readOnlyHint: true },
-        },
-        async ({ hoursBack }) => {
-            try {
-                const orgId = await client.getDefaultOrgId();
-
-                const to = Date.now();
-                const from = to - (hoursBack || 24) * 60 * 60 * 1000;
-
-                const metrics = await client.monitoring.getCrossEnvMetrics(orgId, from, to);
-
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-                                    environments: metrics,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
-    );
-
-    server.registerTool(
-        'get_memory_metrics',
-        {
-            title: 'Get JVM Memory Metrics',
-            description:
-                'Fetches JVM memory and infrastructure metrics per application: average heap used/committed, max heap, GC count and time, and thread count. Use this to identify memory pressure, potential leaks, or apps approaching heap limits. Queries the mulesoft.jvm datasource via AMQL.',
-            inputSchema: {
-                environment: z
-                    .string()
-                    .describe('Environment name (e.g. "Development", "Production") or environment ID'),
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('Time window in hours (default: 24). Use 1 for recent, 168 for weekly trends'),
-                appName: z
-                    .string()
-                    .optional()
-                    .describe('Filter to a specific application name. Omit to get memory metrics for all apps'),
-            },
-            annotations: { readOnlyHint: true },
-        },
-        async ({ environment, hoursBack, appName }) => {
-            try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-
-                const to = Date.now();
-                const from = to - (hoursBack || 24) * 60 * 60 * 1000;
-
-                const metrics = await client.monitoring.getMemoryMetrics(orgId, env.id, from, to, appName);
-
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    environment: env.name,
-                                    period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-                                    apps: metrics,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                const { orgId, env } = await resolveEnvironment(client, environment);
+                const { from, to, period } = timeWindow(hoursBack);
+                const points = await client.monitoring.getTimeSeries(
+                    { orgId, envId: env.id, from, to, appName },
+                    signal as (typeof TIME_SERIES_SIGNALS)[number],
+                    granularity as (typeof GRANULARITIES)[number],
+                );
+                return mcpText({ environment: env.name, period, signal, granularity, points });
             } catch (error) {
                 return mcpError(error);
             }
@@ -335,99 +127,33 @@ export function registerMonitoringTools(server: McpServer, client: AnypointClien
         'raw_amql_query',
         {
             title: 'Execute Raw AMQL Query',
-            description:
-                'Executes a freeform AMQL (Anypoint Monitoring Query Language) query against the monitoring API. Use this for ad-hoc analysis when the pre-built metric tools don\'t answer a specific question. Datasources: "mulesoft.app.inbound" (inbound requests), "mulesoft.app.outbound" (outbound calls), "mulesoft.jvm" (memory/GC/threads). Supports SELECT, COUNT, AVG, SUM, MAX, MIN, PERCENTILE, GROUP BY, TIMESERIES, WHERE with timestamp BETWEEN.',
+            description: `Runs a freeform AMQL query against Anypoint Monitoring when the other metric tools do not answer the question. Platform errors are returned as-is (they name the bad token or attribute). Always filter on "sub_org.id" and a "timestamp BETWEEN <fromMs> AND <toMs>" range; add "env.id" and "app.name" as needed.
+Datasources:
+- "mulesoft.app.inbound" / "mulesoft.app.outbound": requests, response_time, "response.status" ('FAILED'), "http.route" (outbound), "worker.id", "app.name", "env.name"
+- "mulesoft.message": total_count, error_count
+- "mulesoft.app.jvm.memory": usage, committed, init, "limit" (quote it; -1 = unbounded), "type" (heap|off-heap), "pool" (total-heap, tenured_gen, eden_space, survivor_space, metaspace, …)
+- "mulesoft.app.jvm.gc": count and duration (ms) are CUMULATIVE per worker — use MAX − MIN, never SUM; filter or group by name (collector)
+- "mulesoft.app.jvm.cpu": available_processors, total_physical_memory_size
+- "mulesoft.app.memory": system_cpu_load, process_cpu_load, free_physical_memory_size (AVG only — MIN/MAX on memory sizes fail server-side)
+- "mulesoft.entity": entity-level view keyed by "entity.id"/"entity.name" (no "app.name")
+Syntax: COUNT, SUM, AVG, MIN, MAX, PERCENTILE(field, 0.95), LATEST(field), GROUP BY, ORDER BY, TIMESERIES PT1M|PT5M|PT15M|PT30M|PT1H|P1D. SELECT * is not supported; single-letter aliases such as h, d, t are reserved; escape quotes in string literals by doubling them. An in-query LIMIT is ignored — use the limit argument.`,
             inputSchema: {
-                query: z
-                    .string()
-                    .describe(
-                        'AMQL query string. Example: SELECT COUNT(requests) AS "count", AVG(response_time) AS "avg_rt", "app.name" FROM "mulesoft.app.inbound" WHERE "sub_org.id" = \'<orgId>\' AND timestamp BETWEEN <from> AND <to> GROUP BY "app.name"',
-                    ),
+                query: z.string().describe('AMQL query string'),
                 limit: z
                     .number()
+                    .int()
+                    .positive()
+                    .max(AMQL_MAX_LIMIT)
                     .optional()
-                    .describe('Maximum number of data points to return (default: 200, max: 1000)'),
+                    .describe(`Rows per page (default: 200, max: ${AMQL_MAX_LIMIT})`),
+                offset: z.number().int().min(0).optional().describe('Row offset for paging (default: 0)'),
             },
             annotations: { readOnlyHint: true },
         },
-        async ({ query, limit }) => {
+        async ({ query, limit, offset }) => {
             try {
-                const data = await client.monitoring.search(query, limit || 200);
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ rowCount: data.length, data }, null, 2),
-                        },
-                    ],
-                };
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
-    );
-
-    server.registerTool(
-        'get_memory_timeseries',
-        {
-            title: 'Get Memory Usage Time Series',
-            description:
-                'Fetches time-series JVM memory metrics for trending analysis. Returns timestamped buckets with average heap used, heap committed, and GC count per app. Use this to spot memory growth trends, correlate GC spikes with latency, or detect slow memory leaks over time.',
-            inputSchema: {
-                environment: z
-                    .string()
-                    .describe('Environment name (e.g. "Development", "Production") or environment ID'),
-                hoursBack: z
-                    .number()
-                    .optional()
-                    .describe('Time window in hours (default: 24). Use 1 for recent, 168 for weekly trends'),
-                granularity: z
-                    .enum(['5m', '15m', '30m', '1h', '1d'])
-                    .optional()
-                    .describe('Time bucket size (default: "1h"). Use "5m" for short windows, "1d" for weekly'),
-                appName: z
-                    .string()
-                    .optional()
-                    .describe('Filter to a specific application name. Omit to get time series for all apps'),
-            },
-            annotations: { readOnlyHint: true },
-        },
-        async ({ environment, hoursBack, granularity, appName }) => {
-            try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
-
-                const to = Date.now();
-                const from = to - (hoursBack || 24) * 60 * 60 * 1000;
-
-                const granularityMap: Record<string, 'PT5M' | 'PT15M' | 'PT30M' | 'PT1H' | 'P1D'> = {
-                    '5m': 'PT5M',
-                    '15m': 'PT15M',
-                    '30m': 'PT30M',
-                    '1h': 'PT1H',
-                    '1d': 'P1D',
-                };
-                const g = granularityMap[granularity || '1h'];
-
-                const data = await client.monitoring.getMemoryTimeSeries(orgId, env.id, from, to, g, appName);
-
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    environment: env.name,
-                                    period: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-                                    granularity: granularity || '1h',
-                                    dataPoints: data,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                const data = await client.monitoring.search(query, { limit: limit ?? 200, offset });
+                return mcpText({ rowCount: data.length, data });
             } catch (error) {
                 return mcpError(error);
             }

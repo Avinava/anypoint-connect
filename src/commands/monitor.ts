@@ -1,11 +1,10 @@
 /**
  * Monitor CLI Commands
- * anc monitor view --env <envName> [-a <app>] [--from <date>] [--to <date>]
- * anc monitor perf --env <envName> [-a <app>]
- * anc monitor trend --env <envName> --app <app> [--granularity <5m|15m|30m|1h|1d>]
- * anc monitor workers --env <envName> [-a <app>]
- * anc monitor compare [--from <date>] [--to <date>]
- * anc monitor download --env <envName> --from <date> --to <date> [--output <path>] [--format json|csv]
+ * anc monitor summary [--env <name>] [-a <app>] [--by app|worker|route] [--from <date>] [--to <date>]
+ * anc monitor runtime --env <name> [-a <app>] [--from <date>] [--to <date>]
+ * anc monitor trend --env <name> --signal <traffic|latency|memory|cpu|gc> [-a <app>] [-g <granularity>]
+ * anc monitor query "<amql>" [--limit <n>] [--offset <n>]
+ * anc monitor download --env <name> --from <date> [--to <date>] [--output <path>] [--format json|csv]
  */
 
 import { Command } from 'commander';
@@ -16,80 +15,194 @@ import { errorMessage } from '../utils/errors.js';
 import { parseDate } from '../utils/dates.js';
 import { printTable, formatMs, formatDate, formatBytes } from '../utils/formatter.js';
 import { createClient } from './shared.js';
-import type { AppMetricsSummary, TimeSeriesGranularity } from '../api/MonitoringApi.js';
+import {
+    AMQL_MAX_LIMIT,
+    GRANULARITIES,
+    TIME_SERIES_SIGNALS,
+    isGranularity,
+    type MetricsScope,
+    type TimeSeriesPoint,
+    type TimeSeriesSignal,
+    type TrafficMetrics,
+} from '../api/MonitoringApi.js';
 
-const GRANULARITY_MAP: Record<string, TimeSeriesGranularity> = {
-    '5m': 'PT5M',
-    '15m': 'PT15M',
-    '30m': 'PT30M',
-    '1h': 'PT1H',
-    '1d': 'P1D',
-};
+interface WindowOptions {
+    from?: string;
+    to?: string;
+}
 
-function metricsToCSV(metrics: AppMetricsSummary[]): string {
-    const header = 'App Name,Requests,Avg Response Time (ms),Outbound Requests,Outbound Avg Response Time (ms)';
-    const rows = metrics.map(
-        (m) =>
-            `${m.appName},${m.requestCount},${m.avgResponseTime.toFixed(1)},${m.outboundCount},${m.outboundAvgResponseTime.toFixed(1)}`,
+function resolveWindow(opts: WindowOptions): { from: number; to: number } {
+    const to = opts.to ? parseDate(opts.to) : Date.now();
+    const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
+    return { from, to };
+}
+
+function periodLabel(from: number, to: number): string {
+    return `${new Date(from).toLocaleString()} → ${new Date(to).toLocaleString()}`;
+}
+
+function formatPercent(value: number | null | undefined, digits = 1): string {
+    return value === null || value === undefined ? '-' : `${(value * 100).toFixed(digits)}%`;
+}
+
+function formatOptionalBytes(value: number | null | undefined): string {
+    return value === null || value === undefined ? '-' : formatBytes(value);
+}
+
+function metricsToCSV(metrics: TrafficMetrics[]): string {
+    const header =
+        'App Name,Requests,Failed,Failure Rate,Avg Response Time (ms),p95 (ms),p99 (ms),Outbound Requests,Outbound Failed,Outbound Avg Response Time (ms),Messages';
+    const rows = metrics.map((m) =>
+        [
+            m.appName,
+            m.requestCount,
+            m.failedCount,
+            m.failureRate.toFixed(4),
+            m.avgResponseTime.toFixed(1),
+            m.p95,
+            m.p99,
+            m.outboundCount,
+            m.outboundFailedCount,
+            m.outboundAvgResponseTime.toFixed(1),
+            m.messageCount,
+        ].join(','),
     );
     return [header, ...rows].join('\n');
 }
 
+const SERIES_COLUMNS: Record<TimeSeriesSignal, Array<[string, string, (v: number) => string]>> = {
+    traffic: [
+        ['Requests', 'requestCount', String],
+        ['Failed', 'failedCount', String],
+        ['Avg', 'avgResponseTime', formatMs],
+        ['p95', 'p95', formatMs],
+    ],
+    latency: [
+        ['p50', 'p50', formatMs],
+        ['p75', 'p75', formatMs],
+        ['p90', 'p90', formatMs],
+        ['p95', 'p95', formatMs],
+        ['p99', 'p99', formatMs],
+    ],
+    memory: [
+        ['Heap', 'heapUsed', formatBytes],
+        ['Old Gen', 'oldGenUsed', formatBytes],
+        ['Metaspace', 'metaspaceUsed', formatBytes],
+    ],
+    cpu: [
+        ['System CPU', 'systemCpuLoad', (v) => formatPercent(v)],
+        ['Process CPU', 'processCpuLoad', (v) => formatPercent(v)],
+        ['Free RAM', 'freePhysicalMemory', formatBytes],
+    ],
+    gc: [
+        ['Old-gen GCs', 'oldGenGcCount', String],
+        ['Old-gen GC time', 'oldGenGcTimeMs', formatMs],
+        ['All GCs', 'gcCount', String],
+        ['All GC time', 'gcTimeMs', formatMs],
+    ],
+};
+
+function seriesRow(point: TimeSeriesPoint, signal: TimeSeriesSignal, showWorker: boolean): string[] {
+    const cells = SERIES_COLUMNS[signal].map(([, key, format]) => {
+        const value = point[key];
+        return value === null || value === undefined ? '-' : format(Number(value));
+    });
+    return [
+        formatDate(point.timestamp),
+        point.appName,
+        ...(showWorker ? [String(point.workerId ?? '-')] : []),
+        ...cells,
+    ];
+}
+
 export function createMonitorCommand(): Command {
-    const monitor = new Command('monitor').description('View and export monitoring metrics');
+    const monitor = new Command('monitor').description(
+        'Traffic, latency, JVM and host metrics from Anypoint Monitoring',
+    );
 
     monitor
-        .command('view')
-        .description('View application metrics')
+        .command('summary')
+        .description('Traffic, failures and latency per app, worker or route (omit --env to compare environments)')
+        .option('-e, --env <name>', 'Environment name or ID (default: every environment)')
         .option('-a, --app <name>', 'Filter by application name')
-        .requiredOption('-e, --env <name>', 'Environment name')
+        .option('--by <grouping>', 'Group rows by app, worker or route', 'app')
         .option('--from <date>', 'Start time (default: 24h ago)')
         .option('--to <date>', 'End time (default: now)')
         .action(async (opts) => {
             try {
+                if (!['app', 'worker', 'route'].includes(opts.by)) {
+                    throw new Error(`Invalid --by "${opts.by}". Use: app, worker, route`);
+                }
                 const client = createClient();
                 const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+                const env = opts.env ? await client.accessManagement.resolveEnvironment(orgId, opts.env) : undefined;
+                const { from, to } = resolveWindow(opts);
+                const scope: MetricsScope = { orgId, envId: env?.id, from, to, appName: opts.app };
+                const envColumn = env ? [] : ['Env'];
+                const envCell = (row: { envName?: string }) => (env ? [] : [row.envName ?? '-']);
 
-                const to = opts.to ? parseDate(opts.to) : Date.now();
-                const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
+                log.header(`Metrics — ${env?.name ?? 'all environments'} (${periodLabel(from, to)})`);
 
-                const [metrics, perf] = await Promise.all([
-                    client.monitoring.getAppMetrics(orgId, env.id, from, to, opts.app),
-                    client.monitoring.getPerformanceMetrics(orgId, env.id, from, to, opts.app),
-                ]);
-
-                if (metrics.length === 0) {
-                    log.warn('No metrics data available for the specified period');
+                if (opts.by === 'route') {
+                    const routes = await client.monitoring.getRouteMetrics(scope);
+                    if (routes.length === 0) return log.warn('No traffic recorded for the specified period');
+                    printTable(
+                        ['Application', ...envColumn, 'Direction', 'Route', 'Requests', 'Failed', 'Avg', 'p95'],
+                        routes.map((r) => [
+                            r.appName,
+                            ...envCell(r),
+                            r.direction,
+                            r.route ?? '(unlabelled)',
+                            String(r.requestCount),
+                            String(r.failedCount),
+                            formatMs(r.avgResponseTime),
+                            formatMs(r.p95),
+                        ]),
+                    );
                     return;
                 }
 
-                const perfByApp = new Map(perf.map((p) => [p.appName, p]));
-
-                log.header(
-                    `Metrics for ${env.name} (${new Date(from).toLocaleDateString()} → ${new Date(to).toLocaleDateString()})`,
-                );
-
+                const rows = await client.monitoring.getMetrics(scope, opts.by);
+                if (rows.length === 0) return log.warn('No traffic recorded for the specified period');
                 printTable(
-                    ['Application', 'Requests', 'Avg Response', 'p95', 'p99', 'Outbound', 'Outbound Avg'],
-                    metrics.map((m) => {
-                        const p = perfByApp.get(m.appName);
-                        return [
-                            m.appName,
-                            String(m.requestCount),
-                            formatMs(m.avgResponseTime),
-                            p ? formatMs(p.p95) : '-',
-                            p ? formatMs(p.p99) : '-',
-                            String(m.outboundCount),
-                            formatMs(m.outboundAvgResponseTime),
-                        ];
-                    }),
+                    [
+                        'Application',
+                        ...envColumn,
+                        ...(opts.by === 'worker' ? ['Worker'] : []),
+                        'Requests',
+                        'Failed',
+                        'Avg',
+                        'p50',
+                        'p95',
+                        'p99',
+                        'Outbound',
+                        'Out Failed',
+                        'Messages',
+                    ],
+                    rows.map((m) => [
+                        m.appName,
+                        ...envCell(m),
+                        ...(opts.by === 'worker' ? [m.workerId ?? '-'] : []),
+                        String(m.requestCount),
+                        m.failedCount ? `${m.failedCount} (${formatPercent(m.failureRate, 2)})` : '0',
+                        formatMs(m.avgResponseTime),
+                        formatMs(m.p50),
+                        formatMs(m.p95),
+                        formatMs(m.p99),
+                        String(m.outboundCount),
+                        String(m.outboundFailedCount),
+                        String(m.messageCount),
+                    ]),
                 );
-
-                const totalReqs = metrics.reduce((sum, m) => sum + m.requestCount, 0);
                 console.log();
-                log.kv('Total Requests', totalReqs);
-                log.kv('Apps', metrics.length);
+                log.kv(
+                    'Total Requests',
+                    rows.reduce((sum, m) => sum + m.requestCount, 0),
+                );
+                log.kv(
+                    'Total Failed',
+                    rows.reduce((sum, m) => sum + m.failedCount, 0),
+                );
             } catch (error) {
                 log.error(`Metrics failed: ${errorMessage(error)}`);
                 process.exit(1);
@@ -97,10 +210,10 @@ export function createMonitorCommand(): Command {
         });
 
     monitor
-        .command('perf')
-        .description('View percentile performance metrics (p50/p95/p99)')
+        .command('runtime')
+        .description('JVM heap, old-generation pressure, GC activity and host CPU/RAM per worker')
+        .requiredOption('-e, --env <name>', 'Environment name or ID')
         .option('-a, --app <name>', 'Filter by application name')
-        .requiredOption('-e, --env <name>', 'Environment name')
         .option('--from <date>', 'Start time (default: 24h ago)')
         .option('--to <date>', 'End time (default: now)')
         .action(async (opts) => {
@@ -108,176 +221,119 @@ export function createMonitorCommand(): Command {
                 const client = createClient();
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+                const { from, to } = resolveWindow(opts);
 
-                const to = opts.to ? parseDate(opts.to) : Date.now();
-                const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
+                const workers = await client.monitoring.getRuntimeMetrics({
+                    orgId,
+                    envId: env.id,
+                    from,
+                    to,
+                    appName: opts.app,
+                });
+                if (workers.length === 0) return log.warn('No runtime metrics recorded for the specified period');
 
-                const metrics = await client.monitoring.getPerformanceMetrics(orgId, env.id, from, to, opts.app);
-
-                if (metrics.length === 0) {
-                    log.warn('No performance data available for the specified period');
-                    return;
-                }
-
-                log.header(
-                    `Performance — ${env.name} (${new Date(from).toLocaleDateString()} → ${new Date(to).toLocaleDateString()})`,
-                );
-
+                log.header(`Runtime — ${env.name} (${periodLabel(from, to)})`);
                 printTable(
-                    ['Application', 'Requests', 'Avg', 'p50', 'p95', 'p99', 'Min', 'Max'],
-                    metrics.map((m) => [
-                        m.appName,
-                        String(m.requestCount),
-                        formatMs(m.avgResponseTime),
-                        formatMs(m.p50),
-                        formatMs(m.p95),
-                        formatMs(m.p99),
-                        formatMs(m.minResponseTime),
-                        formatMs(m.maxResponseTime),
+                    [
+                        'Application',
+                        'Worker',
+                        'Heap avg / peak',
+                        'Old gen peak / limit',
+                        'Old-gen GCs',
+                        'GC time',
+                        'CPU sys avg / max',
+                        'Free RAM',
+                    ],
+                    workers.map((w) => [
+                        w.appName,
+                        w.workerId,
+                        `${formatBytes(w.heapUsedAvg)} / ${formatBytes(w.heapUsedPeak)}`,
+                        w.oldGenLimit
+                            ? `${formatBytes(w.oldGenUsedPeak)} / ${formatBytes(w.oldGenLimit)} (${formatPercent(w.oldGenPeakRatio, 0)})`
+                            : formatBytes(w.oldGenUsedPeak),
+                        String(w.oldGenGcCount),
+                        formatMs(w.oldGenGcTimeMs),
+                        `${formatPercent(w.systemCpuLoadAvg)} / ${formatPercent(w.systemCpuLoadMax)}`,
+                        `${formatOptionalBytes(w.freePhysicalMemoryAvg)} of ${formatOptionalBytes(w.totalPhysicalMemory)}`,
                     ]),
                 );
             } catch (error) {
-                log.error(`Performance metrics failed: ${errorMessage(error)}`);
+                log.error(`Runtime metrics failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
 
     monitor
         .command('trend')
-        .description('View time-series metrics for an application')
-        .requiredOption('-e, --env <name>', 'Environment name')
-        .requiredOption('-a, --app <name>', 'Application name')
-        .option('-g, --granularity <interval>', 'Time bucket size: 5m, 15m, 30m, 1h, 1d (default: 1h)', '1h')
-        .option('--from <date>', 'Start time (default: 24h ago)')
-        .option('--to <date>', 'End time (default: now)')
-        .action(async (opts) => {
-            try {
-                const granularity = GRANULARITY_MAP[opts.granularity];
-                if (!granularity) {
-                    log.error(`Invalid granularity "${opts.granularity}". Use: 5m, 15m, 30m, 1h, 1d`);
-                    process.exit(1);
-                }
-
-                const client = createClient();
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
-
-                const to = opts.to ? parseDate(opts.to) : Date.now();
-                const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
-
-                const data = await client.monitoring.getTimeSeries(orgId, env.id, from, to, granularity, opts.app);
-
-                if (data.length === 0) {
-                    log.warn('No time-series data available for the specified period');
-                    return;
-                }
-
-                log.header(`Trend — ${opts.app} in ${env.name} (${opts.granularity} buckets)`);
-
-                printTable(
-                    ['Time', 'Requests', 'Avg Response', 'p95'],
-                    data.map((d) => [
-                        formatDate(d.timestamp),
-                        String(d.requestCount),
-                        formatMs(d.avgResponseTime),
-                        formatMs(d.p95),
-                    ]),
-                );
-            } catch (error) {
-                log.error(`Trend metrics failed: ${errorMessage(error)}`);
-                process.exit(1);
-            }
-        });
-
-    monitor
-        .command('workers')
-        .description('View per-worker/replica performance metrics')
+        .description('Bucketed time series for one signal')
+        .requiredOption('-e, --env <name>', 'Environment name or ID')
+        .option('-s, --signal <signal>', `Signal: ${TIME_SERIES_SIGNALS.join(', ')}`, 'traffic')
         .option('-a, --app <name>', 'Filter by application name')
-        .requiredOption('-e, --env <name>', 'Environment name')
+        .option('-g, --granularity <interval>', `Bucket size: ${GRANULARITIES.join(', ')}`, '1h')
         .option('--from <date>', 'Start time (default: 24h ago)')
         .option('--to <date>', 'End time (default: now)')
         .action(async (opts) => {
             try {
+                if (!isGranularity(opts.granularity)) {
+                    throw new Error(`Invalid granularity "${opts.granularity}". Use: ${GRANULARITIES.join(', ')}`);
+                }
+                if (!TIME_SERIES_SIGNALS.includes(opts.signal)) {
+                    throw new Error(`Invalid signal "${opts.signal}". Use: ${TIME_SERIES_SIGNALS.join(', ')}`);
+                }
+                const signal = opts.signal as TimeSeriesSignal;
                 const client = createClient();
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+                const { from, to } = resolveWindow(opts);
 
-                const to = opts.to ? parseDate(opts.to) : Date.now();
-                const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
-
-                const metrics = await client.monitoring.getWorkerMetrics(orgId, env.id, from, to, opts.app);
-
-                if (metrics.length === 0) {
-                    log.warn('No worker metrics available for the specified period');
-                    return;
-                }
-
-                log.header(
-                    `Workers — ${env.name} (${new Date(from).toLocaleDateString()} → ${new Date(to).toLocaleDateString()})`,
+                const points = await client.monitoring.getTimeSeries(
+                    { orgId, envId: env.id, from, to, appName: opts.app },
+                    signal,
+                    opts.granularity,
                 );
+                if (points.length === 0) return log.warn('No data recorded for the specified period');
 
+                const showWorker = points.some((p) => p.workerId !== undefined);
+                log.header(`Trend (${signal}) — ${opts.app ?? 'all apps'} in ${env.name}, ${opts.granularity} buckets`);
                 printTable(
-                    ['Application', 'Worker', 'Requests', 'Avg Response', 'p95', 'Max'],
-                    metrics.map((m) => [
-                        m.appName,
-                        m.workerId,
-                        String(m.requestCount),
-                        formatMs(m.avgResponseTime),
-                        formatMs(m.p95),
-                        formatMs(m.maxResponseTime),
-                    ]),
+                    [
+                        'Time',
+                        'Application',
+                        ...(showWorker ? ['Worker'] : []),
+                        ...SERIES_COLUMNS[signal].map(([label]) => label),
+                    ],
+                    points.map((p) => seriesRow(p, signal, showWorker)),
                 );
             } catch (error) {
-                log.error(`Worker metrics failed: ${errorMessage(error)}`);
+                log.error(`Trend failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
 
     monitor
-        .command('compare')
-        .description('Compare performance across all environments')
-        .option('--from <date>', 'Start time (default: 24h ago)')
-        .option('--to <date>', 'End time (default: now)')
-        .action(async (opts) => {
+        .command('query')
+        .description('Run a raw AMQL query and print the rows as JSON')
+        .argument('<amql>', 'AMQL query string')
+        .option('--limit <n>', `Rows per page (max ${AMQL_MAX_LIMIT})`, '200')
+        .option('--offset <n>', 'Row offset', '0')
+        .action(async (amql, opts) => {
             try {
                 const client = createClient();
-                const orgId = await client.getDefaultOrgId();
-
-                const to = opts.to ? parseDate(opts.to) : Date.now();
-                const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
-
-                const metrics = await client.monitoring.getCrossEnvMetrics(orgId, from, to);
-
-                if (metrics.length === 0) {
-                    log.warn('No cross-environment metrics available');
-                    return;
-                }
-
-                log.header(
-                    `Cross-Environment Comparison (${new Date(from).toLocaleDateString()} → ${new Date(to).toLocaleDateString()})`,
-                );
-
-                printTable(
-                    ['Application', 'Environment', 'Requests', 'Avg Response', 'p95', 'p99'],
-                    metrics.map((m) => [
-                        m.appName,
-                        m.envName,
-                        String(m.requestCount),
-                        formatMs(m.avgResponseTime),
-                        formatMs(m.p95),
-                        formatMs(m.p99),
-                    ]),
-                );
+                const rows = await client.monitoring.search(amql, {
+                    limit: parseInt(opts.limit, 10),
+                    offset: parseInt(opts.offset, 10),
+                });
+                console.log(JSON.stringify(rows, null, 2));
             } catch (error) {
-                log.error(`Cross-env comparison failed: ${errorMessage(error)}`);
+                log.error(errorMessage(error));
                 process.exit(1);
             }
         });
 
     monitor
         .command('download')
-        .description('Export monitoring data to file')
-        .requiredOption('-e, --env <name>', 'Environment name')
+        .description('Export per-app metrics for a period to a file')
+        .requiredOption('-e, --env <name>', 'Environment name or ID')
         .requiredOption('--from <date>', 'Start time')
         .option('--to <date>', 'End time (default: now)')
         .option('-o, --output <path>', 'Output file path')
@@ -287,132 +343,21 @@ export function createMonitorCommand(): Command {
                 const client = createClient();
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
-
-                const to = opts.to ? parseDate(opts.to) : Date.now();
-                const from = parseDate(opts.from);
+                const { from, to } = resolveWindow(opts);
 
                 log.info(`Exporting metrics for ${chalk.bold(env.name)}`);
                 log.kv('Period', `${new Date(from).toISOString()} → ${new Date(to).toISOString()}`);
 
                 const exported = await client.monitoring.exportMetrics(orgId, env.id, env.name, from, to);
-
-                let content: string;
-                let ext: string;
-
-                if (opts.format === 'csv') {
-                    content = metricsToCSV(exported.apps);
-                    ext = 'csv';
-                } else {
-                    content = JSON.stringify(exported, null, 2);
-                    ext = 'json';
-                }
-
+                const ext = opts.format === 'csv' ? 'csv' : 'json';
+                const content = ext === 'csv' ? metricsToCSV(exported.apps) : JSON.stringify(exported, null, 2);
                 const output =
                     opts.output || `metrics-${env.name.toLowerCase()}-${new Date().toISOString().split('T')[0]}.${ext}`;
 
                 fs.writeFileSync(output, content, 'utf-8');
-                log.success(`Exported ${exported.apps.length} apps metrics → ${chalk.bold(output)}`);
+                log.success(`Exported metrics for ${exported.apps.length} apps → ${chalk.bold(output)}`);
             } catch (error) {
                 log.error(`Export failed: ${errorMessage(error)}`);
-                process.exit(1);
-            }
-        });
-
-    monitor
-        .command('memory')
-        .description('View JVM memory usage, GC stats, and thread counts per app')
-        .option('-a, --app <name>', 'Filter by application name')
-        .requiredOption('-e, --env <name>', 'Environment name')
-        .option('--from <date>', 'Start time (default: 24h ago)')
-        .option('--to <date>', 'End time (default: now)')
-        .action(async (opts) => {
-            try {
-                const client = createClient();
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
-
-                const to = opts.to ? parseDate(opts.to) : Date.now();
-                const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
-
-                const metrics = await client.monitoring.getMemoryMetrics(orgId, env.id, from, to, opts.app);
-
-                if (metrics.length === 0) {
-                    log.warn('No memory metrics available for the specified period');
-                    return;
-                }
-
-                log.header(
-                    `Memory — ${env.name} (${new Date(from).toLocaleDateString()} → ${new Date(to).toLocaleDateString()})`,
-                );
-
-                printTable(
-                    ['Application', 'Heap Used', 'Heap Committed', 'Heap Max', 'GC Count', 'GC Time', 'Threads'],
-                    metrics.map((m) => [
-                        m.appName,
-                        formatBytes(m.heapUsed),
-                        formatBytes(m.heapCommitted),
-                        formatBytes(m.heapMax),
-                        String(Math.round(m.gcCount)),
-                        formatMs(m.gcTime),
-                        String(Math.round(m.threadCount)),
-                    ]),
-                );
-            } catch (error) {
-                log.error(`Memory metrics failed: ${errorMessage(error)}`);
-                process.exit(1);
-            }
-        });
-
-    monitor
-        .command('memory-trend')
-        .description('View JVM memory usage over time for an application')
-        .requiredOption('-e, --env <name>', 'Environment name')
-        .requiredOption('-a, --app <name>', 'Application name')
-        .option('-g, --granularity <interval>', 'Time bucket size: 5m, 15m, 30m, 1h, 1d (default: 1h)', '1h')
-        .option('--from <date>', 'Start time (default: 24h ago)')
-        .option('--to <date>', 'End time (default: now)')
-        .action(async (opts) => {
-            try {
-                const granularity = GRANULARITY_MAP[opts.granularity];
-                if (!granularity) {
-                    log.error(`Invalid granularity "${opts.granularity}". Use: 5m, 15m, 30m, 1h, 1d`);
-                    process.exit(1);
-                }
-
-                const client = createClient();
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
-
-                const to = opts.to ? parseDate(opts.to) : Date.now();
-                const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
-
-                const data = await client.monitoring.getMemoryTimeSeries(
-                    orgId,
-                    env.id,
-                    from,
-                    to,
-                    granularity,
-                    opts.app,
-                );
-
-                if (data.length === 0) {
-                    log.warn('No memory time-series data available for the specified period');
-                    return;
-                }
-
-                log.header(`Memory Trend — ${opts.app} in ${env.name} (${opts.granularity} buckets)`);
-
-                printTable(
-                    ['Time', 'Heap Used', 'Heap Committed', 'GC Count'],
-                    data.map((d) => [
-                        formatDate(d.timestamp),
-                        formatBytes(d.heapUsed),
-                        formatBytes(d.heapCommitted),
-                        String(Math.round(d.gcCount)),
-                    ]),
-                );
-            } catch (error) {
-                log.error(`Memory trend failed: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
