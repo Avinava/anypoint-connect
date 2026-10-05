@@ -61,7 +61,7 @@ export {
     type DesignCenterSaveFile,
     type PublishToExchangeOptions,
 } from './api/DesignCenterApi.js';
-export { DesignCenterWorkflow, type DesignCenterFileInput, type SyncPlanEntry } from './api/DesignCenterWorkflow.js';
+export { DesignCenterWorkflow, type DesignCenterFileInput, type SyncPlanEntry } from './workflows/design-center.js';
 export {
     GovernanceApi,
     type GovernanceAssetCoordinates,

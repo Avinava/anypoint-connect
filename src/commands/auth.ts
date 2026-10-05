@@ -8,7 +8,7 @@ import open from 'open';
 import ora from 'ora';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
-import { resolveProfile } from '../utils/config.js';
+import { resolveProfile } from '../config/profiles.js';
 import { createClient } from './shared.js';
 
 export function createAuthCommand(): Command {

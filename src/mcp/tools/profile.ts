@@ -11,7 +11,7 @@ import {
     writeProjectConfig,
     discoverProjectConfig,
     hasSavedConfig,
-} from '../../utils/config.js';
+} from '../../config/profiles.js';
 import { mcpText } from './shared.js';
 
 export function registerProfileTools(server: McpServer) {

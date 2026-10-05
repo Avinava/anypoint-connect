@@ -4,7 +4,7 @@
  */
 
 import type { ErrorWithContext, ErrorGroup } from './types.js';
-import { templatize } from './utils.js';
+import { templatize } from './normalize.js';
 
 export interface ErrorGrouperOptions {
     /** Maximum samples per group (default: 3) */

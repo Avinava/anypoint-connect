@@ -4,7 +4,7 @@
  */
 
 import * as readline from 'node:readline/promises';
-import { getConfig, resolveProfile } from '../utils/config.js';
+import { getConfig, resolveProfile } from '../config/profiles.js';
 import { AnypointClient } from '../client/AnypointClient.js';
 
 /**

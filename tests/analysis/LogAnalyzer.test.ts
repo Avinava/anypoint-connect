@@ -17,7 +17,7 @@ import { groupErrors } from '../../src/analysis/error-grouper.js';
 import { detectPatterns } from '../../src/analysis/pattern-detector.js';
 import { calculateStats } from '../../src/analysis/stats.js';
 import { analyzeLogs } from '../../src/analysis/LogAnalyzer.js';
-import { templatize, isNoise } from '../../src/analysis/utils.js';
+import { templatize, isNoise } from '../../src/analysis/normalize.js';
 import {
     SAMPLE_JSON_LOGGER_INFO,
     SAMPLE_JSON_LOGGER_ERROR,
