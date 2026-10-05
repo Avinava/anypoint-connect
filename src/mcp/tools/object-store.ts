@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText, resolveEnvironment } from './shared.js';
 
 export function registerObjectStoreTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -22,18 +22,10 @@ export function registerObjectStoreTools(server: McpServer, client: AnypointClie
         },
         async ({ environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const stores = await client.objectStore.listStores(orgId, env.id);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ environment: env.name, stores }, null, 2),
-                        },
-                    ],
-                };
+                return mcpText({ environment: env.name, stores });
             } catch (error) {
                 return mcpError(error);
             }
@@ -56,21 +48,13 @@ export function registerObjectStoreTools(server: McpServer, client: AnypointClie
         },
         async ({ environment, storeId, startKey, limit }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const result = await client.objectStore.listKeys(orgId, env.id, storeId, {
                     startKey,
                     limit,
                 });
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ environment: env.name, storeId, ...result }, null, 2),
-                        },
-                    ],
-                };
+                return mcpText({ environment: env.name, storeId, ...result });
             } catch (error) {
                 return mcpError(error);
             }
@@ -92,8 +76,7 @@ export function registerObjectStoreTools(server: McpServer, client: AnypointClie
         },
         async ({ environment, storeId, key }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const entry = await client.objectStore.getValue(orgId, env.id, storeId, key);
 
                 // Try to pretty-print JSON values
@@ -105,24 +88,13 @@ export function registerObjectStoreTools(server: McpServer, client: AnypointClie
                     // Not JSON, keep raw
                 }
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    environment: env.name,
-                                    storeId,
-                                    key: entry.key,
-                                    contentType: entry.contentType,
-                                    value: displayValue,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    environment: env.name,
+                    storeId,
+                    key: entry.key,
+                    contentType: entry.contentType,
+                    value: displayValue,
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -151,18 +123,12 @@ export function registerObjectStoreTools(server: McpServer, client: AnypointClie
         },
         async ({ environment, storeId, key, value, contentType }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 await client.objectStore.putValue(orgId, env.id, storeId, key, value, contentType);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `✅ Wrote key "${key}" to store "${storeId}" in ${env.name}. Use get_store_value to verify.`,
-                        },
-                    ],
-                };
+                return mcpText(
+                    `✅ Wrote key "${key}" to store "${storeId}" in ${env.name}. Use get_store_value to verify.`,
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -184,18 +150,10 @@ export function registerObjectStoreTools(server: McpServer, client: AnypointClie
         },
         async ({ environment, storeId, key }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 await client.objectStore.deleteKey(orgId, env.id, storeId, key);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `✅ Deleted key "${key}" from store "${storeId}" in ${env.name}.`,
-                        },
-                    ],
-                };
+                return mcpText(`✅ Deleted key "${key}" from store "${storeId}" in ${env.name}.`);
             } catch (error) {
                 return mcpError(error);
             }

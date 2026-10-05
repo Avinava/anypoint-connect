@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError, mcpText, dryRunPreview } from './shared.js';
+import { mcpError, mcpText, dryRunPreview, resolveEnvironment } from './shared.js';
 import { mergeApplicationProperties } from '../../safety/deployment.js';
 import { buildApplicationDeletionPreview, deploymentIdMatches } from '../../safety/deletion.js';
 
@@ -25,8 +25,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         },
         async ({ appName, environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
 
                 if (!deployment) {
@@ -37,14 +36,9 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                 }
 
                 await client.cloudHub2.restartApp(orgId, env.id, deployment.id);
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `✅ Rolling restart initiated for "${appName}" in ${env.name}. Use get_app_status to monitor progress.`,
-                        },
-                    ],
-                };
+                return mcpText(
+                    `✅ Rolling restart initiated for "${appName}" in ${env.name}. Use get_app_status to monitor progress.`,
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -66,8 +60,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         },
         async ({ appName, environment, replicas }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
 
                 if (!deployment) {
@@ -78,14 +71,9 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                 }
 
                 await client.cloudHub2.scaleApp(orgId, env.id, deployment.id, replicas);
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `✅ Scaled "${appName}" to ${replicas} replica(s) in ${env.name}. Use get_app_status to monitor.`,
-                        },
-                    ],
-                };
+                return mcpText(
+                    `✅ Scaled "${appName}" to ${replicas} replica(s) in ${env.name}. Use get_app_status to monitor.`,
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -108,8 +96,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         },
         async ({ appName, environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
 
                 if (!deployment) {
@@ -121,14 +108,9 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
 
                 await client.cloudHub2.setDesiredState(orgId, env.id, deployment.id, 'STOPPED');
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `✅ Stop initiated for "${appName}" in ${env.name}. Replicas will be terminated. Use get_app_status to monitor, and start_app to bring it back online.`,
-                        },
-                    ],
-                };
+                return mcpText(
+                    `✅ Stop initiated for "${appName}" in ${env.name}. Replicas will be terminated. Use get_app_status to monitor, and start_app to bring it back online.`,
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -149,8 +131,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         },
         async ({ appName, environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
 
                 if (!deployment) {
@@ -162,14 +143,9 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
 
                 await client.cloudHub2.setDesiredState(orgId, env.id, deployment.id, 'STARTED');
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `✅ Start initiated for "${appName}" in ${env.name}. Use get_app_status to monitor replica startup.`,
-                        },
-                    ],
-                };
+                return mcpText(
+                    `✅ Start initiated for "${appName}" in ${env.name}. Use get_app_status to monitor replica startup.`,
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -210,8 +186,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                     };
                 }
 
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const detail = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!detail) {
@@ -224,23 +199,12 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                 const merged = mergeApplicationProperties(detail, properties, secureProperties);
                 await client.cloudHub2.updateApplicationConfiguration(orgId, env.id, detail.id, merged);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    message: `✅ Updated settings for "${appName}" in ${env.name}. Rolling restart triggered.`,
-                                    propertiesUpdated: properties ? Object.keys(properties) : [],
-                                    securePropertiesUpdated: secureProperties ? Object.keys(secureProperties) : [],
-                                    tip: 'Use get_app_status to monitor the restart, and get_app_settings to verify.',
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    message: `✅ Updated settings for "${appName}" in ${env.name}. Rolling restart triggered.`,
+                    propertiesUpdated: properties ? Object.keys(properties) : [],
+                    securePropertiesUpdated: secureProperties ? Object.keys(secureProperties) : [],
+                    tip: 'Use get_app_status to monitor the restart, and get_app_settings to verify.',
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -272,8 +236,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         },
         async ({ appName, environment, confirm, expectedDeploymentId, confirmProduction }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const deployment = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!deployment) {

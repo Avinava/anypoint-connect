@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError, mcpText, dryRunPreview } from './shared.js';
+import { mcpError, mcpText, dryRunPreview, resolveEnvironment } from './shared.js';
 import { buildCreatePayload, mergeForArtifactUpdate, resolveRollbackTarget } from '../../safety/deployment.js';
 import { errorMessage } from '../../utils/errors.js';
 import { readFile } from 'node:fs/promises';
@@ -96,8 +96,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     return mcpText(`❌ ${check.error}`);
                 }
 
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 const resolvedGroupId = groupId || orgId;
@@ -294,8 +293,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
             confirm,
         }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 // ── Update path: existing app → SAFE artifact-ref-only redeploy ──
@@ -434,8 +432,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
         },
         async ({ appName, environment, version, artifactId, groupId, packaging, wait, confirm }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!existing) {
@@ -516,8 +513,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
         },
         async ({ appName, environment, toVersion, wait, confirm }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!existing) {
