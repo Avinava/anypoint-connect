@@ -31,7 +31,7 @@ export function registerPrompts(server: McpServer) {
 
 1. **Source status**: Use get_app_status to check "${appName}" in ${sourceEnv} — confirm it's APPLIED/RUNNING and healthy.
 2. **Target status**: Use get_app_status to check if "${appName}" exists in ${targetEnv} — note the current version and replica count.
-3. **Version comparison**: Use compare_environments to compare ${sourceEnv} vs ${targetEnv} and highlight the version difference for this app.
+3. **Version comparison**: Use compare_app_deployments to compare ${sourceEnv} vs ${targetEnv} and highlight the version difference for this app.
 4. **Error check**: Use get_logs to fetch the last 50 ERROR-level logs from ${sourceEnv} — flag any recent errors that might indicate instability.
 5. **Metrics baseline**: Use get_metrics for "${appName}" in ${sourceEnv} with the last 24 hours — report failure rate (failedCount / requestCount), p95 latency, and outbound failures.
 
@@ -182,7 +182,7 @@ Format the report with clear sections and emojis for quick scanning:
                         type: 'text' as const,
                         text: `Improve the API specification for the Design Center project "${project}". Follow this workflow:
 
-1. **Discover**: Use get_design_center_files to list all files in the "${project}" project. Identify the main spec file (usually the .raml or .yaml file matching the project name).
+1. **Discover**: Use list_design_center_files to list all files in the "${project}" project. Identify the main spec file (usually the .raml or .yaml file matching the project name).
 
 2. **Read**: Use read_design_center_file to read the main spec file. Also read any referenced data type files, examples, or fragments.
 

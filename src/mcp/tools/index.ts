@@ -3,13 +3,16 @@
  */
 
 export { registerIdentityTools } from './identity.js';
-export { registerApplicationTools } from './applications.js';
+export { registerAppReadTools } from './apps-read.js';
+export { registerAppLifecycleTools } from './apps-lifecycle.js';
+export { registerAppDeployTools } from './apps-deploy.js';
 export { registerLogTools } from './logs.js';
 export { registerAnalysisTools } from './analysis.js';
 export { registerMonitoringTools } from './monitoring.js';
 export { registerExchangeTools } from './exchange.js';
 export { registerApiManagerTools } from './api-manager.js';
 export { registerDesignCenterTools } from './design-center.js';
+export { registerGovernanceTools } from './governance.js';
 export { registerProfileTools } from './profile.js';
 export { registerAuditTools } from './audit.js';
 export { registerAnypointMQTools } from './anypoint-mq.js';

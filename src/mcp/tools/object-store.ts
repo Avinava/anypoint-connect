@@ -1,6 +1,6 @@
 /**
  * MCP Tool Registrar — Object Store v2 tools
- * list_stores, get_store_keys, get_store_value
+ * list_stores, list_store_keys, get_store_value
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -41,7 +41,7 @@ export function registerObjectStoreTools(server: McpServer, client: AnypointClie
     );
 
     server.registerTool(
-        'get_store_keys',
+        'list_store_keys',
         {
             title: 'List Object Store Keys',
             description:
