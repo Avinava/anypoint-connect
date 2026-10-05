@@ -196,11 +196,11 @@ Format the report with clear sections and emojis for quick scanning:
 
 4. **Improve**: Rewrite the spec with:
    - Multi-line descriptions using YAML block scalar (|) that explain purpose, return data, and common use cases
-   - Specific parameter descriptions mentioning format (e.g., "18-character Salesforce record ID")
+   - Specific parameter descriptions mentioning format (e.g., "ISO 8601 date-time in UTC")
    - Consistent naming and formatting
    - Keep all !include references, examples, and types unchanged
 
-5. **Push**: Use update_design_center_file to save the improved spec back to Design Center. Use a commit message like "Improved API descriptions and documentation".
+5. **Push**: Use preview_sync_design_center_files with the improved spec and a commit message like "Improved API descriptions and documentation". Show the preview to the user, and only after they approve call sync_design_center_files with the returned previewToken.
 
 6. **Report**: Summarize what was changed — how many descriptions were improved, what patterns were fixed, and any remaining gaps.`,
                     },

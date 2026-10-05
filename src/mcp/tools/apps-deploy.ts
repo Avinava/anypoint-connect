@@ -9,9 +9,7 @@ import type { AnypointClient } from '../../client/AnypointClient.js';
 import { mcpError, mcpText, dryRunPreview, resolveEnvironment } from './shared.js';
 import { buildCreatePayload, mergeForArtifactUpdate, resolveRollbackTarget } from '../../safety/deployment.js';
 import { errorMessage } from '../../utils/errors.js';
-import { readFile } from 'node:fs/promises';
-import { inspectArtifact, verifyArtifactDigest } from '../../safety/artifact.js';
-import { validateJarFile } from '../../safety/guards.js';
+import { describeJarDeployment, executeJarDeployment, planJarDeployment } from '../../workflows/jar-deployment.js';
 
 export function registerAppDeployTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -91,118 +89,37 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
             confirm,
         }) => {
             try {
-                const check = validateJarFile(jarPath);
-                if (!check.valid) {
-                    return mcpText(`❌ ${check.error}`);
-                }
-
                 const { orgId, env } = await resolveEnvironment(client, environment);
-                const existing = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
-
-                const resolvedGroupId = groupId || orgId;
-                const bytes = await readFile(jarPath);
-                const artifact = inspectArtifact(bytes, undefined, Boolean(assetId && assetVersion));
-                verifyArtifactDigest(bytes, expectedSha256);
-                const resolvedAssetId = assetId || artifact.coordinates?.artifactId;
-                const resolvedVersion = assetVersion || artifact.coordinates?.version;
-                if (!resolvedAssetId || !resolvedVersion) {
-                    throw new Error('Embedded Maven identity is unavailable; supply explicit assetId and assetVersion');
-                }
+                const plan = await planJarDeployment(client, {
+                    jarPath,
+                    appName,
+                    orgId,
+                    env,
+                    assetId,
+                    assetVersion,
+                    groupId,
+                    expectedSha256,
+                    runtime,
+                    replicas,
+                    region,
+                    vcores,
+                    properties,
+                    secureProperties,
+                    jvmArgs,
+                });
 
                 // An update must not restate infra — reject create-only settings for an existing app.
-                if (existing) {
-                    const rejected = [
-                        runtime && 'runtime',
-                        region && 'region',
-                        vcores && 'vcores',
-                        replicas && 'replicas',
-                        jvmArgs && 'jvmArgs',
-                        properties && 'properties',
-                        secureProperties && 'secureProperties',
-                    ].filter(Boolean);
-                    if (rejected.length) {
-                        return mcpText(
-                            `❌ "${appName}" already exists in ${env.name}; deploy_jar updates only the artifact ref and cannot change infrastructure. ` +
-                                `Remove these settings (${rejected.join(', ')}), or use update_app_settings / a fresh deploy to change them.`,
-                        );
-                    }
-                }
-
-                const ref = {
-                    groupId: resolvedGroupId,
-                    artifactId: resolvedAssetId,
-                    version: resolvedVersion,
-                    packaging: 'jar',
-                };
-                const action = existing ? 'publish + update artifact ref' : 'publish + create deployment';
-
-                if (!confirm) {
-                    return dryRunPreview({
-                        action,
-                        artifact,
-                        expectedSha256: artifact.sha256,
-                        app: appName,
-                        environment: env.name,
-                        publish: {
-                            groupId: resolvedGroupId,
-                            assetId: resolvedAssetId,
-                            version: resolvedVersion,
-                            classifier: 'mule-application',
-                        },
-                        deploy: existing
-                            ? {
-                                  mode: 'update',
-                                  from: existing.application?.ref,
-                                  to: ref,
-                                  preserved: 'runtime, target/space, replicas, resources, settings',
-                              }
-                            : {
-                                  mode: 'create',
-                                  ref,
-                                  runtime: runtime || '4.8.0',
-                                  region: region || 'cloudhub-us-east-2',
-                                  vcores: vcores || '0.1',
-                                  replicas: replicas || 1,
-                              },
-                    });
-                }
-
-                // 1) Publish the jar to Exchange.
-                const published = await client.exchange.publishAppAsset(
-                    orgId,
-                    resolvedGroupId,
-                    resolvedAssetId,
-                    resolvedVersion,
-                    jarPath,
-                    artifact.sha256,
-                );
-
-                // 2) Deploy: safe ref-only update for an existing app, full create otherwise.
-                let deployment;
-                if (existing) {
-                    const merged = mergeForArtifactUpdate(existing, ref);
-                    deployment = await client.cloudHub2.updateArtifactRef(
-                        orgId,
-                        env.id,
-                        existing.id,
-                        merged.application.ref,
+                if (plan.rejectedSettings.length > 0) {
+                    return mcpText(
+                        `❌ "${appName}" already exists in ${env.name}; deploy_jar updates only the artifact ref and cannot change infrastructure. ` +
+                            `Remove these settings (${plan.rejectedSettings.join(', ')}), or use update_app_settings / a fresh deploy to change them.`,
                     );
-                } else {
-                    const payload = buildCreatePayload({
-                        appName,
-                        groupId: resolvedGroupId,
-                        artifactId: resolvedAssetId,
-                        version: resolvedVersion,
-                        runtime,
-                        replicas,
-                        region,
-                        vcores,
-                        properties,
-                        secureProperties,
-                        jvmArgs,
-                    });
-                    deployment = await client.cloudHub2.createDeployment(orgId, env.id, payload);
                 }
+
+                if (!confirm) return dryRunPreview(describeJarDeployment(plan));
+
+                const { published, deployment: applied } = await executeJarDeployment(client, plan);
+                let deployment = applied;
 
                 let waitResult: string | undefined;
                 if (wait) {
@@ -215,15 +132,11 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 }
 
                 return mcpText({
-                    message: `✅ Deployed "${appName}" to ${env.name} (${existing ? 'updated' : 'created'})`,
-                    published: {
-                        groupId: published.groupId,
-                        assetId: published.assetId,
-                        version: published.version,
-                    },
+                    message: `✅ Deployed "${appName}" to ${env.name} (${plan.existing ? 'updated' : 'created'})`,
+                    published,
                     deploymentId: deployment.id,
                     status: deployment.status,
-                    ...(existing ? { previousVersion: existing.application?.ref?.version } : {}),
+                    ...(plan.existing ? { previousVersion: plan.existing.application?.ref?.version } : {}),
                     ...(wait ? { waitResult } : { tip: 'Use get_app_status to monitor progress.' }),
                 });
             } catch (error) {
