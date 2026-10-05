@@ -8,6 +8,18 @@ import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { printTable } from '../utils/formatter.js';
 import { createClient } from './shared.js';
+import type { AnypointClient } from '../client/AnypointClient.js';
+import type { Environment } from '../api/AccessManagementApi.js';
+
+/** Accept a numeric API instance ID or an Exchange asset name. */
+async function resolveApiId(client: AnypointClient, orgId: string, env: Environment, apiName: string): Promise<number> {
+    const numId = Number(apiName);
+    if (Number.isInteger(numId)) return numId;
+    const found = await client.apiManager.findByName(orgId, env.id, apiName);
+    if (!found) throw new Error(`API "${apiName}" not found in ${env.name}`);
+    log.dim(`  Resolved: ${found.asset.exchangeAssetName} (ID: ${found.instance.id})`);
+    return found.instance.id;
+}
 
 export function createApiCommand(): Command {
     const api = new Command('api').description('Manage API instances, policies, and SLA tiers');
@@ -61,20 +73,7 @@ export function createApiCommand(): Command {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
 
-                // Try as numeric ID first, then search by name
-                let apiId: number;
-                const numId = parseInt(apiName);
-                if (!isNaN(numId)) {
-                    apiId = numId;
-                } else {
-                    const found = await client.apiManager.findByName(orgId, env.id, apiName);
-                    if (!found) {
-                        log.error(`API "${apiName}" not found in ${env.name}`);
-                        process.exit(1);
-                    }
-                    apiId = found.instance.id;
-                    log.dim(`  Resolved: ${found.asset.exchangeAssetName} (ID: ${apiId})`);
-                }
+                const apiId = await resolveApiId(client, orgId, env, apiName);
 
                 const policies = await client.apiManager.getPolicies(orgId, env.id, apiId);
 
@@ -112,18 +111,7 @@ export function createApiCommand(): Command {
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
 
-                let apiId: number;
-                const numId = parseInt(apiName);
-                if (!isNaN(numId)) {
-                    apiId = numId;
-                } else {
-                    const found = await client.apiManager.findByName(orgId, env.id, apiName);
-                    if (!found) {
-                        log.error(`API "${apiName}" not found in ${env.name}`);
-                        process.exit(1);
-                    }
-                    apiId = found.instance.id;
-                }
+                const apiId = await resolveApiId(client, orgId, env, apiName);
 
                 const tiers = await client.apiManager.getSlaTiers(orgId, env.id, apiId);
 
@@ -146,6 +134,30 @@ export function createApiCommand(): Command {
                 );
             } catch (error) {
                 log.error(`Failed: ${errorMessage(error)}`);
+                process.exit(1);
+            }
+        });
+
+    api.command('alerts')
+        .description('List alerts configured for an API')
+        .argument('<apiName>', 'API name or ID')
+        .requiredOption('-e, --env <name>', 'Environment name or ID')
+        .action(async (apiName: string, opts) => {
+            try {
+                const client = createClient();
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+                const apiId = await resolveApiId(client, orgId, env, apiName);
+
+                const alerts = await client.apiManager.getAlerts(orgId, env.id, apiId);
+                if (alerts.length === 0) {
+                    log.info('No alerts configured');
+                    return;
+                }
+                log.header(`Alerts (${alerts.length})`);
+                console.log(JSON.stringify(alerts, null, 2));
+            } catch (error) {
+                log.error(`Failed to list alerts: ${errorMessage(error)}`);
                 process.exit(1);
             }
         });
