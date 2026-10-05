@@ -102,6 +102,17 @@ export function parseRawLogs(rawText: string): EnrichedLogEntry[] {
     return entries;
 }
 
+/** Logger payloads name the stack trace field differently (stackTrace, stacktrace, stack_trace, …). */
+const STACK_TRACE_KEY = /^stack_?trace/i;
+
+function findStackTrace(payload: unknown): string | undefined {
+    if (!payload || typeof payload !== 'object') return undefined;
+    for (const [key, value] of Object.entries(payload)) {
+        if (STACK_TRACE_KEY.test(key) && typeof value === 'string' && value.trim()) return value;
+    }
+    return undefined;
+}
+
 /**
  * Parse accumulated JSON lines and enrich the log entry with structured fields.
  */
@@ -118,9 +129,8 @@ function finalizeJsonEntry(entry: EnrichedLogEntry, jsonLines: string[]): void {
         if (parsed.message && (!entry.message || entry.message.trim() === '')) {
             entry.message = parsed.message;
         }
-        if (parsed.Stacktrace__c || parsed.content?.Stacktrace__c) {
-            entry.stackTrace = parsed.Stacktrace__c || parsed.content?.Stacktrace__c;
-        }
+        const stackTrace = findStackTrace(parsed) ?? findStackTrace(parsed.content);
+        if (stackTrace) entry.stackTrace = stackTrace;
     } catch {
         entry.message = (entry.message || '') + '\n' + jsonText;
     }
