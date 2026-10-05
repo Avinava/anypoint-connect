@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import { errorMessage } from '../../utils/errors.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText } from './shared.js';
 
 export function registerIdentityTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -20,24 +20,13 @@ export function registerIdentityTools(server: McpServer, client: AnypointClient)
         async () => {
             try {
                 const me = await client.whoami();
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    user: `${me.firstName} ${me.lastName}`,
-                                    username: me.username,
-                                    email: me.email,
-                                    organization: me.organization.name,
-                                    orgId: me.organization.id,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    user: `${me.firstName} ${me.lastName}`,
+                    username: me.username,
+                    email: me.email,
+                    organization: me.organization.name,
+                    orgId: me.organization.id,
+                });
             } catch (error) {
                 return {
                     content: [
@@ -64,23 +53,14 @@ export function registerIdentityTools(server: McpServer, client: AnypointClient)
             try {
                 const orgId = await client.getDefaultOrgId();
                 const envs = await client.accessManagement.getEnvironments(orgId);
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                envs.map((e) => ({
-                                    id: e.id,
-                                    name: e.name,
-                                    type: e.type,
-                                    isProduction: e.isProduction,
-                                })),
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText(
+                    envs.map((e) => ({
+                        id: e.id,
+                        name: e.name,
+                        type: e.type,
+                        isProduction: e.isProduction,
+                    })),
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -137,14 +117,7 @@ export function registerIdentityTools(server: McpServer, client: AnypointClient)
                     visualization: e.appViz,
                 };
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(summary, null, 2),
-                        },
-                    ],
-                };
+                return mcpText(summary);
             } catch (error) {
                 return mcpError(error);
             }

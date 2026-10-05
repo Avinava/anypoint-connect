@@ -7,7 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import type { LogEntry } from '../../api/LogsApi.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText, resolveEnvironment, timeWindow } from './shared.js';
 
 export function registerLogTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -40,8 +40,7 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
         },
         async ({ appName, environment, lines, level, search }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
 
                 const entries = await client.logs.getLogs(orgId, env.id, appName, {
                     limit: lines || 100,
@@ -55,14 +54,7 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
                     message: e.message,
                 }));
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ total: entries.length, entries: formatted }, null, 2),
-                        },
-                    ],
-                };
+                return mcpText({ total: entries.length, entries: formatted });
             } catch (error) {
                 return mcpError(error);
             }
@@ -89,11 +81,9 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
         },
         async ({ appName, environment, hoursBack, level }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
 
-                const to = Date.now();
-                const from = to - hoursBack * 60 * 60 * 1000;
+                const { from, to } = timeWindow(hoursBack);
 
                 const entries = await client.logs.getLogsForPeriod(orgId, env.id, appName, from, to, level);
 
@@ -104,14 +94,7 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
                     })
                     .join('\n');
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: text || 'No log entries found for the specified period.',
-                        },
-                    ],
-                };
+                return mcpText(text || 'No log entries found for the specified period.');
             } catch (error) {
                 return mcpError(error);
             }

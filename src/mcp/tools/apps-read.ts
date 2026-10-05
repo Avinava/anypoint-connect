@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError, mcpText } from './shared.js';
+import { mcpError, mcpText, resolveEnvironment } from './shared.js';
 
 export function registerAppReadTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -24,30 +24,20 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
         },
         async ({ environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const deployments = await client.cloudHub2.getDetailedDeployments(orgId, env.id);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                deployments.map((d) => ({
-                                    name: d.name,
-                                    status: d.status,
-                                    version: d.application?.ref?.version,
-                                    runtime: d.target?.deploymentSettings?.runtime?.version,
-                                    vCores: d.application?.vCores,
-                                    replicas: d.target?.replicas,
-                                    id: d.id,
-                                })),
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText(
+                    deployments.map((d) => ({
+                        name: d.name,
+                        status: d.status,
+                        version: d.application?.ref?.version,
+                        runtime: d.target?.deploymentSettings?.runtime?.version,
+                        vCores: d.application?.vCores,
+                        replicas: d.target?.replicas,
+                        id: d.id,
+                    })),
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -68,53 +58,39 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
         },
         async ({ appName, environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const deployment = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!deployment) {
-                    return {
-                        content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
-                    };
+                    return mcpText(`Application "${appName}" not found in ${env.name}`);
                 }
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    name: deployment.name,
-                                    status: deployment.status,
-                                    version: deployment.application?.ref?.version,
-                                    groupId: deployment.application?.ref?.groupId,
-                                    artifactId: deployment.application?.ref?.artifactId,
-                                    runtime: deployment.target?.deploymentSettings?.runtime?.version,
-                                    resources: {
-                                        cpu: deployment.target?.deploymentSettings?.resources?.cpu,
-                                        memory: deployment.target?.deploymentSettings?.resources?.memory,
-                                        vCores: deployment.application?.vCores,
-                                    },
-                                    autoscaling: deployment.target?.deploymentSettings?.autoscaling,
-                                    jvm: deployment.target?.deploymentSettings?.jvm,
-                                    clustered: deployment.target?.deploymentSettings?.clustered,
-                                    updateStrategy: deployment.target?.deploymentSettings?.updateStrategy,
-                                    replicas: deployment.replicas?.map((r) => ({
-                                        id: r.id,
-                                        state: r.state,
-                                        location: r.deploymentLocation,
-                                    })),
-                                    publicUrl: deployment.target?.deploymentSettings?.http?.inbound?.publicUrl,
-                                    updatedAt: deployment.lastModifiedDate
-                                        ? new Date(deployment.lastModifiedDate).toISOString()
-                                        : undefined,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    name: deployment.name,
+                    status: deployment.status,
+                    version: deployment.application?.ref?.version,
+                    groupId: deployment.application?.ref?.groupId,
+                    artifactId: deployment.application?.ref?.artifactId,
+                    runtime: deployment.target?.deploymentSettings?.runtime?.version,
+                    resources: {
+                        cpu: deployment.target?.deploymentSettings?.resources?.cpu,
+                        memory: deployment.target?.deploymentSettings?.resources?.memory,
+                        vCores: deployment.application?.vCores,
+                    },
+                    autoscaling: deployment.target?.deploymentSettings?.autoscaling,
+                    jvm: deployment.target?.deploymentSettings?.jvm,
+                    clustered: deployment.target?.deploymentSettings?.clustered,
+                    updateStrategy: deployment.target?.deploymentSettings?.updateStrategy,
+                    replicas: deployment.replicas?.map((r) => ({
+                        id: r.id,
+                        state: r.state,
+                        location: r.deploymentLocation,
+                    })),
+                    publicUrl: deployment.target?.deploymentSettings?.http?.inbound?.publicUrl,
+                    updatedAt: deployment.lastModifiedDate
+                        ? new Date(deployment.lastModifiedDate).toISOString()
+                        : undefined,
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -135,8 +111,7 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
         },
         async ({ appName, environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const d = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!d) {
@@ -198,8 +173,7 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
         },
         async ({ environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const deployments = await client.cloudHub2.getDetailedDeployments(orgId, env.id);
 
                 const resources = deployments.map((d) => ({
@@ -215,21 +189,10 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
                     updateStrategy: d.target?.deploymentSettings?.updateStrategy,
                 }));
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    environment: env.name,
-                                    apps: resources,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    environment: env.name,
+                    apps: resources,
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -250,14 +213,11 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
         },
         async ({ appName, environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const detail = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!detail) {
-                    return {
-                        content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
-                    };
+                    return mcpText(`Application "${appName}" not found in ${env.name}`);
                 }
 
                 const config = (detail.application?.configuration ?? {}) as Record<string, unknown>;
@@ -268,24 +228,13 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
                 const secureProperties = propertiesService?.secureProperties as Record<string, string> | undefined;
                 const securePropertyKeys = secureProperties ? Object.keys(secureProperties) : [];
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    appName: detail.name,
-                                    environment: env.name,
-                                    properties,
-                                    securePropertyKeys,
-                                    rawConfiguration: config,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    appName: detail.name,
+                    environment: env.name,
+                    properties,
+                    securePropertyKeys,
+                    rawConfiguration: config,
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -345,14 +294,7 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
                         };
                     });
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ comparison }, null, 2),
-                        },
-                    ],
-                };
+                return mcpText({ comparison });
             } catch (error) {
                 return mcpError(error);
             }

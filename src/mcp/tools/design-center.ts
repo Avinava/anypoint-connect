@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText } from './shared.js';
 
 export function registerDesignCenterTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -22,23 +22,14 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                 const orgId = await client.getDefaultOrgId();
                 const projects = await client.designCenter.getProjects(orgId);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                projects.map((p) => ({
-                                    name: p.name,
-                                    id: p.id,
-                                    type: p.type,
-                                    createdDate: p.createdDate,
-                                })),
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText(
+                    projects.map((p) => ({
+                        name: p.name,
+                        id: p.id,
+                        type: p.type,
+                        createdDate: p.createdDate,
+                    })),
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -58,9 +49,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                 const orgId = await client.getDefaultOrgId();
                 const resolved = await client.designCenter.findByNameOrThrow(orgId, project);
                 const branches = await client.designCenter.getBranches(orgId, resolved.id);
-                return {
-                    content: [{ type: 'text', text: JSON.stringify({ project: resolved.name, branches }, null, 2) }],
-                };
+                return mcpText({ project: resolved.name, branches });
             } catch (error) {
                 return mcpError(error);
             }
@@ -86,14 +75,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
 
                 const files = await client.designCenter.getFiles(orgId, proj.id, branch || 'master');
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ project: proj.name, branch: branch || 'master', files }, null, 2),
-                        },
-                    ],
-                };
+                return mcpText({ project: proj.name, branch: branch || 'master', files });
             } catch (error) {
                 return mcpError(error);
             }
@@ -135,14 +117,9 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                     branch || 'master',
                 );
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `File: ${resolvedPath}\nProject: ${proj.name}\nBranch: ${branch || 'master'}\n\n${content}`,
-                        },
-                    ],
-                };
+                return mcpText(
+                    `File: ${resolvedPath}\nProject: ${proj.name}\nBranch: ${branch || 'master'}\n\n${content}`,
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -165,7 +142,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
             try {
                 const orgId = await client.getDefaultOrgId();
                 const preview = await client.designCenterWorkflow.previewProjectCreate(orgId, name, classifier);
-                return { content: [{ type: 'text', text: JSON.stringify(preview, null, 2) }] };
+                return mcpText(preview);
             } catch (error) {
                 return mcpError(error);
             }
@@ -186,7 +163,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
         async ({ previewToken }) => {
             try {
                 const project = await client.designCenterWorkflow.createProject(previewToken);
-                return { content: [{ type: 'text', text: JSON.stringify(project, null, 2) }] };
+                return mcpText(project);
             } catch (error) {
                 return mcpError(error);
             }
@@ -219,7 +196,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                     branch || 'master',
                     commitMessage,
                 );
-                return { content: [{ type: 'text', text: JSON.stringify(preview, null, 2) }] };
+                return mcpText(preview);
             } catch (error) {
                 return mcpError(error);
             }
@@ -238,7 +215,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
         async ({ previewToken }) => {
             try {
                 const result = await client.designCenterWorkflow.sync(previewToken);
-                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+                return mcpText(result);
             } catch (error) {
                 return mcpError(error);
             }
@@ -283,14 +260,9 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                 );
 
                 const lines = content.split('\n').length;
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `✅ Updated "${resolvedPath}" in ${proj.name} [${branch || 'master'}] (${lines} lines, ${content.length} bytes).`,
-                        },
-                    ],
-                };
+                return mcpText(
+                    `✅ Updated "${resolvedPath}" in ${proj.name} [${branch || 'master'}] (${lines} lines, ${content.length} bytes).`,
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -325,7 +297,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
                     options,
                     branch || 'master',
                 );
-                return { content: [{ type: 'text', text: JSON.stringify(preview, null, 2) }] };
+                return mcpText(preview);
             } catch (error) {
                 return mcpError(error);
             }
@@ -344,7 +316,7 @@ export function registerDesignCenterTools(server: McpServer, client: AnypointCli
         async ({ previewToken }) => {
             try {
                 const result = await client.designCenterWorkflow.publish(previewToken);
-                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+                return mcpText(result);
             } catch (error) {
                 return mcpError(error);
             }

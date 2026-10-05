@@ -8,7 +8,7 @@ import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import { analyzeLogs } from '../../analysis/LogAnalyzer.js';
 import type { ErrorWithContext, EnrichedLogEntry } from '../../analysis/LogAnalyzer.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText, resolveEnvironment } from './shared.js';
 
 /**
  * Format an ErrorWithContext into a readable string for the LLM.
@@ -72,8 +72,7 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
         },
         async ({ appName, environment, hoursBack, limit }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const rawText = await client.logs.getRawText(orgId, env.id, appName);
 
                 const result = analyzeLogs(rawText, {
@@ -82,14 +81,9 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
                 });
 
                 if (result.errorGroups.length === 0) {
-                    return {
-                        content: [
-                            {
-                                type: 'text',
-                                text: `No errors found in ${appName} logs${hoursBack ? ` for the last ${hoursBack} hours` : ''}.`,
-                            },
-                        ],
-                    };
+                    return mcpText(
+                        `No errors found in ${appName} logs${hoursBack ? ` for the last ${hoursBack} hours` : ''}.`,
+                    );
                 }
 
                 const sections: string[] = [];
@@ -116,9 +110,7 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
                     }
                 }
 
-                return {
-                    content: [{ type: 'text', text: sections.join('\n') }],
-                };
+                return mcpText(sections.join('\n'));
             } catch (error) {
                 return mcpError(error);
             }
@@ -143,8 +135,7 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
         },
         async ({ appName, environment, hoursBack, topN }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const rawText = await client.logs.getRawText(orgId, env.id, appName);
 
                 const result = analyzeLogs(rawText, {
@@ -164,9 +155,7 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
                     lines.push(`| ${i + 1} | ${p.level} | ${p.count} | ${p.percentage}% | ${p.template} |`);
                 });
 
-                return {
-                    content: [{ type: 'text', text: lines.join('\n') }],
-                };
+                return mcpText(lines.join('\n'));
             } catch (error) {
                 return mcpError(error);
             }
@@ -190,8 +179,7 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
         },
         async ({ appName, environment, hoursBack }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const rawText = await client.logs.getRawText(orgId, env.id, appName);
 
                 const result = analyzeLogs(rawText, { hoursBack });
@@ -230,9 +218,7 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
                     }
                 }
 
-                return {
-                    content: [{ type: 'text', text: lines.join('\n') }],
-                };
+                return mcpText(lines.join('\n'));
             } catch (error) {
                 return mcpError(error);
             }

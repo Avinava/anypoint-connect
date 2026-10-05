@@ -42,25 +42,16 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                     limit: limit || 20,
                 });
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                assets.map((a) => ({
-                                    name: a.name,
-                                    assetId: a.assetId,
-                                    groupId: a.groupId,
-                                    type: a.type,
-                                    version: a.version,
-                                    description: a.description,
-                                })),
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText(
+                    assets.map((a) => ({
+                        name: a.name,
+                        assetId: a.assetId,
+                        groupId: a.groupId,
+                        type: a.type,
+                        version: a.version,
+                        description: a.description,
+                    })),
+                );
             } catch (error) {
                 return mcpError(error);
             }
@@ -89,39 +80,26 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
             try {
                 const detail = await client.exchange.getAsset(groupId, assetId, version);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    name: detail.name,
-                                    groupId: detail.groupId,
-                                    assetId: detail.assetId,
-                                    version: detail.version,
-                                    type: detail.type,
-                                    description: detail.description,
-                                    status: detail.status,
-                                    contact: detail.contactName
-                                        ? { name: detail.contactName, email: detail.contactEmail }
-                                        : null,
-                                    versions: detail.versions,
-                                    dependencies: detail.dependencies,
-                                    instances: detail.instances,
-                                    files: detail.files?.map((f) => ({
-                                        classifier: f.classifier,
-                                        packaging: f.packaging,
-                                        mainFile: f.mainFile,
-                                    })),
-                                    labels: detail.labels,
-                                    categories: detail.categories,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    name: detail.name,
+                    groupId: detail.groupId,
+                    assetId: detail.assetId,
+                    version: detail.version,
+                    type: detail.type,
+                    description: detail.description,
+                    status: detail.status,
+                    contact: detail.contactName ? { name: detail.contactName, email: detail.contactEmail } : null,
+                    versions: detail.versions,
+                    dependencies: detail.dependencies,
+                    instances: detail.instances,
+                    files: detail.files?.map((f) => ({
+                        classifier: f.classifier,
+                        packaging: f.packaging,
+                        mainFile: f.mainFile,
+                    })),
+                    labels: detail.labels,
+                    categories: detail.categories,
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -147,14 +125,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
         async ({ groupId, assetId, version }) => {
             try {
                 const spec = await client.exchange.downloadSpec(groupId, assetId, version);
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: `Classifier: ${spec.classifier}\nFile: ${spec.fileName}\n\n${spec.content}`,
-                        },
-                    ],
-                };
+                return mcpText(`Classifier: ${spec.classifier}\nFile: ${spec.fileName}\n\n${spec.content}`);
             } catch (error) {
                 return mcpError(error);
             }

@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError } from './shared.js';
+import { mcpError, mcpText, resolveEnvironment } from './shared.js';
 
 export function registerApiManagerTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -22,8 +22,7 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
         },
         async ({ environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
                 const assets = await client.apiManager.getApis(orgId, env.id);
 
                 const instances = assets.flatMap((asset) =>
@@ -39,14 +38,7 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
                     })),
                 );
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify({ environment: env.name, instances }, null, 2),
-                        },
-                    ],
-                };
+                return mcpText({ environment: env.name, instances });
             } catch (error) {
                 return mcpError(error);
             }
@@ -69,8 +61,7 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
         },
         async ({ apiName, environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
 
                 let apiId: number;
                 const numId = parseInt(apiName);
@@ -92,35 +83,24 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
                     client.apiManager.getSlaTiers(orgId, env.id, apiId),
                 ]);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    apiId,
-                                    policies: policies.map((p) => ({
-                                        id: p.id,
-                                        template: p.template?.assetId || p.policyTemplateId,
-                                        version: p.template?.assetVersion,
-                                        order: p.order,
-                                        disabled: p.disabled,
-                                        config: p.configurationData,
-                                    })),
-                                    slaTiers: tiers.map((t) => ({
-                                        name: t.name,
-                                        status: t.status,
-                                        autoApprove: t.autoApprove,
-                                        limits: t.limits,
-                                        appCount: t.applicationCount,
-                                    })),
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    apiId,
+                    policies: policies.map((p) => ({
+                        id: p.id,
+                        template: p.template?.assetId || p.policyTemplateId,
+                        version: p.template?.assetVersion,
+                        order: p.order,
+                        disabled: p.disabled,
+                        config: p.configurationData,
+                    })),
+                    slaTiers: tiers.map((t) => ({
+                        name: t.name,
+                        status: t.status,
+                        autoApprove: t.autoApprove,
+                        limits: t.limits,
+                        appCount: t.applicationCount,
+                    })),
+                });
             } catch (error) {
                 return mcpError(error);
             }
@@ -143,8 +123,7 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
         },
         async ({ apiName, environment }) => {
             try {
-                const orgId = await client.getDefaultOrgId();
-                const env = await client.accessManagement.resolveEnvironment(orgId, environment);
+                const { orgId, env } = await resolveEnvironment(client, environment);
 
                 let apiId: number;
                 const numId = parseInt(apiName);
@@ -163,23 +142,12 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
 
                 const alerts = await client.apiManager.getAlerts(orgId, env.id, apiId);
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: JSON.stringify(
-                                {
-                                    apiId,
-                                    environment: env.name,
-                                    alertCount: alerts.length,
-                                    alerts,
-                                },
-                                null,
-                                2,
-                            ),
-                        },
-                    ],
-                };
+                return mcpText({
+                    apiId,
+                    environment: env.name,
+                    alertCount: alerts.length,
+                    alerts,
+                });
             } catch (error) {
                 return mcpError(error);
             }
