@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.16.2 - 2026-10-26
+
+0.16.0 and 0.16.1 were tagged but never published to npm; this is the first 0.16 package. It contains
+everything listed under them.
+
+### Fixed
+
+- The `anc` command is installed again. npm 11 removes a `bin` entry written as `./dist/cli.js` when
+  publishing, so the package would have shipped without the CLI. The release check now rejects such
+  paths.
+
 ## 0.16.1 - 2026-10-26
 
 ### Changed
