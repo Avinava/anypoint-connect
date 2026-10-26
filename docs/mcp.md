@@ -33,7 +33,7 @@ The `mcpServers` form, used by Claude Code, Claude Desktop, Copilot CLI, and Gem
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.1", "mcp"]
     }
   }
 }
@@ -47,7 +47,7 @@ VS Code wraps the same entry in `servers` and wants an explicit transport:
     "anypoint-connect": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.1", "mcp"]
     }
   }
 }
@@ -59,7 +59,7 @@ extension all see it:
 ```toml
 [mcp_servers.anypoint-connect]
 command = "npx"
-args = ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
+args = ["-y", "@sfdxy/anypoint-connect@0.16.1", "mcp"]
 ```
 
 Installed globally, point at the binary instead and skip the download:
