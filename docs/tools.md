@@ -82,8 +82,8 @@ Application logs: search, filters, summaries and file output.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `get_logs` | read | `appName`, `environment`, `lines?`, `level?`, `search?`, `regex?`, `logger?`, `hoursBack?`, `startTime?`, `endTime?` | Fetches the most recent log entries of a Mule application, newest first. |
-| `download_logs` | write · immediate | `appName`, `environment`, `hoursBack?`, `startTime?`, `endTime?`, `level?`, `search?`, `regex?`, `logger?`, `mode?`, `bucket?`, `maxLines?`, `outputFile?`, `overwrite?` | Reads the full application log file for a time window and filters it by level, logger, text or regex. |
+| `get_logs` | read | `appName`, `environment`, `lines?`, `level?`, `search?`, `regex?`, `logger?`, `hoursBack?`, `startTime?`, `endTime?`, `previousSpecs?` | Fetches the most recent log entries of a Mule application, newest first. |
+| `download_logs` | write · immediate | `appName`, `environment`, `hoursBack?`, `startTime?`, `endTime?`, `level?`, `search?`, `regex?`, `logger?`, `previousSpecs?`, `mode?`, `bucket?`, `maxLines?`, `outputFile?`, `overwrite?` | Reads the full application log file for a time window and filters it by level, logger, text or regex. |
 
 ## Log analysis
 

@@ -101,6 +101,15 @@ describe('buildCreatePayload', () => {
             DB_URL: 'x',
         });
     });
+
+    it('always sends the properties service, empty when there are no properties', () => {
+        const p = buildCreatePayload(baseInput);
+        expect(p.application.configuration?.['mule.agent.application.properties.service']).toEqual({
+            applicationName: baseInput.appName,
+            properties: {},
+            secureProperties: {},
+        });
+    });
 });
 
 describe('mergeForArtifactUpdate', () => {

@@ -56,14 +56,34 @@ describe('log MCP tools', () => {
                 }),
             );
 
-            expect(client.logs.getLogFile).toHaveBeenCalledWith('org-1', 'env-1', 'orders-sapi');
+            expect(client.logs.getLogFile).toHaveBeenCalledWith('org-1', 'env-1', 'orders-sapi', {
+                previousSpecs: undefined,
+            });
             expect(body).toMatchObject({ total: 1, returned: 1, truncated: false, specId: 'spec-2' });
+            expect(body.specIds).toBeUndefined();
             expect(body.entries[0]).toMatchObject({
                 timestamp: STARTUP_ERROR_TS,
                 level: 'ERROR',
                 logger: 'org.mule.runtime.core.internal.exception.OnErrorPropagateHandler',
             });
             expect(body.entries[0].stackTrace).toContain('Caused by: java.net.ConnectException');
+        });
+
+        it('reads earlier specs on request and merges them by time', async () => {
+            client.logs.getLogFile.mockResolvedValue({
+                deploymentId: 'dep-1',
+                specId: 'spec-2',
+                specIds: ['spec-1', 'spec-2'],
+                // One block per spec; the old generation's last tick is later than the new one's first.
+                text: `${minuteLog(3)}\n2026-10-26T10:00:30.000Z INFO [r-2] com.example.orders.Poller event:x poll-thread - new tick\n`,
+            });
+            const body = parse(
+                await handlers.get('get_logs')!({ appName: 'orders-sapi', environment: 'Sandbox', previousSpecs: 1 }),
+            );
+
+            expect(client.logs.getLogFile).toHaveBeenCalledWith('org-1', 'env-1', 'orders-sapi', { previousSpecs: 1 });
+            expect(body.specIds).toEqual(['spec-1', 'spec-2']);
+            expect(body.entries.map((e: any) => e.replica)).toEqual(['r-1', 'r-1', 'r-2', 'r-1']);
         });
 
         it('applies lines after counting every match', async () => {

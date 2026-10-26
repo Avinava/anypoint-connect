@@ -163,8 +163,8 @@ for the rollout and exits non-zero when it fails or times out. See the
 | Command | Arguments and options |
 | --- | --- |
 | `anc logs tail <appName>` | `-e, --env <name>` (required), `-l, --level <level>` (ERROR, WARN, INFO, DEBUG), `-s, --search <text>`, `--regex`, `--logger <name>` |
-| `anc logs search <appName>` | `-e, --env <name>` (required), `-g, --grep <text>`, `--regex`, `--logger <name>`, `-l, --level <level>`, `--since <1h\|ISO>`, `--until <date>`, `-n, --limit <n>` (default 100, max 1000), `--json` |
-| `anc logs download <appName>` | `-e, --env <name>` (required), `--from <date>` (required), `--to <date>`, `-l, --level <level>`, `-g, --grep <text>`, `--regex`, `--logger <name>`, `--summary`, `--bucket 5m\|15m\|1h`, `-o, --output <path>` |
+| `anc logs search <appName>` | `-e, --env <name>` (required), `-g, --grep <text>`, `--regex`, `--logger <name>`, `-l, --level <level>`, `--since <1h\|ISO>`, `--until <date>`, `-n, --limit <n>` (default 100, max 1000), `--previous-specs <n>` (max 10), `--json` |
+| `anc logs download <appName>` | `-e, --env <name>` (required), `--from <date>` (required), `--to <date>`, `-l, --level <level>`, `-g, --grep <text>`, `--regex`, `--logger <name>`, `--summary`, `--bucket 5m\|15m\|1h`, `-o, --output <path>`, `--previous-specs <n>` (max 10) |
 
 Search covers the message, logger, thread, event ID, stack trace and logged payload. Multi-line entries
 (error reports, banners, stack traces) stay together with their timestamp and level.

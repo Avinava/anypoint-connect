@@ -82,6 +82,19 @@ If the stop does not complete, nothing is applied. If a later step fails after t
 the app is still stopped. `updateStrategy: "recreate"` sets the platform strategy that replaces replicas
 instead of overlapping them, and it persists for later deployments.
 
+Measured on a CloudHub 2.0 shared region with one and two replicas, as the gap between the old
+generation's last log line and the new generation's first:
+
+| Rollout | Gap |
+| --- | --- |
+| Rolling | old and new overlap, about 7 s with one replica and 32 s with two |
+| `recreate` | no overlap, about 110 s without either generation running |
+| `stopStart` | no overlap, about 57 s without either generation running |
+
+Both avoid overlap. `stopStart` has the shorter outage and needs nothing persisted; `recreate` also
+covers changes made outside this tool. Scaling up under a rolling strategy can replace the existing
+replica too, with a short overlap.
+
 `restart_app` and `anc apps restart` are a stop-then-start with no other change. Expect a short outage.
 
 ### Waiting and status

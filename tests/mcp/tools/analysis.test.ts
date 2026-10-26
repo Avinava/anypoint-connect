@@ -29,7 +29,7 @@ describe('log analysis MCP tools', () => {
 
     it('fetches the log file through the shared helper', async () => {
         await handlers.get('get_log_stats')!(base);
-        expect(client.logs.getLogFile).toHaveBeenCalledWith('org-1', 'env-1', 'orders-sapi');
+        expect(client.logs.getLogFile).toHaveBeenCalledWith('org-1', 'env-1', 'orders-sapi', {});
     });
 
     describe('analyze_errors', () => {

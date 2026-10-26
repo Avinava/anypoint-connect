@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.16.3 - 2026-10-26
+
+### Fixed
+
+- Creating an app without properties no longer ends `FAILED` with "Cannot invoke ResourceRef.getId()
+  because r is null". The create payload always carries the properties service, empty when there are no
+  properties.
+- `anc apps update <app> --version 1.2.0` and `anc dc publish --version` reach the subcommand instead of
+  printing the CLI version. Program options are now read only before the subcommand.
+
+### Added
+
+- `previousSpecs` on `get_logs` and `download_logs` (CLI `--previous-specs` on `anc logs search` and
+  `anc logs download`) also reads up to 10 earlier deployment specs, merged by time. Each update starts a
+  new spec with its own log file, so by default the generation an update replaced disappears from view.
+  Responses list the specs read in `specIds`.
+
+### Documentation
+
+- The safety model and the listener-app recipe give measured rollout gaps: `recreate` and `stopStart`
+  both avoid overlap, with outages of about 110 s and 57 s.
+
 ## 0.16.2 - 2026-10-26
 
 0.16.0 and 0.16.1 were tagged but never published to npm; this is the first 0.16 package. It contains
