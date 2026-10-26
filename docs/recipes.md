@@ -219,7 +219,7 @@ Authenticate in a terminal first, then use a pinned server command:
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.1", "mcp"]
     }
   }
 }

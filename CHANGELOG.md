@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.1 - 2026-10-26
+
+### Changed
+
+- The README covers the 0.16 features: one-call `update_app`, runtime checks, secret sources and
+  `moveToSecure`, artifact comparison, API contracts and smoke tests, and log summaries. It links each to
+  its recipe and links the 0.15.x migration tables. No code changes.
+
 ## 0.16.0 - 2026-10-26
 
 This release makes application changes one previewed call, keeps secret values out of conversations and

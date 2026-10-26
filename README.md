@@ -63,13 +63,24 @@ release does not support the `client_credentials` grant, and its encrypted token
 
 | Area | Examples |
 | --- | --- |
-| Applications | Status, deployment spec, resources, settings, cross-environment comparison, publish and deploy a JAR, artifact-only redeploy, rollback, restart, scale, stop, start, delete |
-| Logs | Tail, download, error clustering with context, recurring patterns, log health statistics |
+| Applications | Status with a start-up-aware phase, deployment spec, resources, cross-environment comparison, publish and deploy a JAR, one-call `update_app` (version, runtime, settings and update strategy, in place or stop-then-start), runtime catalogs with retired-runtime refusal, asset naming conventions, rollback, restart, scale, stop, start, delete, and a check of what runs against a repo or JAR |
+| Settings | Add, change, remove and move properties; secret values read from project files or environment variables; secret-looking plain values masked and flagged |
+| Logs | Tail, search over message, logger and stack trace, download with filters, summaries and file output, error clustering with context, recurring patterns, log health statistics |
 | Monitoring | Traffic, failures, and p50–p99 latency per app, worker, or route; heap, old-generation pressure, GC, CPU, and RAM per worker; time series from 1-minute to 1-day buckets; freeform AMQL |
 | Exchange | Search, asset details, spec download, application JAR publication |
-| API Manager and Governance | Instances, policies, SLA tiers, alerts, governance rulesets and conformance |
+| API Manager and Governance | Instances, policies, SLA tiers, alerts, contracts, client applications with masked credentials, smoke tests with the client's credentials, governance rulesets and conformance |
 | Design Center | Projects, branches, file reads, preview-then-apply file sync, verified Exchange publication |
 | Platform services | Environments, entitlements, audit log, Anypoint MQ, Object Store v2 |
+
+New in 0.16, each with a recipe:
+
+- `update_app` with `mode: "stopStart"`: [deploy a listener-driven app without overlap](https://avinava.github.io/anypoint-connect/recipes/#deploy-a-listener-driven-app-without-overlap)
+- `list_runtime_versions`: [move an app off a retired runtime](https://avinava.github.io/anypoint-connect/recipes/#move-an-app-off-a-retired-runtime)
+- `securePropertiesFrom`: [add or rotate one secret](https://avinava.github.io/anypoint-connect/recipes/#add-or-rotate-one-secret)
+- `moveToSecure`: [move a plain-text secret to secure](https://avinava.github.io/anypoint-connect/recipes/#move-a-plain-text-secret-to-secure)
+- `compare_deployed_artifact`: [check that a repository matches what runs](https://avinava.github.io/anypoint-connect/recipes/#check-that-a-repository-matches-what-runs)
+- `smoke_test_api`: [smoke test an API with its client credentials](https://avinava.github.io/anypoint-connect/recipes/#smoke-test-an-api-with-its-client-credentials)
+- `download_logs` summary and `outputFile`: [keep log downloads small](https://avinava.github.io/anypoint-connect/recipes/#keep-log-downloads-small)
 
 Copyable task flows are in [Common recipes](https://avinava.github.io/anypoint-connect/recipes/); every CLI
 command is in the [CLI reference](https://avinava.github.io/anypoint-connect/cli-reference/), every MCP tool
@@ -86,7 +97,7 @@ OAuth tokens; it sends tool calls to the local server that owns the session.
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.1", "mcp"]
     }
   }
 }
@@ -107,8 +118,9 @@ Preview a deployment of target/sample-orders-api-1.3.0-mule-application.jar to S
 
 ## Safety
 
-MCP write tools are previews until `confirm: true` is supplied, and production also needs
-`confirmProduction: true`; `anc deploy --dry-run` and `anc apps update --dry-run` print the same plan.
+Every MCP write tool returns a preview first and changes nothing until it is called again with
+`confirm: true`; in production it also needs `confirmProduction: true`. `anc deploy --dry-run` and
+`anc apps update --dry-run` print the same plan.
 Publishing binds the JAR's SHA-256. A change to an existing app is one update that carries only what you
 asked to change, with the runtime checked against the target first. Secret values come from project files
 or environment variables, never the conversation. Deletion requires the deployment ID returned by the
@@ -134,6 +146,9 @@ update_app({
 ```
 
 The complete contract is in the [safety model](https://avinava.github.io/anypoint-connect/safety/).
+Upgrading from 0.15? The
+[migration tables](https://github.com/Avinava/anypoint-connect/blob/main/CHANGELOG.md#migration-from-015x)
+list every changed tool, command and library call.
 
 ## Library
 
