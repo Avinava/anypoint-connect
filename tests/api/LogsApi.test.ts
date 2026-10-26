@@ -12,7 +12,7 @@ import {
 
 const mockDownload = vi.fn();
 const mockHttp = { download: mockDownload } as any;
-const ch2 = { findByName: vi.fn(), getDeployment: vi.fn() };
+const ch2 = { findByName: vi.fn(), getDeployment: vi.fn(), getDeploymentSpecs: vi.fn() };
 
 const LOG_URL = (spec: string) =>
     `/amc/application-manager/api/v2/organizations/org-1/environments/env-1/deployments/dep-1/specs/${spec}/logs/file`;
@@ -120,6 +120,65 @@ describe('LogsApi', () => {
         it('explains a missing app', async () => {
             ch2.findByName.mockResolvedValue(null);
             await expect(api.getLogFile('org-1', 'env-1', 'orders-sapi')).rejects.toThrow('not found');
+        });
+    });
+
+    describe('previous specs', () => {
+        const OLD = '2026-01-01T10:00:00.000Z INFO [main] sample.Probe: old generation tick\n';
+        const OLDER = '2026-01-01T09:00:00.000Z INFO [main] sample.Probe: older generation tick\n';
+        const NEW = '2026-01-01T10:00:30.000Z INFO [main] sample.Probe: new generation tick';
+        const OVERLAP = '2026-01-01T10:00:10.000Z INFO [main] sample.Probe: old generation late tick\n';
+
+        beforeEach(() => {
+            ch2.getDeploymentSpecs.mockResolvedValue([
+                { version: 'spec-3' },
+                { version: 'spec-2' },
+                { version: 'spec-1' },
+                { version: 'spec-0' },
+            ]);
+            const files: Record<string, string> = {
+                'spec-2': NEW,
+                'spec-1': OLD + OVERLAP,
+                'spec-0': OLDER,
+            };
+            mockDownload.mockImplementation(async (url: string) => {
+                const spec = Object.keys(files).find((id) => url === LOG_URL(id));
+                if (!spec) throw Object.assign(new Error('Not Found'), { response: { status: 404 } });
+                return Buffer.from(files[spec]);
+            });
+        });
+
+        it('reads the desired spec and the ones before it, oldest first, never a newer one', async () => {
+            const file = await api.getLogFile('org-1', 'env-1', 'orders-sapi', { previousSpecs: 1 });
+
+            expect(file).toMatchObject({ specId: 'spec-2', specIds: ['spec-1', 'spec-2'] });
+            expect(mockDownload).not.toHaveBeenCalledWith(LOG_URL('spec-3'), expect.anything());
+            expect(file.text).toBe(OLD + OVERLAP + NEW + '\n');
+        });
+
+        it('merges overlapping generations by time', async () => {
+            const { entries, source } = await api.queryLogs('org-1', 'env-1', 'orders-sapi', {}, { previousSpecs: 2 });
+
+            expect(source.specIds).toEqual(['spec-0', 'spec-1', 'spec-2']);
+            expect(entries.map((e) => e.message.replace(/^.*: /, ''))).toEqual([
+                'older generation tick',
+                'old generation tick',
+                'old generation late tick',
+                'new generation tick',
+            ]);
+        });
+
+        it('skips a spec without a log file', async () => {
+            ch2.getDeploymentSpecs.mockResolvedValue([{ version: 'spec-2' }, { version: 'spec-9' }]);
+            const file = await api.getLogFile('org-1', 'env-1', 'orders-sapi', { previousSpecs: 1 });
+            expect(file.specIds).toEqual(['spec-2']);
+        });
+
+        it('rejects an out-of-range count before any request', async () => {
+            await expect(api.getLogFile('org-1', 'env-1', 'orders-sapi', { previousSpecs: 11 })).rejects.toThrow(
+                'previousSpecs must be a whole number from 0 to 10',
+            );
+            expect(ch2.findByName).not.toHaveBeenCalled();
         });
     });
 

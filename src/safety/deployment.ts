@@ -86,14 +86,15 @@ export function buildCreatePayload(input: DeploymentInput): CreateDeploymentPayl
     const region = input.region || DEFAULT_REGION;
     const vCores = parseVcores(input.vcores ?? DEFAULT_VCORES);
 
-    const configuration: CreateDeploymentPayload['application']['configuration'] = {};
-    if (input.properties || input.secureProperties) {
-        configuration['mule.agent.application.properties.service'] = {
+    // Always sent, even when empty: a create without the properties service ends FAILED with
+    // "Cannot invoke ResourceRef.getId() because r is null".
+    const configuration: CreateDeploymentPayload['application']['configuration'] = {
+        'mule.agent.application.properties.service': {
             applicationName: input.appName,
-            ...(input.properties ? { properties: input.properties } : {}),
-            ...(input.secureProperties ? { secureProperties: input.secureProperties } : {}),
-        };
-    }
+            properties: input.properties ?? {},
+            secureProperties: input.secureProperties ?? {},
+        },
+    };
 
     return {
         name: input.appName,
@@ -106,7 +107,7 @@ export function buildCreatePayload(input: DeploymentInput): CreateDeploymentPayl
             },
             desiredState: 'STARTED',
             ...(vCores !== undefined ? { vCores } : {}),
-            ...(Object.keys(configuration).length > 0 ? { configuration } : {}),
+            configuration,
         },
         target: {
             provider: 'MC',

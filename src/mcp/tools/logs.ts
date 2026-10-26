@@ -8,9 +8,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import type { Environment } from '../../api/AccessManagementApi.js';
-import type { LogSource } from '../../api/LogsApi.js';
+import { MAX_PREVIOUS_SPECS, parseLogFile, type LogReadOptions, type LogSource } from '../../api/LogsApi.js';
 import type { EnrichedLogEntry } from '../../analysis/types.js';
-import { parseRawLogs } from '../../analysis/parser.js';
 import { buildFilter, MAX_LOG_LINES, searchEntries } from '../../analysis/filter.js';
 import { formatEntries, summarizeEntries } from '../../analysis/summary.js';
 import { BUCKETS, type Bucket } from '../../analysis/stats.js';
@@ -32,9 +31,14 @@ export interface FetchedLogs {
  * Resolve the environment and the app's log file in one place, for every log and analysis tool.
  * Reads the desired spec's file, or the last successful spec's when the desired one is still empty.
  */
-export async function fetchLogText(client: AnypointClient, appName: string, environment: string): Promise<FetchedLogs> {
+export async function fetchLogText(
+    client: AnypointClient,
+    appName: string,
+    environment: string,
+    read: LogReadOptions = {},
+): Promise<FetchedLogs> {
     const { orgId, env } = await resolveEnvironment(client, environment);
-    const { text, ...source } = await client.logs.getLogFile(orgId, env.id, appName);
+    const { text, ...source } = await client.logs.getLogFile(orgId, env.id, appName, read);
     return { orgId, env, text, source };
 }
 
@@ -114,6 +118,22 @@ export const logWindowInputs = {
         .describe('Only entries at or before this ISO 8601 time. Do not combine with hoursBack.'),
 };
 
+/** Input to read the generations an update replaced, not just the current one. */
+export const previousSpecsInput = z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_PREVIOUS_SPECS)
+    .optional()
+    .describe(
+        `Also read this many earlier deployment specs (max ${MAX_PREVIOUS_SPECS}), merged by time. Each update starts a new spec with its own log file, so the default (0) hides the generation that ran before the last update; use 1 to see a rollout window.`,
+    );
+
+/** The spec fields of a log response. */
+function specView(source: LogSource) {
+    return source.specIds ? { specId: source.specId, specIds: source.specIds } : { specId: source.specId };
+}
+
 function entryView(e: EnrichedLogEntry) {
     return {
         timestamp: new Date(e.timestamp).toISOString(),
@@ -151,14 +171,27 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
                     .describe(`Number of most recent matching entries to return (default: 100, max: ${MAX_LOG_LINES})`),
                 ...logFilterInputs,
                 ...logWindowInputs,
+                previousSpecs: previousSpecsInput,
             },
             annotations: { readOnlyHint: true },
         },
-        async ({ appName, environment, lines, level, search, regex, logger, hoursBack, startTime, endTime }) => {
+        async ({
+            appName,
+            environment,
+            lines,
+            level,
+            search,
+            regex,
+            logger,
+            hoursBack,
+            startTime,
+            endTime,
+            previousSpecs,
+        }) => {
             try {
                 const window = logWindow({ hoursBack, startTime, endTime });
-                const { text, source } = await fetchLogText(client, appName, environment);
-                const result = searchEntries(parseRawLogs(text), {
+                const { text, source } = await fetchLogText(client, appName, environment, { previousSpecs });
+                const result = searchEntries(parseLogFile({ ...source, text }), {
                     limit: lines ?? 100,
                     level,
                     search,
@@ -174,7 +207,7 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
                     returned: result.returned,
                     truncated: result.truncated,
                     ...(window.period ? { period: window.period } : {}),
-                    specId: source.specId,
+                    ...specView(source),
                     ...(notice ? { notice } : {}),
                     entries: result.entries.map(entryView),
                 });
@@ -202,6 +235,7 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
                 startTime: logWindowInputs.startTime,
                 endTime: logWindowInputs.endTime,
                 ...logFilterInputs,
+                previousSpecs: previousSpecsInput,
                 mode: z
                     .enum(['lines', 'summary'])
                     .optional()
@@ -237,14 +271,16 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
                 const keep = buildFilter({ ...input, startTime: window.startTime, endTime: window.endTime });
                 if (input.outputFile) resolveWritablePath(input.outputFile, { overwrite: input.overwrite });
 
-                const { env, text, source } = await fetchLogText(client, input.appName, input.environment);
-                const entries = parseRawLogs(text).filter(keep);
+                const { env, text, source } = await fetchLogText(client, input.appName, input.environment, {
+                    previousSpecs: input.previousSpecs,
+                });
+                const entries = parseLogFile({ ...source, text }).filter(keep);
                 const notice = sourceNotice(source);
                 const context = {
                     app: input.appName,
                     environment: env.name,
                     period: window.period,
-                    specId: source.specId,
+                    ...specView(source),
                     ...(notice ? { notice } : {}),
                 };
 

@@ -1,8 +1,8 @@
 /**
  * Logs CLI Commands
  * anc logs tail <appName> --env <envName> [--level <level>] [--search <text>]
- * anc logs search <appName> --env <envName> [--grep <text>] [--regex] [--logger <name>] [--since <1h|ISO>]
- * anc logs download <appName> --env <envName> --from <date> [--to <date>] [--grep <text>] [--summary] [--output <path>]
+ * anc logs search <appName> --env <envName> [--grep <text>] [--regex] [--logger <name>] [--since <1h|ISO>] [--previous-specs <n>]
+ * anc logs download <appName> --env <envName> --from <date> [--to <date>] [--grep <text>] [--summary] [--output <path>] [--previous-specs <n>]
  */
 
 import { Command } from 'commander';
@@ -12,7 +12,7 @@ import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { parseDate } from '../utils/dates.js';
 import { printTable } from '../utils/formatter.js';
-import type { LogSource } from '../api/LogsApi.js';
+import { MAX_PREVIOUS_SPECS, type LogSource } from '../api/LogsApi.js';
 import type { EnrichedLogEntry } from '../analysis/types.js';
 import { MAX_LOG_LINES } from '../analysis/filter.js';
 import { BUCKETS, type Bucket } from '../analysis/stats.js';
@@ -23,6 +23,17 @@ function parseLimit(value: string): number {
     const n = Number(value);
     if (!Number.isInteger(n) || n < 1 || n > MAX_LOG_LINES) {
         throw new Error(`--limit must be a whole number from 1 to ${MAX_LOG_LINES}`);
+    }
+    return n;
+}
+
+const PREVIOUS_SPECS_FLAG = '--previous-specs <n>';
+const PREVIOUS_SPECS_HELP = `Also read this many earlier deployment specs (max ${MAX_PREVIOUS_SPECS}), to see the generation an update replaced`;
+
+function parsePreviousSpecs(value: string | undefined): number {
+    const n = Number(value ?? 0);
+    if (!Number.isInteger(n) || n < 0 || n > MAX_PREVIOUS_SPECS) {
+        throw new Error(`--previous-specs must be a whole number from 0 to ${MAX_PREVIOUS_SPECS}`);
     }
     return n;
 }
@@ -138,10 +149,12 @@ export function createLogsCommand(): Command {
         .option('--since <date>', 'Only entries since this time (ISO date or relative: 30m, 1h, 2d)')
         .option('--until <date>', 'Only entries until this time (ISO date or relative)')
         .option('-n, --limit <n>', `Most recent matching entries to show (max ${MAX_LOG_LINES})`, '100')
+        .option(PREVIOUS_SPECS_FLAG, PREVIOUS_SPECS_HELP)
         .option('--json', 'Print the result as JSON')
         .action(async (appName: string, opts) => {
             try {
                 const limit = parseLimit(opts.limit);
+                const previousSpecs = parsePreviousSpecs(opts.previousSpecs);
                 const startTime = opts.since ? parseDate(opts.since) : undefined;
                 const endTime = opts.until ? parseDate(opts.until) : undefined;
 
@@ -157,6 +170,7 @@ export function createLogsCommand(): Command {
                     startTime,
                     endTime,
                     limit,
+                    previousSpecs,
                 });
 
                 if (opts.json) {
@@ -174,7 +188,8 @@ export function createLogsCommand(): Command {
                 const shown = result.truncated
                     ? `Showing the newest ${result.returned} of ${result.total} matching entries`
                     : `${result.total} matching entries`;
-                log.info(`${shown} (spec ${result.source.specId})`);
+                const specs = result.source.specIds?.join(', ') ?? result.source.specId;
+                log.info(`${shown} (spec ${specs})`);
             } catch (error) {
                 log.error(`Log search failed: ${errorMessage(error)}`);
                 process.exitCode = 1;
@@ -193,10 +208,12 @@ export function createLogsCommand(): Command {
         .option('--logger <name>', 'Only entries whose logger name contains this text')
         .option('--summary', 'Print counts by level, logger and time, and the top message templates, instead of lines')
         .option('--bucket <size>', 'Time bucket for --summary: 5m, 15m or 1h', '1h')
+        .option(PREVIOUS_SPECS_FLAG, PREVIOUS_SPECS_HELP)
         .option('-o, --output <path>', 'Output file path (with --summary, writes the summary as JSON)')
         .action(async (appName: string, opts) => {
             try {
                 const bucket = parseBucket(opts.bucket);
+                const previousSpecs = parsePreviousSpecs(opts.previousSpecs);
                 const from = parseDate(opts.from);
                 const to = opts.to ? parseDate(opts.to) : Date.now();
 
@@ -207,14 +224,20 @@ export function createLogsCommand(): Command {
                 log.info(`Downloading logs for ${chalk.bold(appName)} in ${env.name}`);
                 log.kv('Period', `${new Date(from).toISOString()} → ${new Date(to).toISOString()}`);
 
-                const { entries, source } = await client.logs.queryLogs(orgId, env.id, appName, {
-                    startTime: from,
-                    endTime: to,
-                    level: opts.level,
-                    search: opts.grep,
-                    regex: opts.regex,
-                    logger: opts.logger,
-                });
+                const { entries, source } = await client.logs.queryLogs(
+                    orgId,
+                    env.id,
+                    appName,
+                    {
+                        startTime: from,
+                        endTime: to,
+                        level: opts.level,
+                        search: opts.grep,
+                        regex: opts.regex,
+                        logger: opts.logger,
+                    },
+                    { previousSpecs },
+                );
                 warnFallback(source);
 
                 if (opts.summary) {

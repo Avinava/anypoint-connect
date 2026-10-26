@@ -119,7 +119,19 @@ anc apps update orders-sapi -e Sandbox --version 1.4.0 --stop-start --dry-run
 ```
 
 To make every later deployment replace replicas instead of overlapping them, set the strategy once with
-`"updateStrategy": "recreate"` (CLI `--update-strategy recreate`).
+`"updateStrategy": "recreate"` (CLI `--update-strategy recreate`). It avoids overlap too, but measured
+outages were about twice as long as `stopStart` (about 110 s against 57 s); see the
+[safety model](safety.md) for the numbers.
+
+To check the rollout afterwards, read the replaced generation's logs alongside the new one's. Each update
+starts a new deployment spec with its own log file, and log tools read only the current one by default:
+
+```bash
+anc logs search orders-sapi --env Sandbox --since 30m --previous-specs 1
+```
+
+In MCP, pass `"previousSpecs": 1` to `get_logs` or `download_logs`. Entries carry their replica, so the
+last line of the old generation and the first of the new one show any overlap or gap.
 
 ## Move an app off a retired runtime
 
@@ -219,7 +231,7 @@ Authenticate in a terminal first, then use a pinned server command:
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.2", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.3", "mcp"]
     }
   }
 }

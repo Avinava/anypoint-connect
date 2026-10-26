@@ -28,7 +28,9 @@ program
     .description(
         'Anypoint Connect — CLI for Anypoint Platform\n\nSupports named profiles for multi-org workflows. Use --profile on auth/config commands\nor place .anypoint-connect.json in your project to auto-select a profile.',
     )
-    .version(VERSION);
+    .version(VERSION)
+    // Program options only before the subcommand, so `apps update --version 1.2.0` reaches the subcommand
+    .enablePositionalOptions();
 
 program.addCommand(createConfigCommand());
 program.addCommand(createAuthCommand());
