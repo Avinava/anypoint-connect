@@ -29,6 +29,9 @@ error text names which one.
 | Symptom | Cause and fix |
 | --- | --- |
 | Fewer log entries than expected | Retention is shorter than the requested window, or the level filter excluded them. Compare the requested window with the earliest returned timestamp before drawing conclusions |
+| Log search right after a start or deploy finds nothing | Before 0.16, text on continuation lines (error `Message` and `Error type` lines, start-up banners, stack traces, logged payloads) was split into separate entries, lost under a level filter and pushed out by the line limit. That is fixed. Logs are also kept per deployment spec: right after a change, the new spec's file can be missing or empty while replicas start, so the tools read the last successful spec and say so in a notice. Retry after a few minutes for the new replicas' lines |
+| `download_logs` output is too large | Use `mode: "summary"` for counts by level, logger and hour; narrow with `search`, `level`, `logger` or a shorter window; or set `outputFile` to write everything to a file inside the project. Lines beyond `maxLines` (default 2000) are cut with a notice giving the total |
+| `outputFile` or `writeCredentialsTo` refused | The path must be inside the project root (the git top level, or `ANYPOINT_CONNECT_PROJECT_ROOT`), and an existing file needs `overwrite` |
 | An error appears in the caller but not the dependency | Log level, handled errors, or retention — not proof the dependency is healthy. Widen the window or lower the level before concluding anything |
 | Percentiles look implausible | Low request counts make percentiles unstable. Read them with the request count |
 | Memory looks like a leak | A heap sawtooth is normal collection. Check `get_runtime_metrics` (`anc monitor runtime`): the old-generation peak against its limit, and old-generation GC count and time. Then chart `get_metrics_timeseries` with `signal: "memory"` at `1h` over several days; a baseline that keeps rising is the leak signal. See [Monitoring](monitoring.md#reading-memory) |
@@ -40,8 +43,14 @@ error text names which one.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| An MCP deployment changed nothing | The call was a preview. MCP deployment tools require `confirm: true`. The CLI behaves differently: non-production deploys apply unless `--dry-run` is given, while production requires the typed confirmation or `--force`. See [Safety model](safety.md) |
-| An infrastructure change was rejected | Redeploys of an existing app change the artifact only, by design: `anc deploy` rejects `--runtime`, `--replicas`, `--vcores`, and `--region`, and `deploy_jar` rejects the same settings, for an existing app. Use the scale or settings tools, or create a new deployment |
+| An MCP change did nothing | The call was a preview. Every MCP write requires `confirm: true`, and production also `confirmProduction: true`. The CLI behaves differently: non-production changes apply unless `--dry-run` is given, while production requires the typed confirmation or `--force`. See [Safety model](safety.md) |
+| An infrastructure change was rejected | Region, vCores, replicas and JVM arguments apply only to a new app. Use `scale_app` for replicas. Runtime, settings and update strategy can change on an existing app through `update_app` or `anc apps update` |
+| `Runtime Version not supported for this target` | The app's runtime has been retired on its target, so any new spec is rejected. `list_runtime_versions` (or `anc runtimes list --app <name>`) shows what the target offers and the nearest versions; pass one as `runtime` to `update_app` or `update_app_artifact`. Since 0.16 the preview refuses this up front |
+| Status shows `FAILED` right after starting an app | The platform briefly reports `FAILED` while a stopped app starts. `get_app_status` reports the phase `STARTING` until the failure persists past a 90-second grace window; use `wait: true` to follow it |
+| Events processed twice during a deploy | A rolling update runs old and new replicas together, and listener-driven apps (streaming, subscriptions, polling) process events in both. Use `mode: "stopStart"` (CLI `--stop-start`), or set `updateStrategy: "recreate"` |
+| A settings change was refused with `already exists as a plain property` | The key is plain today. Use `moveToSecure` to move its current value, or `removeProperties` plus the new secure value |
+| A secret appears in `get_app_settings` | It is stored as a plain property. The tool masks it by default and lists it under `warnings`; fix it with `update_app_settings` `moveToSecure` |
+| `securePropertiesFrom` refused the file | The path must be inside the project root (the git top level of the server's working directory, or `ANYPOINT_CONNECT_PROJECT_ROOT`), be a regular file, and be under 1 MB |
 | `Embedded Maven identity is unavailable` | The JAR has no single, consistent `pom.properties`. Supply both the asset ID and version (`--asset-id` and `--asset-version`, or `assetId` and `assetVersion`) |
 | Publication refused after a preview | The JAR's SHA-256 no longer matches `expectedSha256`: the file was rebuilt. Preview again and review the new digest |
 | A Design Center push or publish was aborted | Someone changed the file or branch after the preview, or the token expired (ten minutes) or was already used. Preview again |

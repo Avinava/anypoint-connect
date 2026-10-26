@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import {
     buildCreatePayload,
     mergeForArtifactUpdate,
-    mergeApplicationProperties,
+    planSettingsChange,
     resolveRollbackTarget,
     diffDeployment,
     parseVcores,
@@ -190,38 +190,97 @@ describe('resolveRollbackTarget', () => {
     });
 });
 
-describe('mergeApplicationProperties', () => {
-    it('preserves existing plain and masked secure settings while overlaying changes', () => {
-        const existing = makeExisting({
+describe('planSettingsChange', () => {
+    const withSettings = (properties: Record<string, string>, secureProperties: Record<string, string>) =>
+        makeExisting({
             application: {
                 ref: { groupId: 'org-123', artifactId: 'example-api', version: '1.4.11', packaging: 'jar' },
-                desiredState: 'STOPPED',
+                desiredState: 'STARTED',
                 configuration: {
                     'mule.agent.application.properties.service': {
                         applicationName: 'example-api',
-                        properties: { environment: 'test', unchanged: 'yes' },
-                        secureProperties: { credential: '******', token: '******' },
+                        properties,
+                        secureProperties,
                     },
                     'mule.agent.logging.service': { scopeLoggingConfigurations: [] },
                 },
             },
         });
 
-        expect(mergeApplicationProperties(existing, { environment: 'staging' }, { credential: 'replacement' })).toEqual(
-            {
-                applicationName: 'example-api',
-                properties: { environment: 'staging', unchanged: 'yes' },
-                secureProperties: { credential: 'replacement', token: '******' },
-            },
+    it('keeps untouched plain and masked secure values while overlaying changes', () => {
+        const existing = withSettings(
+            { environment: 'test', unchanged: 'yes' },
+            { credential: '******', token: '******' },
+        );
+        const plan = planSettingsChange(existing, {
+            properties: { environment: 'staging' },
+            secureProperties: { credential: 'replacement' },
+        });
+        expect(plan.service).toEqual({
+            applicationName: 'example-api',
+            properties: { environment: 'staging', unchanged: 'yes' },
+            secureProperties: { credential: 'replacement', token: '******' },
+        });
+        expect(plan.diff.changed).toEqual([{ key: 'environment', from: 'test', to: 'staging' }]);
+        expect(plan.diff.secureChanged).toEqual(['credential']);
+        expect(plan.changed).toBe(true);
+    });
+
+    it('adds one secret without touching the others', () => {
+        const existing = withSettings({}, { first: '******', second: '******' });
+        const plan = planSettingsChange(existing, { secureProperties: { third: 'value-3' } });
+        expect(plan.service.secureProperties).toEqual({ first: '******', second: '******', third: 'value-3' });
+        expect(plan.diff.secureAdded).toEqual(['third']);
+    });
+
+    it('removes plain and secure keys by sending the full maps without them', () => {
+        const existing = withSettings({ keep: '1', drop: '2' }, { gone: '******', stays: '******' });
+        const plan = planSettingsChange(existing, { removeProperties: ['drop'], removeSecureProperties: ['gone'] });
+        expect(plan.service.properties).toEqual({ keep: '1' });
+        expect(plan.service.secureProperties).toEqual({ stays: '******' });
+        expect(plan.diff.removed).toEqual(['drop']);
+        expect(plan.diff.secureRemoved).toEqual(['gone']);
+    });
+
+    it('moves a plain value to secure on the server without echoing it', () => {
+        const existing = withSettings({ 'db.password': 'plain-secret-value' }, {});
+        const plan = planSettingsChange(existing, { moveToSecure: ['db.password'] });
+        expect(plan.service.properties).toEqual({});
+        expect(plan.service.secureProperties).toEqual({ 'db.password': 'plain-secret-value' });
+        expect(JSON.stringify(plan.diff)).not.toContain('plain-secret-value');
+        expect(plan.diff.movedToSecure).toEqual(['db.password']);
+    });
+
+    it('masks secret-looking plain values in the diff and warns', () => {
+        const existing = withSettings({}, {});
+        const plan = planSettingsChange(existing, { properties: { 'api.token': 'abcdefghijkl' } });
+        expect(plan.diff.added).toEqual([{ key: 'api.token', to: '******…kl' }]);
+        expect(plan.warnings.join(' ')).toContain('looks like a secret');
+    });
+
+    it('rejects contradictory or unsafe changes', () => {
+        const existing = withSettings({ plain: 'x' }, { stored: '******' });
+        expect(() => planSettingsChange(existing, { secureProperties: { missing: '******' } })).toThrow(
+            /no secure property/,
+        );
+        expect(() => planSettingsChange(existing, { properties: { a: '1' }, secureProperties: { a: '2' } })).toThrow(
+            /both/,
+        );
+        expect(() => planSettingsChange(existing, { secureProperties: { plain: 'y' } })).toThrow(/moveToSecure/);
+        expect(() => planSettingsChange(existing, { moveToSecure: ['absent'] })).toThrow(/no plain property/);
+        expect(() => planSettingsChange(existing, { properties: { plain: 'y' }, removeProperties: ['plain'] })).toThrow(
+            /set and removed/,
         );
     });
 
-    it('supports plain-only and secure-only updates', () => {
-        const existing = makeExisting();
-        expect(mergeApplicationProperties(existing, { feature: 'on' }).properties).toEqual({ feature: 'on' });
-        expect(mergeApplicationProperties(existing, undefined, { credential: 'new' }).secureProperties).toEqual({
-            credential: 'new',
+    it('treats resending a masked value and removing an absent key as no change', () => {
+        const existing = withSettings({}, { stored: '******' });
+        const plan = planSettingsChange(existing, {
+            secureProperties: { stored: '******' },
+            removeProperties: ['absent'],
         });
+        expect(plan.changed).toBe(false);
+        expect(plan.warnings).toEqual(['"absent" is not a plain property; nothing to remove']);
     });
 });
 

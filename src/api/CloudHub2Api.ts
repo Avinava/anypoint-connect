@@ -5,6 +5,7 @@
 
 import type { HttpClient } from '../client/HttpClient.js';
 import type { Cache } from '../client/Cache.js';
+import { waitForAppPhase, type WaitOptions, type WaitResult } from '../workflows/app-state.js';
 
 /**
  * Maven-style artifact coordinate used both by a live deployment (`CH2Deployment`)
@@ -69,7 +70,7 @@ export interface CH2Deployment {
         targetId: string;
         deploymentSettings: {
             http?: { inbound?: { publicUrl?: string } };
-            runtime?: { version: string; releaseChannel?: string };
+            runtime?: { version: string; releaseChannel?: string; java?: string };
             autoscaling?: { enabled: boolean; minReplicas?: number; maxReplicas?: number };
             updateStrategy?: string;
             resources?: DeploymentResources;
@@ -114,6 +115,23 @@ export interface ApplicationConfigurationUpdate {
         configuration: {
             'mule.agent.application.properties.service': ApplicationPropertiesService;
         };
+    };
+}
+
+/** A partial deployment update. Only the fields present are changed. */
+export interface DeploymentPatch {
+    application?: {
+        ref?: ArtifactRef;
+        desiredState?: 'STARTED' | 'STOPPED';
+        configuration?: {
+            'mule.agent.application.properties.service': ApplicationPropertiesService;
+        };
+    };
+    target?: {
+        provider: string;
+        targetId: string;
+        replicas?: number;
+        deploymentSettings: CH2Deployment['target']['deploymentSettings'];
     };
 }
 
@@ -312,45 +330,34 @@ export class CloudHub2Api {
     }
 
     /**
-     * Poll deployment until it reaches a terminal state
+     * Poll a deployment until it settles, fails past the start-up grace window, or times out.
+     * Returns the final phase snapshot; it does not throw for a failed deployment.
      */
     async waitForDeployment(
         orgId: string,
         envId: string,
         deploymentId: string,
-        onStatus?: (status: string, replicas: CH2Replica[]) => void,
-        timeoutMs: number = 300000,
-    ): Promise<CH2Deployment> {
-        const startTime = Date.now();
-        const pollIntervalMs = 5000;
-
-        while (Date.now() - startTime < timeoutMs) {
-            const deployment = await this.getDeployment(orgId, envId, deploymentId);
-
-            if (onStatus) {
-                onStatus(deployment.status, deployment.replicas);
-            }
-
-            // Terminal states
-            if (deployment.status === 'APPLIED' || deployment.status === 'RUNNING') {
-                return deployment;
-            }
-
-            if (deployment.status === 'FAILED' || deployment.status === 'DEPLOYMENT_FAILED') {
-                throw new Error(`Deployment failed: ${deployment.status}`);
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-        }
-
-        throw new Error(`Deployment timed out after ${timeoutMs / 1000}s`);
+        options: WaitOptions = {},
+    ): Promise<WaitResult> {
+        return waitForAppPhase(this, orgId, envId, deploymentId, options);
     }
 
     /**
-     * Restart an application (triggers rolling restart)
+     * Apply one combined change (artifact, runtime, settings, update strategy, desired state)
+     * in a single PATCH, so the platform creates one new spec instead of one per field.
      */
-    async restartApp(orgId: string, envId: string, deploymentId: string): Promise<CH2Deployment> {
-        return this.setDesiredState(orgId, envId, deploymentId, 'STARTED');
+    async patchDeployment(
+        orgId: string,
+        envId: string,
+        deploymentId: string,
+        patch: DeploymentPatch,
+    ): Promise<CH2Deployment> {
+        this.cache.delete(`ch2:${orgId}:${envId}`);
+        return this.http.patch<CH2Deployment>(
+            `${BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}`,
+            patch,
+            { headers: this.envHeaders(orgId, envId) },
+        );
     }
 
     /** Start or stop an application without replaying the rest of its deployment. */

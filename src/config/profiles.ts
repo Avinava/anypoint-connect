@@ -104,6 +104,14 @@ export function migrateIfNeeded(): void {
 
 export interface ProjectConfig {
     profile: string;
+    /** Naming conventions for assets this project publishes. */
+    conventions?: {
+        /** Asset ID template, e.g. "{app}-{pomVersion}-{timestamp}". Tokens: {app}, {artifactId}, {pomVersion}, {timestamp}, {gitShort}. */
+        assetId?: string;
+        /** Asset version, fixed ("1.0.0") or a template ("{pomVersion}"). */
+        assetVersion?: string;
+        groupId?: string;
+    };
 }
 
 /**

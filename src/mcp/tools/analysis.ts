@@ -6,9 +6,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { analyzeLogs } from '../../analysis/LogAnalyzer.js';
+import { analyzeLogs, topCounts } from '../../analysis/LogAnalyzer.js';
 import type { ErrorWithContext, EnrichedLogEntry } from '../../analysis/LogAnalyzer.js';
-import { mcpError, mcpText, resolveEnvironment } from './shared.js';
+import { mcpError, mcpText } from './shared.js';
+import { fetchLogText, logFilterInputs, sourceNotice } from './logs.js';
 
 /**
  * Format an ErrorWithContext into a readable string for the LLM.
@@ -53,6 +54,27 @@ function formatEntry(e: EnrichedLogEntry): string {
     return `  ${ts} ${e.priority.padEnd(5)} ${e.message || ''}${flow}${elapsed}`;
 }
 
+const hoursBackInput = z
+    .number()
+    .positive()
+    .optional()
+    .describe('How many hours of logs to analyze (default: all available)');
+
+/** Describe the active filters for a heading, e.g. ` (last 2h, logger "TokenCache")`. */
+function filterLabel(input: { hoursBack?: number; level?: string; logger?: string; search?: string }): string {
+    const parts: string[] = [];
+    if (input.hoursBack) parts.push(`last ${input.hoursBack}h`);
+    if (input.level) parts.push(`level >= ${input.level.toUpperCase()}`);
+    if (input.logger) parts.push(`logger "${input.logger}"`);
+    if (input.search) parts.push(`matching "${input.search}"`);
+    return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+}
+
+/** Prepend the fallback-spec notice, when there is one. */
+function withNotice(text: string, notice: string | undefined): string {
+    return notice ? `> ${notice}\n\n${text}` : text;
+}
+
 export function registerAnalysisTools(server: McpServer, client: AnypointClient) {
     // ── analyze_errors ───────────────────────────────────
 
@@ -61,35 +83,43 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
         {
             title: 'Analyze Application Errors',
             description:
-                "Analyzes error patterns in a Mule application's logs. Groups similar errors, shows occurrence counts, affected flows, and provides full context (what happened before and after each error). Use this to diagnose why an app is failing — it shows the causal chain leading to each error type.",
+                "Analyzes error patterns in a Mule application's logs. Groups similar errors, shows occurrence counts, affected flows, and provides full context (what happened before and after each error). Use this to diagnose why an app is failing: it shows the causal chain leading to each error type. Narrow the errors analyzed with level, logger and search; the context lines around each error are not filtered.",
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed'),
                 environment: z.string().describe('Environment name or ID'),
-                hoursBack: z.number().optional().describe('How many hours of logs to analyze (default: all available)'),
+                hoursBack: hoursBackInput,
                 limit: z.number().optional().describe('Maximum number of error groups to return (default: 10)'),
+                ...logFilterInputs,
+                level: z
+                    .string()
+                    .optional()
+                    .describe('Minimum level analyzed as an error (default ERROR). WARN also groups warnings.'),
             },
             annotations: { readOnlyHint: true },
         },
-        async ({ appName, environment, hoursBack, limit }) => {
+        async ({ appName, environment, hoursBack, limit, level, search, regex, logger }) => {
             try {
-                const { orgId, env } = await resolveEnvironment(client, environment);
-                const rawText = await client.logs.getRawText(orgId, env.id, appName);
+                const { env, text, source } = await fetchLogText(client, appName, environment);
 
-                const result = analyzeLogs(rawText, {
+                const result = analyzeLogs(text, {
                     hoursBack,
+                    errorLevel: level,
+                    search,
+                    regex,
+                    logger,
                     maxErrorGroups: limit || 10,
                 });
+                const label = filterLabel({ hoursBack, logger, search });
+                const notice = sourceNotice(source);
 
                 if (result.errorGroups.length === 0) {
-                    return mcpText(
-                        `No errors found in ${appName} logs${hoursBack ? ` for the last ${hoursBack} hours` : ''}.`,
-                    );
+                    return mcpText(withNotice(`No errors found in ${appName} logs${label}.`, notice));
                 }
 
                 const sections: string[] = [];
                 sections.push(
-                    `## Error Analysis for ${appName} in ${env.name}`,
-                    `Total: ${result.stats.byLevel['ERROR'] || 0} errors (${result.stats.errorRate}% error rate)`,
+                    `## Error Analysis for ${appName} in ${env.name}${label}`,
+                    `Total: ${result.errorContexts.length} errors (${result.stats.errorRate}% error rate)`,
                     `Time range: ${result.stats.timeRange.start} → ${result.stats.timeRange.end}`,
                     '',
                 );
@@ -110,7 +140,7 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
                     }
                 }
 
-                return mcpText(sections.join('\n'));
+                return mcpText(withNotice(sections.join('\n'), notice));
             } catch (error) {
                 return mcpError(error);
             }
@@ -124,38 +154,44 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
         {
             title: 'Get Log Message Patterns',
             description:
-                'Identifies the most common recurring log message patterns in an application. Shows what the app is doing at a glance — which flows are active, how often certain operations run, and what percentage of log volume each pattern accounts for. HTTP listener noise is filtered out.',
+                'Identifies the most common recurring log message patterns in an application. Shows what the app is doing at a glance: which flows are active, how often certain operations run, and what percentage of log volume each pattern accounts for. HTTP listener noise is filtered out. Narrow with level, logger and search.',
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed'),
                 environment: z.string().describe('Environment name or ID'),
-                hoursBack: z.number().optional().describe('How many hours of logs to analyze (default: all available)'),
+                hoursBack: hoursBackInput,
                 topN: z.number().optional().describe('Number of top patterns to return (default: 15)'),
+                ...logFilterInputs,
             },
             annotations: { readOnlyHint: true },
         },
-        async ({ appName, environment, hoursBack, topN }) => {
+        async ({ appName, environment, hoursBack, topN, level, search, regex, logger }) => {
             try {
-                const { orgId, env } = await resolveEnvironment(client, environment);
-                const rawText = await client.logs.getRawText(orgId, env.id, appName);
+                const { env, text, source } = await fetchLogText(client, appName, environment);
 
-                const result = analyzeLogs(rawText, {
+                const result = analyzeLogs(text, {
                     hoursBack,
+                    level,
+                    search,
+                    regex,
+                    logger,
                     maxPatterns: topN || 15,
                 });
 
                 const lines: string[] = [
-                    `## Log Patterns for ${appName} in ${env.name}`,
+                    `## Log Patterns for ${appName} in ${env.name}${filterLabel({ hoursBack, level, logger, search })}`,
                     `${result.stats.totalEntries} entries analyzed (${result.stats.noisePercentage}% HTTP noise filtered)`,
                     '',
-                    '| # | Level | Count | % | Pattern |',
-                    '|---|-------|-------|---|---------|',
+                    '| # | Level | Count | % | Logger | Pattern |',
+                    '|---|-------|-------|---|--------|---------|',
                 ];
 
                 result.patterns.forEach((p, i) => {
-                    lines.push(`| ${i + 1} | ${p.level} | ${p.count} | ${p.percentage}% | ${p.template} |`);
+                    lines.push(
+                        `| ${i + 1} | ${p.level} | ${p.count} | ${p.percentage}% | ${p.loggerName ?? ''} | ${p.template} |`,
+                    );
                 });
 
-                return mcpText(lines.join('\n'));
+                return mcpText(withNotice(lines.join('\n'), sourceNotice(source)));
             } catch (error) {
                 return mcpError(error);
             }
@@ -169,24 +205,24 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
         {
             title: 'Get Log Statistics',
             description:
-                "Returns a statistical health summary of an application's logs: level distribution, error rate, error spikes (time windows with elevated errors), noise percentage, and unique transaction count. Use this for quick health checks without reading individual log lines.",
+                "Returns a statistical health summary of an application's logs: level distribution, top loggers, error rate, error spikes (time windows with elevated errors), noise percentage, and unique transaction count. Use this for quick health checks without reading individual log lines. Narrow with level, logger and search.",
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed'),
                 environment: z.string().describe('Environment name or ID'),
-                hoursBack: z.number().optional().describe('How many hours of logs to analyze (default: all available)'),
+                hoursBack: hoursBackInput,
+                ...logFilterInputs,
             },
             annotations: { readOnlyHint: true },
         },
-        async ({ appName, environment, hoursBack }) => {
+        async ({ appName, environment, hoursBack, level, search, regex, logger }) => {
             try {
-                const { orgId, env } = await resolveEnvironment(client, environment);
-                const rawText = await client.logs.getRawText(orgId, env.id, appName);
+                const { env, text, source } = await fetchLogText(client, appName, environment);
 
-                const result = analyzeLogs(rawText, { hoursBack });
+                const result = analyzeLogs(text, { hoursBack, level, search, regex, logger });
                 const s = result.stats;
 
                 const lines: string[] = [
-                    `## Log Stats for ${appName} in ${env.name}`,
+                    `## Log Stats for ${appName} in ${env.name}${filterLabel({ hoursBack, level, logger, search })}`,
                     '',
                     `**Volume:** ${s.totalEntries} entries from ${s.totalLines} raw lines`,
                     `**Time range:** ${s.timeRange.start} → ${s.timeRange.end}`,
@@ -204,6 +240,14 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
                     `**Error rate:** ${s.errorRate}%`,
                 ];
 
+                const loggers = topCounts(s.byLogger, 10);
+                if (loggers.length > 0) {
+                    lines.push('', '### Top Loggers');
+                    for (const { name, count } of loggers) {
+                        lines.push(`- ${name}: ${count}`);
+                    }
+                }
+
                 if (s.errorSpikes.length > 0) {
                     lines.push('', '### Error Spikes (above-average windows)');
                     for (const spike of s.errorSpikes) {
@@ -218,7 +262,7 @@ export function registerAnalysisTools(server: McpServer, client: AnypointClient)
                     }
                 }
 
-                return mcpText(lines.join('\n'));
+                return mcpText(withNotice(lines.join('\n'), sourceNotice(source)));
             } catch (error) {
                 return mcpError(error);
             }

@@ -36,9 +36,10 @@ describe('application MCP tools', () => {
         accessManagement: {
             resolveEnvironment: vi.fn().mockResolvedValue({ id: 'env-1', name: 'Test' }),
         },
+        runtimes: { getTarget: vi.fn().mockResolvedValue(null) },
         cloudHub2: {
             findDetailByName: vi.fn().mockResolvedValue(detail),
-            updateApplicationConfiguration: vi.fn().mockResolvedValue({ id: 'dep-1', status: 'APPLYING' }),
+            patchDeployment: vi.fn().mockResolvedValue({ id: 'dep-1', status: 'APPLYING' }),
             deleteDeployment: vi.fn().mockResolvedValue(undefined),
             waitForDeploymentDeletion: vi.fn().mockResolvedValue({ verifiedAbsent: true }),
         },
@@ -54,19 +55,64 @@ describe('application MCP tools', () => {
         registerAppLifecycleTools(server as any, client as any);
     });
 
-    it('merges settings from full detail and delegates to the narrow configuration API', async () => {
+    it('previews a settings change without writing', async () => {
         const result = await handlers.get('update_app_settings')!({
             appName: 'sample-app',
             environment: 'Test',
             properties: { environment: 'staging' },
         });
+        const preview = JSON.parse(result.content[0].text);
+        expect(preview.dryRun).toBe(true);
+        expect(preview.settings.changed).toEqual([{ key: 'environment', from: 'test', to: 'staging' }]);
+        expect(client.cloudHub2.patchDeployment).not.toHaveBeenCalled();
+    });
 
-        expect(client.cloudHub2.updateApplicationConfiguration).toHaveBeenCalledWith('org-1', 'env-1', 'dep-1', {
-            applicationName: 'sample-app',
-            properties: { environment: 'staging', unchanged: 'yes' },
-            secureProperties: { credential: '******' },
+    it('sends the full maps with masked secure values retained in one PATCH on confirm', async () => {
+        const result = await handlers.get('update_app_settings')!({
+            appName: 'sample-app',
+            environment: 'Test',
+            properties: { environment: 'staging' },
+            removeProperties: ['unchanged'],
+            confirm: true,
+        });
+
+        expect(client.cloudHub2.patchDeployment).toHaveBeenCalledWith('org-1', 'env-1', 'dep-1', {
+            application: {
+                configuration: {
+                    'mule.agent.application.properties.service': {
+                        applicationName: 'sample-app',
+                        properties: { environment: 'staging' },
+                        secureProperties: { credential: '******' },
+                    },
+                },
+            },
         });
         expect(result.isError).toBeUndefined();
+    });
+
+    it('refuses production without confirmProduction', async () => {
+        client.accessManagement.resolveEnvironment.mockResolvedValue({
+            id: 'env-1',
+            name: 'Production',
+            isProduction: true,
+        });
+        const handler = handlers.get('update_app_settings')!;
+        const refused = await handler({
+            appName: 'sample-app',
+            environment: 'Production',
+            properties: { a: 'b' },
+            confirm: true,
+        });
+        expect(refused.isError).toBe(true);
+        expect(client.cloudHub2.patchDeployment).not.toHaveBeenCalled();
+        await handler({
+            appName: 'sample-app',
+            environment: 'Production',
+            properties: { a: 'b' },
+            confirm: true,
+            confirmProduction: true,
+        });
+        expect(client.cloudHub2.patchDeployment).toHaveBeenCalledTimes(1);
     });
 
     it('rejects absent or empty settings without making an API request', async () => {
@@ -76,7 +122,7 @@ describe('application MCP tools', () => {
             (await handler({ appName: 'sample-app', environment: 'Test', properties: {}, secureProperties: {} }))
                 .isError,
         ).toBe(true);
-        expect(client.cloudHub2.updateApplicationConfiguration).not.toHaveBeenCalled();
+        expect(client.cloudHub2.patchDeployment).not.toHaveBeenCalled();
     });
 
     it('previews application deletion without making a DELETE request', async () => {

@@ -31,6 +31,7 @@ export {
     type ApplicationPropertiesService,
     type ApplicationConfigurationUpdate,
     type DeploymentDeletionVerification,
+    type DeploymentPatch,
 } from './api/CloudHub2Api.js';
 export { LogsApi, type LogEntry } from './api/LogsApi.js';
 export {
@@ -85,6 +86,47 @@ export {
     type ObjectStoreKeysPage,
     type ObjectStoreValue,
 } from './api/ObjectStoreApi.js';
+
+export { RuntimesApi, type RuntimeVersion, type RuntimeTarget } from './api/RuntimesApi.js';
+
+// Application changes
+export {
+    planAppChange,
+    describeAppChange,
+    executeAppChange,
+    resolveSettingsInput,
+    type AppChangeRequest,
+    type AppChangePlan,
+    type AppChangeResult,
+    type ChangeMode,
+    type UpdateStrategy,
+    type SettingsChangeInput,
+    type RuntimeCheck,
+} from './workflows/app-change.js';
+export {
+    deploymentPhase,
+    waitForAppPhase,
+    type AppPhase,
+    type PhaseSnapshot,
+    type WaitOptions,
+    type WaitResult,
+} from './workflows/app-state.js';
+export {
+    suggestAssetCoordinates,
+    inferConvention,
+    type AssetConvention,
+    type AssetSuggestion,
+} from './workflows/asset-naming.js';
+export {
+    planSettingsChange,
+    currentSettings,
+    type SettingsChange,
+    type SettingsDiff,
+    type SettingsPlan,
+} from './safety/deployment.js';
+export { resolveRuntime, suggestRuntimes, parseRuntimeString, type RuntimeSpec } from './safety/runtime.js';
+export { looksSecret, redactValue, redactRecord, redactText, MASKED } from './safety/secrets.js';
+export { resolveSecretSource, resolveSecretSources, type SecretSource } from './safety/secret-sources.js';
 
 // Utils
 export { AmqlQueryError, errorMessage } from './utils/errors.js';

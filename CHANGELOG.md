@@ -1,5 +1,109 @@
 # Changelog
 
+## 0.16.0 - 2026-10-26
+
+This release makes application changes one previewed call, keeps secret values out of conversations and
+output, and makes logs usable at volume. Every MCP write now previews first and needs a second flag in
+production; see the migration tables below.
+
+### Fixed
+
+- Log search no longer misses lines right after a start. Multi-line entries (error reports, start-up
+  banners, stack traces, logged payloads) were split into separate entries stamped with the fetch time,
+  so they were lost under a level filter and pushed real lines out of the limit. They now stay with
+  their entry, keep its timestamp and level, and are searchable.
+- When a newly applied spec has no log file yet, log tools read the last successful spec and say so.
+- Waits no longer finish on a status left over from the previous spec, and no longer report the brief
+  `FAILED` a stopped app shows while it starts. A failure is reported once it persists past a 90-second
+  grace window, and is reported with the replica's reason when one is given.
+- `restart_app` and `anc apps restart` restart the app. They previously re-sent the desired state, which
+  did nothing on a running app.
+- `anc deploy` exits non-zero when the rollout fails or times out.
+- API error bodies echoed by the platform have secret-looking fields masked.
+
+### Added
+
+- `update_app` and `anc apps update` change artifact, runtime, settings and update strategy in one
+  update. `mode: "stopStart"` (CLI `--stop-start`) stops the app, applies the change and starts it, so old
+  and new replicas never process events together. `updateStrategy: "rolling" | "recreate"` sets the
+  platform strategy.
+- Runtime checks: a requested runtime is checked against what the app's target offers, and a retired
+  current runtime is detected, before anything is written. The preview names the nearest supported
+  versions. `list_runtime_versions` and `anc runtimes list` show a target's catalog.
+- `update_app_settings` and `anc apps settings set`:
+  - `securePropertiesFrom` and `propertiesFrom` read values on the server from a `.env`, `.properties` or
+    JSON file inside the project, or from environment variables.
+  - `removeProperties` and `removeSecureProperties` delete keys.
+  - `moveToSecure` turns a plain property into a secure one without the value leaving the server.
+- `get_app_settings` masks secret-looking plain values by default and lists each under `warnings` with
+  the `moveToSecure` fix. `anc apps settings get` does the same.
+- `get_app_status` reports a `phase` (`RUNNING`, `STARTING`, `UPDATING`, `DEGRADED`, `FAILED`,
+  `STOPPING`, `STOPPED`) with `settled` and `reason`, and accepts `wait`. `stop_app`, `start_app`,
+  `scale_app`, `restart_app` and the deploy tools accept `wait`.
+- Naming conventions: `.anypoint-connect.json` `conventions` sets the asset ID and version templates used
+  when publishing (`{app}`, `{artifactId}`, `{pomVersion}`, `{timestamp}`, `{gitShort}`).
+  `suggest_asset_name` and the deploy preview report the pattern of the asset an app runs today.
+- `compare_deployed_artifact` and `anc apps compare` compare the JAR an app runs with a git ref (optionally
+  including uncommitted changes) or a local JAR, by file name and hash, plus dependencies.
+- API Manager: `list_api_contracts`, `get_client_application` (secret masked; `writeCredentialsTo`
+  writes a mode-0600 `.env` file in the project) and `smoke_test_api`, which calls an API with its
+  client credentials without returning them. CLI: `anc api contracts`, `client-app`, `smoke`.
+- Logs: `get_logs` gains `regex`, `logger`, `hoursBack`, `startTime`/`endTime` and returns the match
+  count before the limit. `download_logs` gains `search`, `regex`, `logger`, `level`, `mode: "summary"`
+  with counts by level, logger and time bucket, `maxLines`, and `outputFile`. The analysis tools accept
+  `level`, `search`, `regex` and `logger`. CLI: `anc logs search`, and `--grep`, `--logger`, `--summary`
+  on `anc logs download`.
+- CLI: `anc apps stop`, `anc apps start`, `anc apps status --wait`.
+
+### Changed
+
+- Every MCP write previews unless `confirm: true`, and production also needs `confirmProduction: true`.
+  This now covers `update_app_settings`, `restart_app`, `scale_app`, `stop_app` and `start_app`, which
+  previously applied on call, and adds the production flag to the deploy tools.
+- Changes to an existing app go through one workflow and one PATCH. `deploy_jar`, `deploy_app` and
+  `anc deploy` accept runtime and settings changes for an existing app instead of rejecting or silently
+  ignoring them. Region, vCores, replicas and JVM arguments are still create-only, and are now refused
+  rather than ignored by `deploy_app`.
+- `restart_app` is a stop, wait, start: expect a short outage.
+- `get_app_settings` no longer returns `rawConfiguration`. Other configuration services are returned as
+  `otherConfiguration`, masked.
+- `download_logs` returns lines oldest first with logger and stack traces, and is annotated as writing,
+  because `outputFile` can write a local file.
+
+### Migration from 0.15.x
+
+MCP tools:
+
+| 0.15 | 0.16 |
+| --- | --- |
+| `update_app_settings`, `restart_app`, `scale_app`, `stop_app`, `start_app` applied on call | Call once for the preview, then again with `confirm: true` |
+| Any write in production with `confirm: true` | Add `confirmProduction: true` |
+| `update_app_artifact` to change the version, then `update_app_settings` | One `update_app` call |
+| `stop_app`, `update_app_artifact`, `start_app` for listener-driven apps | `update_app` with `mode: "stopStart"` |
+| Secrets in `secureProperties` | `securePropertiesFrom` with a file or environment variable |
+| Raw API PATCH to delete or move a property | `removeProperties`, `removeSecureProperties`, `moveToSecure` |
+| `get_app_settings` `rawConfiguration` | `properties`, `securePropertyKeys`, `otherConfiguration` |
+| `get_app_status` `status` for health | `phase` and `settled` (`status` is still returned) |
+
+CLI:
+
+| 0.15 | 0.16 |
+| --- | --- |
+| `anc apps restart` re-sent the desired state | `anc apps restart` stops, waits and starts |
+| `anc deploy` rejected `--runtime` for an existing app | `anc deploy --runtime` moves the app to that runtime |
+| Settings through the platform UI | `anc apps settings get`, `anc apps settings set` |
+
+Library:
+
+- `mergeApplicationProperties` is replaced by `planSettingsChange`, which also removes and moves keys
+  and returns a diff.
+- `CloudHub2Api.waitForDeployment(org, env, id, options)` takes an options object and returns
+  `{deployment, snapshot, timedOut}` instead of throwing on failure.
+- `CloudHub2Api.restartApp` is removed; use `planAppChange` with `restart: true`.
+- New: `patchDeployment`, `RuntimesApi`, `planAppChange`/`executeAppChange`, `deploymentPhase`/`waitForAppPhase`,
+  the secret helpers and `resolveSecretSources`.
+- `LogsApi.getLogs` returns enriched entries. New: `searchLogs`, `queryLogs` and `getLogFile`.
+
 ## 0.15.0 - 2026-10-05
 
 This release consolidates the MCP and CLI surface. Tool and command names changed; see the migration

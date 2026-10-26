@@ -71,9 +71,10 @@ Every MCP tool is listed in the [tool catalog](tools.md); every command is in th
 
 ## Safety is part of the interface
 
-Deployment changes preview by default. Publishing binds the exact JAR bytes, redeploys change only the
-artifact reference, deletion is bound to the deployment ID that was inspected, Design Center writes need a
-single-use preview token, and production needs an additional acknowledgement. Read the
+Every application change previews by default. Publishing binds the exact JAR bytes, a change to an
+existing app carries only what was asked for and checks the runtime first, secret values never pass
+through the conversation, deletion is bound to the deployment ID that was inspected, Design Center writes
+need a single-use preview token, and production needs an additional acknowledgement. Read the
 [safety model](safety.md) before automating a change.
 
 <div class="anc-note" markdown="1">

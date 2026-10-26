@@ -1,14 +1,93 @@
 /**
  * MCP Tool Registrar — Application lifecycle tools (production-guarded)
  * restart_app, scale_app, stop_app, start_app, update_app_settings, delete_app
+ *
+ * Every tool here previews by default and applies on confirm: true; production also needs
+ * confirmProduction: true.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError, mcpText, dryRunPreview, resolveEnvironment } from './shared.js';
-import { mergeApplicationProperties } from '../../safety/deployment.js';
+import type { CH2Deployment } from '../../api/CloudHub2Api.js';
+import { mcpError, mcpText, dryRunPreview, guardWrite, resolveEnvironment, writeInputs } from './shared.js';
+import { modeInput, runAppChangeTool, settingsFromArgs, settingsInputs, waitInputs } from './app-inputs.js';
 import { buildApplicationDeletionPreview, deploymentIdMatches } from '../../safety/deletion.js';
+import { deploymentPhase, waitForAppPhase } from '../../workflows/app-state.js';
+
+const appInputs = {
+    appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
+    environment: z.string().describe('Environment name or ID'),
+};
+
+function notFound(appName: string, envName: string) {
+    return { ...mcpText({ message: `Application "${appName}" not found in ${envName}` }), isError: true as const };
+}
+
+/**
+ * Apply a narrow state change (stop, start, scale), then optionally wait for it to settle.
+ */
+async function runStateChange(
+    client: AnypointClient,
+    args: {
+        appName: string;
+        environment: string;
+        confirm?: boolean;
+        confirmProduction?: boolean;
+        wait?: boolean;
+        waitTimeoutSeconds?: number;
+    },
+    describe: (detail: CH2Deployment) => Record<string, unknown> | string,
+    apply: (orgId: string, envId: string, detail: CH2Deployment) => Promise<unknown>,
+) {
+    try {
+        const { orgId, env } = await resolveEnvironment(client, args.environment);
+        const detail = await client.cloudHub2.findDetailByName(orgId, env.id, args.appName);
+        if (!detail) return notFound(args.appName, env.name);
+
+        const described = describe(detail);
+        if (typeof described === 'string') return mcpText({ noop: true, message: described });
+        const preview = {
+            app: detail.name,
+            environment: env.name,
+            current: {
+                desiredState: detail.application.desiredState,
+                replicas: detail.target?.replicas,
+                phase: deploymentPhase(detail).phase,
+            },
+            ...described,
+        };
+        const gate = guardWrite({ env, confirm: args.confirm, confirmProduction: args.confirmProduction, preview });
+        if (gate) return gate;
+
+        const sentAt = Date.now();
+        await apply(orgId, env.id, detail);
+        if (!args.wait) {
+            return mcpText({
+                ...preview,
+                applied: true,
+                tip: 'Pass wait: true, or call get_app_status with wait: true, to follow it.',
+            });
+        }
+        const result = await waitForAppPhase(client.cloudHub2, orgId, env.id, detail.id, {
+            sinceChange: sentAt,
+            timeoutMs: args.waitTimeoutSeconds ? args.waitTimeoutSeconds * 1000 : undefined,
+        });
+        const response = mcpText({
+            ...preview,
+            applied: true,
+            phase: result.snapshot.phase,
+            settled: result.snapshot.settled,
+            ...(result.snapshot.reason ? { reason: result.snapshot.reason } : {}),
+            ...(result.timedOut ? { timedOut: true } : {}),
+        });
+        return result.snapshot.terminal && !result.snapshot.settled
+            ? { ...response, isError: true as const }
+            : response;
+    } catch (error) {
+        return mcpError(error);
+    }
+}
 
 export function registerAppLifecycleTools(server: McpServer, client: AnypointClient) {
     server.registerTool(
@@ -16,33 +95,11 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         {
             title: 'Restart Application',
             description:
-                "Initiates a rolling restart of a deployed Mule application by re-applying its desired state. This causes new replicas to spin up before old ones are terminated, avoiding downtime. Use when an app is behaving unexpectedly (e.g. memory issues, stale connections) but you don't need to redeploy a new version.",
-            inputSchema: {
-                appName: z.string().describe('Application name exactly as deployed'),
-                environment: z.string().describe('Environment name or ID'),
-            },
-            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+                'Restarts a CloudHub 2.0 application by stopping it, waiting until every replica is down, and starting it again, so old and new replicas never run together. Expect a short outage. Use when an app misbehaves (memory pressure, stale connections) and no new version is needed. Previews by default; pass confirm: true to apply.',
+            inputSchema: { ...appInputs, ...waitInputs, ...writeInputs },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
-        async ({ appName, environment }) => {
-            try {
-                const { orgId, env } = await resolveEnvironment(client, environment);
-                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
-
-                if (!deployment) {
-                    return {
-                        content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
-                        isError: true,
-                    };
-                }
-
-                await client.cloudHub2.restartApp(orgId, env.id, deployment.id);
-                return mcpText(
-                    `✅ Rolling restart initiated for "${appName}" in ${env.name}. Use get_app_status to monitor progress.`,
-                );
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
+        async (args) => runAppChangeTool(client, args, { restart: true, mode: 'stopStart' }, { done: 'Restarted' }),
     );
 
     server.registerTool(
@@ -50,71 +107,46 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         {
             title: 'Scale Application',
             description:
-                'Changes the number of running replicas for a CloudHub 2.0 application. Scaling up adds more replicas for higher throughput and availability; scaling down reduces cost. Each replica runs as an isolated Mule runtime instance. The change takes effect immediately and new replicas will begin receiving traffic once their health checks pass.',
+                'Changes the number of replicas of a CloudHub 2.0 application. New replicas receive traffic once their health checks pass. Previews by default; pass confirm: true to apply.',
             inputSchema: {
-                appName: z.string().describe('Application name exactly as deployed'),
-                environment: z.string().describe('Environment name or ID'),
-                replicas: z.number().min(1).max(8).describe('Desired number of replicas (1–8)'),
+                ...appInputs,
+                replicas: z.number().min(1).max(8).describe('Desired number of replicas (1-8)'),
+                ...waitInputs,
+                ...writeInputs,
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
         },
-        async ({ appName, environment, replicas }) => {
-            try {
-                const { orgId, env } = await resolveEnvironment(client, environment);
-                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
-
-                if (!deployment) {
-                    return {
-                        content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
-                        isError: true,
-                    };
-                }
-
-                await client.cloudHub2.scaleApp(orgId, env.id, deployment.id, replicas);
-                return mcpText(
-                    `✅ Scaled "${appName}" to ${replicas} replica(s) in ${env.name}. Use get_app_status to monitor.`,
-                );
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
+        async (args) =>
+            runStateChange(
+                client,
+                args,
+                (detail) =>
+                    detail.target?.replicas === args.replicas
+                        ? `"${detail.name}" already runs ${args.replicas} replica(s)`
+                        : { action: 'scale', next: { replicas: args.replicas } },
+                (orgId, envId, detail) => client.cloudHub2.scaleApp(orgId, envId, detail.id, args.replicas),
+            ),
     );
-
-    // ── New tools ─────────────────────────────────────────
 
     server.registerTool(
         'stop_app',
         {
             title: 'Stop Application',
             description:
-                "Stops a running Mule application in CloudHub 2.0 without deleting the deployment. The application's replicas are terminated but the deployment configuration is preserved. Use this to temporarily take an app offline for maintenance, cost savings, or to prevent traffic during investigations. Use start_app to bring it back online.",
-            inputSchema: {
-                appName: z.string().describe('Application name exactly as deployed'),
-                environment: z.string().describe('Environment name or ID'),
-            },
+                'Stops a CloudHub 2.0 application without deleting it: replicas terminate and the deployment configuration is kept. Use start_app to bring it back. Previews by default; pass confirm: true to apply.',
+            inputSchema: { ...appInputs, ...waitInputs, ...writeInputs },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
         },
-        async ({ appName, environment }) => {
-            try {
-                const { orgId, env } = await resolveEnvironment(client, environment);
-                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
-
-                if (!deployment) {
-                    return {
-                        content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
-                        isError: true,
-                    };
-                }
-
-                await client.cloudHub2.setDesiredState(orgId, env.id, deployment.id, 'STOPPED');
-
-                return mcpText(
-                    `✅ Stop initiated for "${appName}" in ${env.name}. Replicas will be terminated. Use get_app_status to monitor, and start_app to bring it back online.`,
-                );
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
+        async (args) =>
+            runStateChange(
+                client,
+                args,
+                (detail) =>
+                    detail.application.desiredState === 'STOPPED'
+                        ? `"${detail.name}" is already stopped`
+                        : { action: 'stop', next: { desiredState: 'STOPPED' } },
+                (orgId, envId, detail) => client.cloudHub2.setDesiredState(orgId, envId, detail.id, 'STOPPED'),
+            ),
     );
 
     server.registerTool(
@@ -122,34 +154,20 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         {
             title: 'Start Application',
             description:
-                'Starts a stopped Mule application in CloudHub 2.0. Brings the application back online by requesting the desired state to STARTED. Use this after stop_app to resume processing, or to recover an app that was manually stopped.',
-            inputSchema: {
-                appName: z.string().describe('Application name exactly as deployed'),
-                environment: z.string().describe('Environment name or ID'),
-            },
+                'Starts a stopped CloudHub 2.0 application. With wait: true it returns once every replica is running, without reporting the brief FAILED status the platform shows during start-up. Previews by default; pass confirm: true to apply.',
+            inputSchema: { ...appInputs, ...waitInputs, ...writeInputs },
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
         },
-        async ({ appName, environment }) => {
-            try {
-                const { orgId, env } = await resolveEnvironment(client, environment);
-                const deployment = await client.cloudHub2.findByName(orgId, env.id, appName);
-
-                if (!deployment) {
-                    return {
-                        content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
-                        isError: true,
-                    };
-                }
-
-                await client.cloudHub2.setDesiredState(orgId, env.id, deployment.id, 'STARTED');
-
-                return mcpText(
-                    `✅ Start initiated for "${appName}" in ${env.name}. Use get_app_status to monitor replica startup.`,
-                );
-            } catch (error) {
-                return mcpError(error);
-            }
-        },
+        async (args) =>
+            runStateChange(
+                client,
+                args,
+                (detail) =>
+                    detail.application.desiredState === 'STARTED' && deploymentPhase(detail).settled
+                        ? `"${detail.name}" is already running`
+                        : { action: 'start', next: { desiredState: 'STARTED' } },
+                (orgId, envId, detail) => client.cloudHub2.setDesiredState(orgId, envId, detail.id, 'STARTED'),
+            ),
     );
 
     server.registerTool(
@@ -157,57 +175,29 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         {
             title: 'Update Application Settings',
             description:
-                'Updates application properties for a deployed Mule application in CloudHub 2.0. Merges the provided properties with existing ones (does not remove properties not specified). Triggers a rolling restart to apply the new configuration. Use this to change environment-specific config like database URLs, API keys, or feature flags without redeploying a new JAR.',
-            inputSchema: {
-                appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
-                environment: z.string().describe('Environment name or ID'),
-                properties: z
-                    .record(z.string())
-                    .optional()
-                    .describe('Plain-text application properties to set or update (merged with existing)'),
-                secureProperties: z
-                    .record(z.string())
-                    .optional()
-                    .describe('Secure (encrypted) properties to set or update (merged with existing)'),
-            },
+                'Adds, changes, removes or moves application properties of a CloudHub 2.0 app. Untouched properties are kept; stored secure values are kept too, because the platform retains a secure value whenever it is sent back masked. ' +
+                'Pass secrets through securePropertiesFrom (a project file or environment variables read on the server) so they never appear in the conversation, and use moveToSecure to turn a plain property into a secure one without exposing its value. ' +
+                'The app references secure properties as plain ${key}. Applying restarts the app; use mode stopStart for apps with streaming or polling listeners. Previews by default; pass confirm: true to apply.',
+            inputSchema: { ...appInputs, ...settingsInputs, mode: modeInput, ...waitInputs, ...writeInputs },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
         },
-        async ({ appName, environment, properties, secureProperties }) => {
-            try {
-                if (Object.keys(properties ?? {}).length + Object.keys(secureProperties ?? {}).length === 0) {
-                    return {
-                        content: [
-                            {
-                                type: 'text',
-                                text: 'At least one of "properties" or "secureProperties" must be provided.',
-                            },
-                        ],
-                        isError: true,
-                    };
-                }
-
-                const { orgId, env } = await resolveEnvironment(client, environment);
-                const detail = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
-
-                if (!detail) {
-                    return {
-                        content: [{ type: 'text', text: `Application "${appName}" not found in ${env.name}` }],
-                        isError: true,
-                    };
-                }
-
-                const merged = mergeApplicationProperties(detail, properties, secureProperties);
-                await client.cloudHub2.updateApplicationConfiguration(orgId, env.id, detail.id, merged);
-
-                return mcpText({
-                    message: `✅ Updated settings for "${appName}" in ${env.name}. Rolling restart triggered.`,
-                    propertiesUpdated: properties ? Object.keys(properties) : [],
-                    securePropertiesUpdated: secureProperties ? Object.keys(secureProperties) : [],
-                    tip: 'Use get_app_status to monitor the restart, and get_app_settings to verify.',
-                });
-            } catch (error) {
-                return mcpError(error);
+        async (args) => {
+            const settings = settingsFromArgs(args);
+            const empty = Object.values(settings).every(
+                (value) =>
+                    value === undefined ||
+                    (Array.isArray(value) ? value.length === 0 : Object.keys(value).length === 0),
+            );
+            if (empty) {
+                return {
+                    ...mcpText({
+                        message:
+                            'Nothing to change: pass properties, secureProperties, propertiesFrom, securePropertiesFrom, removeProperties, removeSecureProperties or moveToSecure.',
+                    }),
+                    isError: true as const,
+                };
             }
+            return runAppChangeTool(client, args, { settings, mode: args.mode }, { done: 'Updated settings of' });
         },
     );
 

@@ -62,6 +62,8 @@ export interface LogStats {
     totalLines: number;
     totalEntries: number;
     byLevel: Record<string, number>;
+    /** Entry count per logger name; entries without one count under "(none)" */
+    byLogger: Record<string, number>;
     errorRate: number;
     timeRange: { start: string; end: string };
     errorSpikes: ErrorSpike[];
@@ -73,7 +75,19 @@ export interface LogStats {
 
 export interface AnalysisOptions {
     hoursBack?: number;
+    /** Inclusive window in epoch milliseconds; overrides hoursBack when set */
+    startTime?: number;
+    endTime?: number;
+    /** Minimum level of the entries counted in stats and patterns */
     level?: string;
+    /** Only entries whose logger name contains this text */
+    logger?: string;
+    /** Only entries containing this text (message, logger, thread, stack trace, JSON payload) */
+    search?: string;
+    /** Treat `search` as a case-insensitive regular expression */
+    regex?: boolean;
+    /** Minimum level an entry needs to be analyzed as an error (default ERROR) */
+    errorLevel?: string;
     contextBefore?: number;
     contextAfter?: number;
     maxErrorGroups?: number;

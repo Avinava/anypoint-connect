@@ -7,3 +7,4 @@ export { createMonitorCommand } from './monitor.js';
 export { createExchangeCommand } from './exchange.js';
 export { createApiCommand } from './api.js';
 export { createDesignCenterCommand } from './design-center.js';
+export { createRuntimesCommand } from './runtimes.js';

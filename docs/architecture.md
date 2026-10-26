@@ -106,12 +106,19 @@ exactly what the server registers.
 
 ## Safety model in brief
 
-- **Application deployments preview by default.** MCP deployment tools change nothing without
-  `confirm: true`; `anc deploy` supports `--dry-run` and asks for a typed phrase in production.
-- **Redeploys change only the artifact reference.** Runtime, target, replicas, vCores, and settings are
-  preserved, and create-only settings are rejected for existing apps.
-- **Artifacts are bound to their bytes.** Coordinates come from the JAR's embedded Maven metadata, and
-  the SHA-256 shown in the preview can be required at publication.
+- **Application writes preview by default.** MCP write tools change nothing without `confirm: true`, and
+  production also needs `confirmProduction: true` (`guardWrite` in `src/mcp/tools/shared.ts`). The CLI
+  supports `--dry-run` and asks for a typed phrase in production.
+- **One change model.** `src/workflows/app-change.ts` plans every change to an existing app (artifact,
+  runtime, settings, update strategy) as one PATCH, checks the runtime against the target catalog,
+  and applies it in place or as stop, change, start. `src/workflows/app-state.ts` turns deployment,
+  application and replica status into one phase for status reads and every wait.
+- **Secrets stay out of output.** `src/safety/secrets.ts` detects and masks secret-looking values;
+  `src/safety/secret-sources.ts` reads secret values from project files or environment variables, and
+  `src/safety/paths.ts` keeps file access inside the project root.
+- **Artifacts are bound to their bytes.** Coordinates come from explicit input, the project naming
+  convention, or the JAR's embedded Maven metadata, and the SHA-256 shown in the preview can be required
+  at publication.
 - **Deletion is bound to a deployment ID**, with a separate production acknowledgement.
 - **Design Center writes are token-bound.** A preview issues a single-use, ten-minute token tied to the
   exact inputs and hashes; apply rechecks under a lock and verifies what was saved or published.

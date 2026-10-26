@@ -17,6 +17,8 @@ export interface ApiInstance {
     tags?: string[];
     status: string;
     endpointUri?: string;
+    /** Present on some proxy instances. */
+    proxyUri?: string;
     technology?: string;
     deprecated?: boolean;
     isPublic?: boolean;
@@ -62,7 +64,43 @@ export interface SlaTier {
     }>;
 }
 
+export interface ApiContract {
+    id: number;
+    status: string;
+    applicationId?: number;
+    application?: { id: number; name: string; [key: string]: unknown };
+    tier?: { id: number; name: string } | null;
+    tierId?: number | null;
+    requestedTierId?: number | null;
+    approvedDate?: string;
+    [key: string]: unknown;
+}
+
+/** A client application from the API Platform repository. Holds credentials; never return it raw. */
+export interface ClientApplication {
+    id: number;
+    name: string;
+    description?: string;
+    clientId: string;
+    clientSecret: string;
+    url?: string;
+    redirectUri?: string[];
+    grantTypes?: string[];
+    [key: string]: unknown;
+}
+
+/** An API instance resolved from a numeric ID or a name. `instance` is absent when an ID is not in the list. */
+export interface ResolvedApiInstance {
+    apiId: number;
+    asset?: ApiAsset;
+    instance?: ApiInstance;
+}
+
 const BASE = '/apimanager/api/v1';
+const REPOSITORY = '/apiplatform/repository/v2';
+const PAGE_SIZE = 100;
+/** Hard stop for pagination, in case a response never reports a total. */
+const MAX_PAGES = 100;
 
 export class ApiManagerApi {
     constructor(
@@ -83,12 +121,68 @@ export class ApiManagerApi {
     async getApis(orgId: string, envId: string): Promise<ApiAsset[]> {
         const cacheKey = `apim:${orgId}:${envId}`;
         return this.cache.getOrCompute(cacheKey, async () => {
-            const response = await this.http.get<{ total: number; assets: ApiAsset[] }>(
-                `${BASE}/organizations/${orgId}/environments/${envId}/apis?limit=100`,
+            const assets: ApiAsset[] = [];
+            for (let page = 0; page < MAX_PAGES; page++) {
+                const response = await this.http.get<{ total: number; assets: ApiAsset[] }>(
+                    `${BASE}/organizations/${orgId}/environments/${envId}/apis?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+                    { headers: this.envHeaders(orgId, envId) },
+                );
+                const batch = response.assets || [];
+                assets.push(...batch);
+                if (batch.length < PAGE_SIZE || (response.total !== undefined && assets.length >= response.total))
+                    break;
+            }
+            return assets;
+        });
+    }
+
+    /**
+     * Resolve a numeric API instance ID or an Exchange asset name (partial match) to an instance.
+     * Throws when a name matches nothing.
+     */
+    async resolveApiInstance(
+        orgId: string,
+        env: { id: string; name: string },
+        apiRef: string,
+    ): Promise<ResolvedApiInstance> {
+        const trimmed = apiRef.trim();
+        if (/^\d+$/.test(trimmed)) {
+            const apiId = Number(trimmed);
+            const assets = await this.getApis(orgId, env.id);
+            for (const asset of assets) {
+                const instance = asset.apis.find((api) => api.id === apiId);
+                if (instance) return { apiId, asset, instance };
+            }
+            return { apiId };
+        }
+        const found = await this.findByName(orgId, env.id, trimmed);
+        if (!found) throw new Error(`API "${apiRef}" not found in ${env.name}`);
+        return { apiId: found.instance.id, asset: found.asset, instance: found.instance };
+    }
+
+    /** List every contract (client application access grant) on an API instance. */
+    async getContracts(orgId: string, envId: string, apiId: number): Promise<ApiContract[]> {
+        const contracts: ApiContract[] = [];
+        for (let page = 0; page < MAX_PAGES; page++) {
+            const response = await this.http.get<{ total?: number; contracts?: ApiContract[] }>(
+                `${BASE}/organizations/${orgId}/environments/${envId}/apis/${apiId}/contracts?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
                 { headers: this.envHeaders(orgId, envId) },
             );
-            return response.assets || [];
-        });
+            const batch = response.contracts || [];
+            contracts.push(...batch);
+            if (batch.length < PAGE_SIZE || (response.total !== undefined && contracts.length >= response.total)) break;
+        }
+        return contracts;
+    }
+
+    /**
+     * Get a client application, including its client ID and secret. Callers must mask the
+     * secret before it reaches any output. Not cached, so a rotated secret is picked up.
+     */
+    async getClientApplication(orgId: string, appId: number | string): Promise<ClientApplication> {
+        return this.http.get<ClientApplication>(
+            `${REPOSITORY}/organizations/${orgId}/applications/${encodeURIComponent(String(appId))}`,
+        );
     }
 
     /**

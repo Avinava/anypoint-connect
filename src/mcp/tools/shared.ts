@@ -5,7 +5,9 @@
 
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import type { Environment } from '../../api/AccessManagementApi.js';
+import { z } from 'zod';
 import { errorMessage } from '../../utils/errors.js';
+import { isProductionEnv } from '../../safety/guards.js';
 
 /** Resolve the default org and an environment name or ID in one step. */
 export async function resolveEnvironment(
@@ -52,4 +54,55 @@ export function dryRunPreview(preview: Record<string, unknown>) {
         message: '⚠️ Dry run — nothing was changed. Review the preview and re-call with confirm: true to apply.',
         ...preview,
     });
+}
+
+/** Inputs every mutating tool accepts: preview by default, apply on confirm, and a second flag for production. */
+export const writeInputs = {
+    confirm: z
+        .boolean()
+        .optional()
+        .describe('Apply the change. Without it the tool returns a preview and changes nothing'),
+    confirmProduction: z
+        .boolean()
+        .optional()
+        .describe('Required in addition to confirm when the target environment is production'),
+};
+
+/**
+ * Gate a write. Returns the response to send instead of writing (a preview, or a refusal for
+ * production without `confirmProduction`), or `null` when the caller may proceed.
+ */
+export function guardWrite(input: {
+    env: Pick<Environment, 'name' | 'isProduction'>;
+    confirm?: boolean;
+    confirmProduction?: boolean;
+    preview: Record<string, unknown>;
+}) {
+    const production = isProductionEnv(input.env.name, input.env.isProduction);
+    if (!input.confirm) {
+        return dryRunPreview({
+            ...input.preview,
+            ...(production ? { production: true, requires: 'confirm: true and confirmProduction: true' } : {}),
+        });
+    }
+    if (production && !input.confirmProduction) {
+        return {
+            content: [
+                {
+                    type: 'text' as const,
+                    text: JSON.stringify(
+                        {
+                            refused: true,
+                            message: `${input.env.name} is a production environment. Nothing was changed. Re-call with confirm: true and confirmProduction: true to apply.`,
+                            ...input.preview,
+                        },
+                        null,
+                        2,
+                    ),
+                },
+            ],
+            isError: true as const,
+        };
+    }
+    return null;
 }

@@ -86,7 +86,7 @@ OAuth tokens; it sends tool calls to the local server that owns the session.
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
     }
   }
 }
@@ -107,25 +107,28 @@ Preview a deployment of target/sample-orders-api-1.3.0-mule-application.jar to S
 
 ## Safety
 
-MCP deployment tools are previews until `confirm: true` is supplied, and `anc deploy --dry-run` prints the
-same plan. Publishing reads the JAR's embedded Maven identity and binds its SHA-256. Redeploys change only
-the artifact reference, preserving runtime, target, replicas, and settings. Deletion requires the
-deployment ID returned by the preview, Design Center writes require a single-use preview token, and
-production operations require an additional acknowledgement.
+MCP write tools are previews until `confirm: true` is supplied, and production also needs
+`confirmProduction: true`; `anc deploy --dry-run` and `anc apps update --dry-run` print the same plan.
+Publishing binds the JAR's SHA-256. A change to an existing app is one update that carries only what you
+asked to change, with the runtime checked against the target first. Secret values come from project files
+or environment variables, never the conversation. Deletion requires the deployment ID returned by the
+preview, and Design Center writes require a single-use preview token.
 
 ```jsonc
 // Preview only
-update_app_artifact({
-  "appName": "sample-orders-api",
+update_app({
+  "appName": "orders-sapi",
   "environment": "Sandbox",
-  "version": "1.3.0"
+  "version": "1.3.0",
+  "mode": "stopStart"
 })
 
 // Apply the reviewed change
-update_app_artifact({
-  "appName": "sample-orders-api",
+update_app({
+  "appName": "orders-sapi",
   "environment": "Sandbox",
   "version": "1.3.0",
+  "mode": "stopStart",
   "confirm": true
 })
 ```

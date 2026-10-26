@@ -11,6 +11,7 @@ export { registerAnalysisTools } from './analysis.js';
 export { registerMonitoringTools } from './monitoring.js';
 export { registerExchangeTools } from './exchange.js';
 export { registerApiManagerTools } from './api-manager.js';
+export { registerArtifactTools } from './artifacts.js';
 export { registerDesignCenterTools } from './design-center.js';
 export { registerGovernanceTools } from './governance.js';
 export { registerProfileTools } from './profile.js';
