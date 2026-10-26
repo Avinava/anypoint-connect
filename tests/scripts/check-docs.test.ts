@@ -40,6 +40,16 @@ describe('documentation release metadata gate', () => {
         expect(result.stderr).toContain(`Lockfile root ${field} must match package.json`);
     });
 
+    it('rejects a bin path that npm would drop at publish time', () => {
+        const path = join(root, 'package.json');
+        const pkg = JSON.parse(readFileSync(path, 'utf8'));
+        pkg.bin = { anc: './dist/cli.js' };
+        writeFileSync(path, JSON.stringify(pkg));
+        const result = check();
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('bin "anc" must be a plain relative path');
+    });
+
     it('fails when the tool catalog and the registered tools diverge', () => {
         cpSync(join(process.cwd(), 'src/mcp/tools'), join(root, 'src/mcp/tools'), { recursive: true });
         cpSync(join(process.cwd(), 'docs/tools.md'), join(root, 'docs/tools.md'));

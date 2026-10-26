@@ -13,6 +13,10 @@ assert.equal(lock.name, pkg.name, 'Lockfile package name must match package.json
 assert.equal(lock.packages?.['']?.name, pkg.name, 'Lockfile root name must match package.json');
 assert.equal(lock.version, pkg.version, 'Lockfile version must match package.json');
 assert.equal(lock.packages?.['']?.version, pkg.version, 'Lockfile root version must match package.json');
+// npm 11 drops a bin entry whose path starts with "./" at publish time, leaving no command installed.
+for (const [name, target] of Object.entries(pkg.bin ?? {})) {
+    assert.ok(!/^\.\.?\//.test(target), `bin "${name}" must be a plain relative path without "./" (got ${target})`);
+}
 const changelog = readFileSync('CHANGELOG.md', 'utf8');
 const latestVersion = changelog.match(/^## \[?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\]|\s|$)/m)?.[1];
 assert.equal(latestVersion, pkg.version, 'Newest changelog release must match package.json');

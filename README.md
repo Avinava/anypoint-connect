@@ -97,7 +97,7 @@ OAuth tokens; it sends tool calls to the local server that owns the session.
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.1", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.2", "mcp"]
     }
   }
 }
