@@ -15,12 +15,13 @@ timestamp (`2026-02-01T00:00:00Z`).
 | --- | --- |
 | `anc config init \| show \| set \| path \| profiles \| use` | Credentials, profiles, and project binding |
 | `anc auth login \| logout \| status` | Browser authorization and session state |
-| `anc apps list \| status \| restart \| scale \| delete` | CloudHub 2.0 applications |
+| `anc apps list \| status \| update \| settings get\|set \| restart \| stop \| start \| scale \| compare \| delete` | CloudHub 2.0 applications |
 | `anc deploy <jar>` | Publish a JAR to Exchange and deploy it |
-| `anc logs tail \| download` | Application logs |
+| `anc runtimes list` | Mule runtime versions a target accepts |
+| `anc logs tail \| search \| download` | Application logs |
 | `anc monitor summary \| runtime \| trend \| query \| download` | Anypoint Monitoring metrics |
 | `anc exchange search \| info \| download-spec` | Exchange assets |
-| `anc api list \| policies \| sla-tiers \| alerts` | API Manager |
+| `anc api list \| policies \| sla-tiers \| alerts \| contracts \| client-app \| smoke` | API Manager |
 | `anc design-center` (alias `anc dc`) `list \| files \| pull \| push \| publish` | Design Center |
 | `anc mcp` | Start the MCP server over stdio |
 
@@ -58,16 +59,47 @@ Enter the Client Secret through `anc config init`, not `anc config set`, so it s
 | Command | Arguments and options |
 | --- | --- |
 | `anc apps list` | `-e, --env <name>` (required) |
-| `anc apps status <appName>` | `-e, --env <name>` (required) |
-| `anc apps restart <appName>` | `-e, --env <name>` (required), `--force` skips the production confirmation |
+| `anc apps status <appName>` | `-e, --env <name>` (required), `--wait` polls until the app settles or fails, `--timeout <seconds>` |
+| `anc apps update <appName>` | `-e, --env <name>` (required), `--version`, `--artifact-id`, `--group-id`, runtime flags, settings flags, rollout flags, `--dry-run`, `--force` |
+| `anc apps settings get <appName>` | `-e, --env <name>` (required), `--reveal` shows secret-looking plain values |
+| `anc apps settings set <appName>` | `-e, --env <name>` (required), settings flags, `--stop-start`, `--no-wait`, `--timeout`, `--dry-run`, `--force` |
+| `anc apps restart <appName>` | `-e, --env <name>` (required); stops, waits, starts. `--no-wait`, `--timeout`, `--dry-run`, `--force` |
+| `anc apps stop <appName>` / `anc apps start <appName>` | `-e, --env <name>` (required), `--wait`, `--timeout`, `--force` |
 | `anc apps scale <appName>` | `-e, --env <name>` (required), `--replicas <n>` (required), `--force` |
+| `anc apps compare <appName>` | `-e, --env <name>` (required), `--repo <path>` with `--ref <ref>` (default `HEAD`) and `--working-tree`, or `--jar <path>`. Exits 1 when they differ |
 | `anc apps delete <appName>` | `-e, --env <name>` (required), `--confirm <deploymentId>`, `--allow-production` |
+
+Shared flags:
+
+| Group | Flags |
+| --- | --- |
+| Runtime | `-r, --runtime <version>` (e.g. `4.9.0`, or `4.9` for the newest patch), `--java <version>`, `--release-channel <channel>` |
+| Settings | `--set key=value`, `--from-file <path[:keys]>`, `--secure-from-file <path[:keys]>`, `--secure-from-env property=ENV_VAR`, `--remove <key>`, `--remove-secure <key>`, `--move-to-secure <key>`; each repeatable. Secure values come only from files or environment variables |
+| Rollout | `--stop-start` (stop, apply, start), `--update-strategy rolling\|recreate`, `--no-wait`, `--timeout <seconds>` |
 
 ```bash
 anc apps list --env Sandbox
-anc apps status sample-orders-api --env Sandbox
-anc apps restart sample-orders-api --env Production            # asks for confirmation
-anc apps scale sample-orders-api --env Sandbox --replicas 2
+anc apps status orders-sapi --env Sandbox --wait
+anc apps update orders-sapi --env Sandbox --version 1.4.0 --stop-start --dry-run
+anc apps settings set orders-sapi --env Sandbox --secure-from-file config/sandbox.env:CRM_CLIENT_SECRET --dry-run
+anc apps settings set orders-sapi --env Sandbox --move-to-secure db.password
+anc apps restart orders-sapi --env Production            # asks for confirmation
+anc apps scale orders-sapi --env Sandbox --replicas 2
+anc apps compare orders-sapi --env Production --repo . --ref main --working-tree
+```
+
+Every change prints its plan first: changed fields, the settings diff by key (secure values never shown),
+the runtime check and the steps. Commands that roll out a change wait for it by default and exit non-zero
+when it does not settle.
+
+## runtimes
+
+| Command | Options |
+| --- | --- |
+| `anc runtimes list` | `-e, --env <name>` (required), `-a, --app <name>` uses the app's target and checks its current runtime, `--target <id>` |
+
+```bash
+anc runtimes list -e Sandbox --app orders-sapi
 ```
 
 Deletion is a bound two-step operation, because an app name is not a stable identifier for what you
@@ -87,22 +119,25 @@ If the deployment was recreated between the two calls, the ID no longer matches 
 anc deploy <jarPath> --app <name> --env <name> [options]
 ```
 
-Publishes the JAR to Exchange, then creates the deployment, or for an existing app changes only its
-artifact reference. The asset ID and version come from the JAR's embedded Maven metadata, never from the
-file name.
+Publishes the JAR to Exchange, then creates the deployment, or for an existing app applies the new
+artifact, plus any runtime or settings change, as one update. The asset ID and version come from
+`--asset-id`/`--asset-version`, then the project's [naming convention](profiles.md#naming-conventions),
+then the JAR's embedded Maven metadata, never from the file name.
 
 | Option | Meaning |
 | --- | --- |
 | `-a, --app <name>` | Application name (required) |
 | `-e, --env <name>` | Target environment (required) |
-| `--asset-id <id>` | Exchange asset ID; default is the embedded Maven `artifactId` |
-| `--asset-version <v>` | Exchange asset version; default is the embedded Maven `version` |
+| `--asset-id <id>` | Exchange asset ID; default is the naming convention, else the embedded Maven `artifactId` |
+| `--asset-version <v>` | Exchange asset version; default is the naming convention, else the embedded Maven `version` |
 | `--group-id <id>` | Exchange group ID; default is the organization ID |
-| `-r, --runtime <version>` | New app only. Mule runtime version (default 4.8.0) |
+| `-r, --runtime <version>`, `--java`, `--release-channel` | Runtime for a new app (default 4.8.0), or the runtime to move an existing app to |
 | `--replicas <n>` | New app only. Replica count (default 1) |
 | `--vcores <size>` | New app only. One of 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 3, 4 (default 0.1) |
 | `--region <target>` | New app only. CloudHub 2.0 target (default `cloudhub-us-east-2`) |
-| `--dry-run` | Print the plan (coordinates, SHA-256, create or update) and stop |
+| Settings flags | As for `anc apps update` |
+| `--stop-start`, `--update-strategy`, `--no-wait`, `--timeout` | As for `anc apps update` |
+| `--dry-run` | Print the plan (coordinates and how they were chosen, SHA-256, the change) and stop |
 | `--force` | Skip the production confirmation |
 
 ```bash
@@ -118,21 +153,27 @@ anc deploy target/sample-orders-api-1.3.0-mule-application.jar \
 anc deploy target/sample-orders-api-1.3.0-mule-application.jar --app sample-orders-api --env Production
 ```
 
-The new-app-only flags are rejected when the application already exists; use `anc apps scale` or the
-settings tools instead. Without `--dry-run`, a non-production deploy is applied immediately after the
-summary. See the [safety model](safety.md#publishing-a-jar).
+The new-app-only flags are rejected when the application already exists; use `anc apps scale` instead.
+Without `--dry-run`, a non-production deploy is applied immediately after the summary. The command waits
+for the rollout and exits non-zero when it fails or times out. See the
+[safety model](safety.md#publishing-a-jar).
 
 ## logs
 
 | Command | Arguments and options |
 | --- | --- |
-| `anc logs tail <appName>` | `-e, --env <name>` (required), `-l, --level <level>` (ERROR, WARN, INFO, DEBUG), `-s, --search <text>` |
-| `anc logs download <appName>` | `-e, --env <name>` (required), `--from <date>` (required), `--to <date>`, `-l, --level <level>`, `-o, --output <path>` |
+| `anc logs tail <appName>` | `-e, --env <name>` (required), `-l, --level <level>` (ERROR, WARN, INFO, DEBUG), `-s, --search <text>`, `--regex`, `--logger <name>` |
+| `anc logs search <appName>` | `-e, --env <name>` (required), `-g, --grep <text>`, `--regex`, `--logger <name>`, `-l, --level <level>`, `--since <1h\|ISO>`, `--until <date>`, `-n, --limit <n>` (default 100, max 1000), `--json` |
+| `anc logs download <appName>` | `-e, --env <name>` (required), `--from <date>` (required), `--to <date>`, `-l, --level <level>`, `-g, --grep <text>`, `--regex`, `--logger <name>`, `--summary`, `--bucket 5m\|15m\|1h`, `-o, --output <path>` |
+
+Search covers the message, logger, thread, event ID, stack trace and logged payload. Multi-line entries
+(error reports, banners, stack traces) stay together with their timestamp and level.
 
 ```bash
-anc logs tail sample-orders-api --env Sandbox --level ERROR --search "TimeoutException"
-anc logs download sample-orders-api --env Sandbox --from 24h
-anc logs download sample-orders-api --env Production \
+anc logs tail orders-sapi --env Sandbox --level ERROR --search "TimeoutException"
+anc logs search orders-sapi --env Sandbox --grep "timeout" --since 2h
+anc logs download orders-sapi --env Sandbox --from 48h --summary
+anc logs download orders-sapi --env Production \
   --from "2026-02-01T00:00:00Z" --to "2026-02-02T00:00:00Z" --output orders.log
 ```
 
@@ -190,11 +231,15 @@ an unknown API is reported as an error.
 | `anc api policies <apiName>` | Applied policies |
 | `anc api sla-tiers <apiName>` | SLA tiers |
 | `anc api alerts <apiName>` | Alerts configured for the API |
+| `anc api contracts <apiName>` | Contracts: client application, tier and status |
+| `anc api client-app <id>` | A client application, secret masked. `--write-credentials <file>` writes `CLIENT_ID`/`CLIENT_SECRET` to a mode-0600 file inside the project; `--overwrite` |
+| `anc api smoke <apiName>` | Call the API with its client credentials: `--path` or `--url`, `-X, --method`, `--client-app <id>`, `-H, --header`, `-d, --data`, `--expect <status>`, `--timeout <ms>`. Methods other than GET ask unless `-y, --yes`; production needs `--allow-production`. Exits 1 when the status does not match |
 
 ```bash
 anc api list --env Sandbox
-anc api policies "sample-orders-api" --env Sandbox
-anc api alerts "sample-orders-api" --env Sandbox
+anc api policies "orders-sapi" --env Sandbox
+anc api contracts "orders-sapi" --env Sandbox
+anc api smoke "orders-sapi" --env Sandbox --path /api/health --expect 200
 ```
 
 ## design-center (alias dc)

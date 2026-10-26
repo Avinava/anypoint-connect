@@ -30,49 +30,60 @@ Bind a workspace to a named credential profile.
 
 ## Applications — read
 
-CloudHub 2.0 deployment state, specs, settings and cross-environment comparison.
+CloudHub 2.0 deployment state and phase, specs, settings (secret-looking values masked), runtime catalogs, asset naming and cross-environment comparison.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
 | `list_apps` | read | `environment` | Lists all Mule applications deployed in a CloudHub 2.0 environment. |
-| `get_app_status` | read | `appName`, `environment` | Returns detailed deployment information for a specific Mule application: status, artifact version (groupId:artifactId:version), Mule runtime version, resource allocation (CPU, memory, vCores), autoscaling config, JVM args, clustering, each replica's state and deployment location, the public URL, and last update timestamp. |
+| `get_app_status` | read | `appName`, `environment`, `wait?`, `waitSeconds?` | Returns detailed deployment information for a specific Mule application: a phase (RUNNING, STARTING, UPDATING, DEGRADED, FAILED, STOPPING, STOPPED) with settled and reason, the raw platform status, artifact version, Mule runtime, resources, autoscaling, JVM args, clustering, each replica's state, the public URL and last update. |
 | `get_deployment_spec` | read | `appName`, `environment` | Returns the full current deployment spec for a CloudHub 2.0 application — the "look before you leap" view used before a redeploy or rollback. |
 | `get_app_resources` | read | `environment` | Returns resource allocation for all apps in an environment: CPU/memory limits and reservations, vCores, replica count, autoscaling config, and JVM args. |
-| `get_app_settings` | read | `appName`, `environment` | Reads the application properties (configuration settings) for a deployed Mule application in CloudHub 2.0. |
+| `get_app_settings` | read | `appName`, `environment`, `redact?` | Reads the application properties of a CloudHub 2.0 app: plain properties as key-value pairs and the names of secure properties (their values are never returned). |
 | `compare_app_deployments` | read | `env1`, `env2` | Produces a side-by-side comparison of all application deployments across two environments. |
+| `list_runtime_versions` | read | `environment`, `appName?`, `targetId?` | Lists the Mule runtime versions a CloudHub 2.0 target accepts, with release channel and Java versions. |
+| `suggest_asset_name` | read | `appName`, `environment`, `jarPath?` | Suggests the Exchange coordinates for publishing an app's next JAR: the project's naming convention (.anypoint-connect.json conventions), otherwise the pattern of the asset the app runs today (for example {app}-{pomVersion}-{timestamp} at a fixed version), otherwise the JAR's Maven identity. |
 
 ## Applications — deploy
 
-Publish and deploy artifacts. Existing apps only have their artifact reference changed unless you ask otherwise.
+Publish and deploy artifacts, and change existing apps in one update: artifact, runtime, settings and update strategy, in place or stop-then-start. Every write previews first.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `deploy_jar` | ⚠️ write · confirm | `jarPath`, `appName`, `environment`, `assetId?`, `assetVersion?`, `groupId?`, `runtime?`, `replicas?`, `region?`, `vcores?`, `properties?`, `secureProperties?`, `jvmArgs?`, `wait?`, `expectedSha256?`, `confirm?` | One-call deploy of a locally built Mule application JAR: publishes it to Exchange, then deploys it to CloudHub 2.0 — creating the app if it does not exist, or safely updating just the artifact ref if it does. |
-| `deploy_app` | ⚠️ write · confirm | `appName`, `environment`, `groupId`, `artifactId`, `version`, `runtime?`, `replicas?`, `region?`, `vcores?`, `properties?`, `secureProperties?`, `jvmArgs?`, `confirm?` | Deploys or redeploys a Mule application to CloudHub 2.0 using Maven coordinates (groupId:artifactId:version) referencing an artifact already published to Exchange. |
-| `update_app_artifact` | ⚠️ write · confirm | `appName`, `environment`, `version`, `artifactId?`, `groupId?`, `packaging?`, `wait?`, `confirm?` | Safely redeploys an existing CloudHub 2.0 application to a new artifact version by PATCHing ONLY the application reference. |
-| `rollback_app` | ⚠️ write · confirm | `appName`, `environment`, `toVersion?`, `wait?`, `confirm?` | Rolls an existing CloudHub 2.0 application back to a previous artifact by PATCHing only the application reference (runtime, target, replicas, and settings are preserved). |
+| `deploy_jar` | ⚠️ write · confirm | `jarPath`, `appName`, `environment`, `assetId?`, `assetVersion?`, `groupId?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `replicas?`, `region?`, `vcores?`, `jvmArgs?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `expectedSha256?`, `confirm?`, `confirmProduction?` | Publishes a locally built Mule application JAR to Exchange and deploys it to CloudHub 2.0: creates the app if it does not exist, otherwise updates it in one change (artifact plus any runtime or settings change). |
+| `deploy_app` | ⚠️ write · confirm | `appName`, `environment`, `groupId`, `artifactId`, `version`, `runtime?`, `javaVersion?`, `releaseChannel?`, `replicas?`, `region?`, `vcores?`, `jvmArgs?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Deploys an artifact already in Exchange (groupId:artifactId:version) to CloudHub 2.0. |
+| `update_app` | ⚠️ write · confirm | `appName`, `environment`, `version?`, `artifactId?`, `groupId?`, `packaging?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Changes an existing CloudHub 2.0 application in one call: artifact version, Mule runtime, properties and update strategy together, as one new spec. |
+| `update_app_artifact` | ⚠️ write · confirm | `appName`, `environment`, `version`, `artifactId?`, `groupId?`, `packaging?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `mode?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Moves an existing CloudHub 2.0 application to another artifact version, optionally with a runtime change in the same update. |
+| `rollback_app` | ⚠️ write · confirm | `appName`, `environment`, `toVersion?`, `mode?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Rolls an existing CloudHub 2.0 application back to a previous artifact; runtime, target, replicas and settings are preserved. |
 
 ## Applications — lifecycle
 
-Restart, scale, stop, start, settings and deletion.
+Restart, scale, stop, start, settings and deletion. Settings take secrets from project files or environment variables, never from the conversation.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `restart_app` | ⚠️ write · immediate | `appName`, `environment` | Initiates a rolling restart of a deployed Mule application by re-applying its desired state. |
-| `scale_app` | ⚠️ write · immediate | `appName`, `environment`, `replicas` | Changes the number of running replicas for a CloudHub 2.0 application. |
-| `stop_app` | ⚠️ write · immediate | `appName`, `environment` | Stops a running Mule application in CloudHub 2.0 without deleting the deployment. |
-| `start_app` | write · immediate | `appName`, `environment` | Starts a stopped Mule application in CloudHub 2.0. |
-| `update_app_settings` | ⚠️ write · immediate | `appName`, `environment`, `properties?`, `secureProperties?` | Updates application properties for a deployed Mule application in CloudHub 2.0. |
+| `restart_app` | ⚠️ write · confirm | `appName`, `environment`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Restarts a CloudHub 2.0 application by stopping it, waiting until every replica is down, and starting it again, so old and new replicas never run together. |
+| `scale_app` | ⚠️ write · confirm | `appName`, `environment`, `replicas`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Changes the number of replicas of a CloudHub 2.0 application. |
+| `stop_app` | ⚠️ write · confirm | `appName`, `environment`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Stops a CloudHub 2.0 application without deleting it: replicas terminate and the deployment configuration is kept. |
+| `start_app` | write · confirm | `appName`, `environment`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Starts a stopped CloudHub 2.0 application. |
+| `update_app_settings` | ⚠️ write · confirm | `appName`, `environment`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Adds, changes, removes or moves application properties of a CloudHub 2.0 app. |
 | `delete_app` | ⚠️ write · confirm | `appName`, `environment`, `confirm?`, `expectedDeploymentId?`, `confirmProduction?` | Permanently deletes a CloudHub 2.0 application deployment while leaving its Exchange artifact and other Anypoint resources untouched. |
+
+## Artifacts
+
+Compare the JAR an app runs with a git ref or a local JAR.
+
+| Tool | Access | Inputs | Summary |
+| --- | --- | --- | --- |
+| `compare_deployed_artifact` | read | `appName`, `environment`, `against` | Answers "does this repo (or jar) match what is deployed?". |
 
 ## Logs
 
-Raw application logs.
+Application logs: search, filters, summaries and file output.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `get_logs` | read | `appName`, `environment`, `lines?`, `level?`, `search?` | Fetches the most recent log entries from a running Mule application. |
-| `download_logs` | read | `appName`, `environment`, `hoursBack`, `level?` | Downloads the full application log file and filters it to a specific time window. |
+| `get_logs` | read | `appName`, `environment`, `lines?`, `level?`, `search?`, `regex?`, `logger?`, `hoursBack?`, `startTime?`, `endTime?` | Fetches the most recent log entries of a Mule application, newest first. |
+| `download_logs` | write · immediate | `appName`, `environment`, `hoursBack?`, `startTime?`, `endTime?`, `level?`, `search?`, `regex?`, `logger?`, `mode?`, `bucket?`, `maxLines?`, `outputFile?`, `overwrite?` | Reads the full application log file for a time window and filters it by level, logger, text or regex. |
 
 ## Log analysis
 
@@ -80,9 +91,9 @@ Clustered errors with context, recurring patterns and health statistics.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `analyze_errors` | read | `appName`, `environment`, `hoursBack?`, `limit?` | Analyzes error patterns in a Mule application's logs. |
-| `get_log_patterns` | read | `appName`, `environment`, `hoursBack?`, `topN?` | Identifies the most common recurring log message patterns in an application. |
-| `get_log_stats` | read | `appName`, `environment`, `hoursBack?` | Returns a statistical health summary of an application's logs: level distribution, error rate, error spikes (time windows with elevated errors), noise percentage, and unique transaction count. |
+| `analyze_errors` | read | `appName`, `environment`, `hoursBack?`, `limit?`, `level?`, `search?`, `regex?`, `logger?` | Analyzes error patterns in a Mule application's logs. |
+| `get_log_patterns` | read | `appName`, `environment`, `hoursBack?`, `topN?`, `level?`, `search?`, `regex?`, `logger?` | Identifies the most common recurring log message patterns in an application. |
+| `get_log_stats` | read | `appName`, `environment`, `hoursBack?`, `level?`, `search?`, `regex?`, `logger?` | Returns a statistical health summary of an application's logs: level distribution, top loggers, error rate, error spikes (time windows with elevated errors), noise percentage, and unique transaction count. |
 
 ## Monitoring
 
@@ -108,13 +119,16 @@ Search assets, read specs and publish application JARs.
 
 ## API Manager
 
-API instances, policies and alerts.
+API instances, policies, alerts, contracts, client applications and smoke tests. Client secrets never appear in output.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
 | `list_api_instances` | read | `environment` | Lists all managed API instances registered in API Manager for an environment. |
 | `get_api_policies` | read | `apiName`, `environment` | Returns the full policy chain and SLA tier configuration for a managed API instance. |
 | `get_api_alerts` | read | `apiName`, `environment` | Returns the configured alerts for a managed API instance. |
+| `list_api_contracts` | read | `environment`, `api` | Lists the contracts on a managed API instance: which client applications may call it, on which SLA tier, and whether each contract is approved, pending or revoked. |
+| `get_client_application` | write · immediate | `appId`, `writeCredentialsTo?`, `overwrite?` | Returns a client application from the API Platform: name, client ID and the client secret masked as "******…last4". |
+| `smoke_test_api` | write · confirm | `environment`, `api`, `path?`, `url?`, `method?`, `clientAppId?`, `headers?`, `body?`, `expectStatus?`, `timeoutMs?`, `confirm?`, `confirmProduction?` | Sends one HTTP request to a managed API and reports the status, latency, a few response headers and a body excerpt (4 KB at most). |
 
 ## Design Center
 

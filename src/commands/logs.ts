@@ -1,7 +1,8 @@
 /**
  * Logs CLI Commands
- * anc logs tail <appName> --env <envName> [--level <level>]
- * anc logs download <appName> --env <envName> --from <date> --to <date> [--output <path>]
+ * anc logs tail <appName> --env <envName> [--level <level>] [--search <text>]
+ * anc logs search <appName> --env <envName> [--grep <text>] [--regex] [--logger <name>] [--since <1h|ISO>]
+ * anc logs download <appName> --env <envName> --from <date> [--to <date>] [--grep <text>] [--summary] [--output <path>]
  */
 
 import { Command } from 'commander';
@@ -10,17 +11,92 @@ import chalk from 'chalk';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { parseDate } from '../utils/dates.js';
+import { printTable } from '../utils/formatter.js';
+import type { LogSource } from '../api/LogsApi.js';
+import type { EnrichedLogEntry } from '../analysis/types.js';
+import { MAX_LOG_LINES } from '../analysis/filter.js';
+import { BUCKETS, type Bucket } from '../analysis/stats.js';
+import { formatEntries, summarizeEntries, type LogSummary } from '../analysis/summary.js';
 import { createClient } from './shared.js';
 
+function parseLimit(value: string): number {
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_LOG_LINES) {
+        throw new Error(`--limit must be a whole number from 1 to ${MAX_LOG_LINES}`);
+    }
+    return n;
+}
+
+function parseBucket(value: string): Bucket {
+    if (!(value in BUCKETS)) throw new Error(`--bucket must be one of ${Object.keys(BUCKETS).join(', ')}`);
+    return value as Bucket;
+}
+
+function warnFallback(source: LogSource): void {
+    if (source.fallbackFromSpecId) {
+        log.warn(
+            `Spec ${source.fallbackFromSpecId} has no log lines yet; showing the last successful spec ${source.specId}`,
+        );
+    }
+}
+
+function printEntry(entry: EnrichedLogEntry): void {
+    const ts = new Date(entry.timestamp).toISOString();
+    const logger = entry.loggerName ? chalk.dim(`${entry.loggerName} - `) : '';
+    log.logLine(entry.priority, `${logger}${entry.message ?? ''}`, ts);
+    if (entry.stackTrace) log.dim(entry.stackTrace);
+}
+
+function printSummary(summary: LogSummary): void {
+    log.header('Summary');
+    log.kv('Entries', summary.totalEntries);
+    if (summary.totalEntries === 0) return;
+    log.kv('Time range', `${summary.timeRange.start} → ${summary.timeRange.end}`);
+    log.kv('Error rate', `${summary.errorRate}%`);
+
+    log.header('By level');
+    printTable(
+        ['Level', 'Count'],
+        Object.entries(summary.byLevel)
+            .sort((a, b) => b[1] - a[1])
+            .map(([level, count]) => [level, String(count)]),
+    );
+
+    log.header(`Top loggers (${summary.loggerCount} in total)`);
+    printTable(
+        ['Logger', 'Count'],
+        summary.byLogger.map(({ name, count }) => [name, String(count)]),
+    );
+
+    log.header(`By time (${summary.histogram.bucket} buckets)`);
+    printTable(
+        ['Bucket start', 'Total', 'ERROR', 'WARN'],
+        summary.histogram.rows.map((row) => [
+            row.start,
+            String(row.total),
+            String(row.byLevel.ERROR ?? 0),
+            String(row.byLevel.WARN ?? 0),
+        ]),
+    );
+
+    log.header('Top message templates');
+    printTable(
+        ['Count', 'Level', 'Template'],
+        summary.topTemplates.map((t) => [String(t.count), t.level, t.template]),
+    );
+}
+
 export function createLogsCommand(): Command {
-    const logs = new Command('logs').description('View and download application logs');
+    const logs = new Command('logs').description('View, search and download application logs');
 
     logs.command('tail')
         .description('Stream logs in real-time')
         .argument('<appName>', 'Application name')
         .requiredOption('-e, --env <name>', 'Environment name')
-        .option('-l, --level <level>', 'Filter by log level (ERROR, WARN, INFO, DEBUG)')
+        .option('-l, --level <level>', 'Minimum log level (TRACE, DEBUG, INFO, WARN, ERROR, FATAL)')
         .option('-s, --search <text>', 'Search filter')
+        .option('--regex', 'Treat --search as a regular expression')
+        .option('--logger <name>', 'Only entries whose logger name contains this text')
         .action(async (appName: string, opts) => {
             try {
                 const client = createClient();
@@ -33,6 +109,8 @@ export function createLogsCommand(): Command {
                 for await (const entries of client.logs.tailLogs(orgId, env.id, appName, {
                     level: opts.level,
                     search: opts.search,
+                    regex: opts.regex,
+                    logger: opts.logger,
                 })) {
                     for (const entry of entries) {
                         const ts = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
@@ -49,46 +127,118 @@ export function createLogsCommand(): Command {
             }
         });
 
-    logs.command('download')
-        .description('Download logs for a time period')
+    logs.command('search')
+        .description('Search recent log entries; multi-line entries are matched and shown whole')
         .argument('<appName>', 'Application name')
         .requiredOption('-e, --env <name>', 'Environment name')
-        .requiredOption('--from <date>', 'Start time (ISO date or relative: 1h, 30m, 2d)')
-        .option('--to <date>', 'End time (default: now)')
-        .option('-l, --level <level>', 'Filter by log level')
-        .option('-o, --output <path>', 'Output file path')
+        .option('-g, --grep <text>', 'Text to find in the message, logger, thread, stack trace or JSON payload')
+        .option('--regex', 'Treat --grep as a case-insensitive regular expression')
+        .option('--logger <name>', 'Only entries whose logger name contains this text')
+        .option('-l, --level <level>', 'Minimum log level (TRACE, DEBUG, INFO, WARN, ERROR, FATAL)')
+        .option('--since <date>', 'Only entries since this time (ISO date or relative: 30m, 1h, 2d)')
+        .option('--until <date>', 'Only entries until this time (ISO date or relative)')
+        .option('-n, --limit <n>', `Most recent matching entries to show (max ${MAX_LOG_LINES})`, '100')
+        .option('--json', 'Print the result as JSON')
         .action(async (appName: string, opts) => {
             try {
+                const limit = parseLimit(opts.limit);
+                const startTime = opts.since ? parseDate(opts.since) : undefined;
+                const endTime = opts.until ? parseDate(opts.until) : undefined;
+
                 const client = createClient();
                 const orgId = await client.getDefaultOrgId();
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
 
+                const result = await client.logs.searchLogs(orgId, env.id, appName, {
+                    search: opts.grep,
+                    regex: opts.regex,
+                    logger: opts.logger,
+                    level: opts.level,
+                    startTime,
+                    endTime,
+                    limit,
+                });
+
+                if (opts.json) {
+                    console.log(JSON.stringify(result, null, 2));
+                    return;
+                }
+
+                warnFallback(result.source);
+                if (result.total === 0) {
+                    log.warn(`No matching log entries for ${appName} in ${env.name}`);
+                    return;
+                }
+                // Oldest first reads naturally in a terminal.
+                for (const entry of [...result.entries].reverse()) printEntry(entry);
+                const shown = result.truncated
+                    ? `Showing the newest ${result.returned} of ${result.total} matching entries`
+                    : `${result.total} matching entries`;
+                log.info(`${shown} (spec ${result.source.specId})`);
+            } catch (error) {
+                log.error(`Log search failed: ${errorMessage(error)}`);
+                process.exitCode = 1;
+            }
+        });
+
+    logs.command('download')
+        .description('Download logs for a time period, or summarize them')
+        .argument('<appName>', 'Application name')
+        .requiredOption('-e, --env <name>', 'Environment name')
+        .requiredOption('--from <date>', 'Start time (ISO date or relative: 1h, 30m, 2d)')
+        .option('--to <date>', 'End time (default: now)')
+        .option('-l, --level <level>', 'Minimum log level')
+        .option('-g, --grep <text>', 'Only entries containing this text')
+        .option('--regex', 'Treat --grep as a case-insensitive regular expression')
+        .option('--logger <name>', 'Only entries whose logger name contains this text')
+        .option('--summary', 'Print counts by level, logger and time, and the top message templates, instead of lines')
+        .option('--bucket <size>', 'Time bucket for --summary: 5m, 15m or 1h', '1h')
+        .option('-o, --output <path>', 'Output file path (with --summary, writes the summary as JSON)')
+        .action(async (appName: string, opts) => {
+            try {
+                const bucket = parseBucket(opts.bucket);
                 const from = parseDate(opts.from);
                 const to = opts.to ? parseDate(opts.to) : Date.now();
+
+                const client = createClient();
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
 
                 log.info(`Downloading logs for ${chalk.bold(appName)} in ${env.name}`);
                 log.kv('Period', `${new Date(from).toISOString()} → ${new Date(to).toISOString()}`);
 
-                const entries = await client.logs.getLogsForPeriod(orgId, env.id, appName, from, to, opts.level);
+                const { entries, source } = await client.logs.queryLogs(orgId, env.id, appName, {
+                    startTime: from,
+                    endTime: to,
+                    level: opts.level,
+                    search: opts.grep,
+                    regex: opts.regex,
+                    logger: opts.logger,
+                });
+                warnFallback(source);
+
+                if (opts.summary) {
+                    const summary = summarizeEntries(entries, { bucket });
+                    printSummary(summary);
+                    if (opts.output) {
+                        fs.writeFileSync(opts.output, JSON.stringify(summary, null, 2), 'utf-8');
+                        log.success(`Summary written → ${chalk.bold(opts.output)}`);
+                    }
+                    return;
+                }
 
                 if (entries.length === 0) {
                     log.warn('No log entries found for the specified period');
                     return;
                 }
 
-                // Format log lines
-                const lines = entries.map((e) => {
-                    const ts = new Date(e.timestamp).toISOString();
-                    return `${ts} [${e.priority}] ${e.message}`;
-                });
-
                 const output = opts.output || `${appName}-logs-${new Date().toISOString().split('T')[0]}.log`;
 
-                fs.writeFileSync(output, lines.join('\n'), 'utf-8');
+                fs.writeFileSync(output, formatEntries(entries) + '\n', 'utf-8');
                 log.success(`Downloaded ${entries.length} log entries → ${chalk.bold(output)}`);
             } catch (error) {
                 log.error(`Log download failed: ${errorMessage(error)}`);
-                process.exit(1);
+                process.exitCode = 1;
             }
         });
 

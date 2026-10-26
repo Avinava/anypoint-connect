@@ -102,7 +102,101 @@ anc deploy target/sample-orders-api-1.3.0-mule-application.jar \
     `confirm: true` is a preview that cannot mutate.
 
 Unattended `--force` belongs only in a reviewed pipeline. The [safety model](safety.md#publishing-a-jar)
-covers artifact identity, digest binding, artifact-only updates, and rollback.
+covers artifact identity, digest binding, one-update changes, and rollback.
+
+## Deploy a listener-driven app without overlap
+
+Apps with streaming, subscription or polling listeners must not run two generations at once. Stop, change
+and start in one call:
+
+```jsonc
+update_app({ "appName": "orders-sapi", "environment": "Sandbox", "version": "1.4.0", "mode": "stopStart" })
+// review the preview, then repeat with "confirm": true
+```
+
+```bash
+anc apps update orders-sapi -e Sandbox --version 1.4.0 --stop-start --dry-run
+```
+
+To make every later deployment replace replicas instead of overlapping them, set the strategy once with
+`"updateStrategy": "recreate"` (CLI `--update-strategy recreate`).
+
+## Move an app off a retired runtime
+
+```bash
+anc runtimes list -e Sandbox --app orders-sapi
+anc apps update orders-sapi -e Sandbox --version 1.4.1 --runtime 4.9 --java 17 --dry-run
+```
+
+The preview checks the runtime against the target before anything is written. Over MCP, the same check
+runs in `update_app` and `update_app_artifact` with `runtime`, and `list_runtime_versions` shows the
+options.
+
+## Add or rotate one secret
+
+Keep the value in a project file the server can read, never in the conversation:
+
+```jsonc
+update_app_settings({
+  "appName": "orders-sapi",
+  "environment": "Sandbox",
+  "securePropertiesFrom": [{ "file": "config/sandbox.env", "keys": ["CRM_CLIENT_SECRET"], "rename": { "CRM_CLIENT_SECRET": "crm.client.secret" } }]
+})
+```
+
+```bash
+anc apps settings set orders-sapi -e Sandbox --secure-from-file config/sandbox.env:CRM_CLIENT_SECRET --dry-run
+```
+
+The other secure properties keep their stored values. The app reads the new one as `${crm.client.secret}`.
+
+## Move a plain-text secret to secure
+
+`get_app_settings` lists secret-looking plain properties under `warnings`. Move each one without exposing
+its value:
+
+```jsonc
+update_app_settings({ "appName": "orders-sapi", "environment": "Sandbox", "moveToSecure": ["db.password"] })
+```
+
+```bash
+anc apps settings set orders-sapi -e Sandbox --move-to-secure db.password --dry-run
+```
+
+Remove a property with `removeProperties` (CLI `--remove`). Settings changes restart the app, so add
+`mode: "stopStart"` for listener-driven apps.
+
+## Check that a repository matches what runs
+
+```bash
+anc apps compare orders-sapi -e Production --repo . --ref main --working-tree
+```
+
+Over MCP, use `compare_deployed_artifact` with `against: { "repoPath": ".", "gitRef": "main", "includeWorkingTree": true }`.
+The result is `identical` or `differs`, with changed, missing and extra files and dependency differences,
+listed by name and hash only. Compare against a local build with `--jar target/<file>.jar`.
+
+## Smoke test an API with its client credentials
+
+```jsonc
+list_api_contracts({ "environment": "Sandbox", "api": "orders-sapi" })
+smoke_test_api({ "environment": "Sandbox", "api": "orders-sapi", "path": "/api/health" })
+```
+
+The server reads the approved client application's credentials and sends them itself; the secret never
+appears in the result. For scripts, `get_client_application` with `writeCredentialsTo` saves them to a
+mode-0600 `.env` file inside the project.
+
+## Keep log downloads small
+
+```jsonc
+download_logs({ "appName": "orders-sapi", "environment": "Sandbox", "hoursBack": 48, "mode": "summary" })
+download_logs({ "appName": "orders-sapi", "environment": "Sandbox", "hoursBack": 48, "search": "timeout", "level": "WARN" })
+download_logs({ "appName": "orders-sapi", "environment": "Sandbox", "hoursBack": 48, "outputFile": "logs/orders-48h.log" })
+```
+
+Summary mode returns counts by level, logger and hour plus the top message templates. `outputFile` writes
+everything matched to a file inside the project and returns only the path and counts.
 
 ## Update an API specification in Design Center
 
@@ -125,7 +219,7 @@ Authenticate in a terminal first, then use a pinned server command:
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
     }
   }
 }

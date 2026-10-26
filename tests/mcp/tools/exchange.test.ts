@@ -21,8 +21,10 @@ describe('artifact publication handoff', () => {
             findDetailByName: vi.fn().mockResolvedValue(null),
             createDeployment: vi.fn(),
             updateArtifactRef: vi.fn(),
+            patchDeployment: vi.fn(),
         },
         exchange: { publishAppAsset: vi.fn() },
+        runtimes: { getTarget: vi.fn().mockResolvedValue(null) },
     };
     let root: string;
     let jarPath: string;
@@ -34,6 +36,7 @@ describe('artifact publication handoff', () => {
             .mockReset()
             .mockResolvedValue({ groupId: 'sample-org', assetId: 'sample', version: '2.4.1' });
         client.cloudHub2.createDeployment.mockReset().mockResolvedValue({ id: 'sample-deployment', status: 'STARTED' });
+        client.cloudHub2.patchDeployment.mockReset().mockResolvedValue({ id: 'sample-deployment', status: 'APPLYING' });
         client.cloudHub2.updateArtifactRef
             .mockReset()
             .mockResolvedValue({ id: 'sample-deployment', status: 'STARTED' });
@@ -197,12 +200,9 @@ describe('artifact publication handoff', () => {
             confirm: true,
         });
         expect(result.isError).not.toBe(true);
-        expect(client.cloudHub2.updateArtifactRef).toHaveBeenCalledWith(
-            'sample-org',
-            'sample-env',
-            'sample-deployment',
-            { groupId: 'sample-org', artifactId: 'sample', version: '2.4.1', packaging: 'jar' },
-        );
+        expect(client.cloudHub2.patchDeployment).toHaveBeenCalledWith('sample-org', 'sample-env', 'sample-deployment', {
+            application: { ref: { groupId: 'sample-org', artifactId: 'sample', version: '2.4.1', packaging: 'jar' } },
+        });
         expect(existing.target).toEqual({ replicas: 3, targetId: 'sample-space' });
         expect(client.cloudHub2.createDeployment).not.toHaveBeenCalled();
     });
@@ -217,7 +217,7 @@ describe('artifact publication handoff', () => {
             confirm: true,
         });
         expect(client.exchange.publishAppAsset).not.toHaveBeenCalled();
-        expect(client.cloudHub2.updateArtifactRef).not.toHaveBeenCalled();
+        expect(client.cloudHub2.patchDeployment).not.toHaveBeenCalled();
     });
 
     it.each(['publish_app_jar', 'deploy_jar'])('does not bypass authorization in %s', async (name) => {

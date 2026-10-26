@@ -6,6 +6,48 @@
 import type { EnrichedLogEntry, ErrorGroup, LogPattern, LogStats, ErrorSpike } from './types.js';
 import { isNoise } from './normalize.js';
 
+/** Logger key for entries whose line had no logger segment. */
+export const UNKNOWN_LOGGER = '(none)';
+
+/** Time bucket sizes accepted by `histogram`. */
+export const BUCKETS = { '5m': 5 * 60 * 1000, '15m': 15 * 60 * 1000, '1h': 60 * 60 * 1000 } as const;
+export type Bucket = keyof typeof BUCKETS;
+
+export interface HistogramBucket {
+    /** Bucket start, ISO 8601 UTC */
+    start: string;
+    total: number;
+    byLevel: Record<string, number>;
+}
+
+/**
+ * Count entries per time bucket, oldest first. Buckets are aligned to the clock
+ * (a 15m bucket starts at :00, :15, :30 or :45) and empty buckets are omitted.
+ */
+export function histogram(entries: EnrichedLogEntry[], bucket: Bucket = '1h'): HistogramBucket[] {
+    const size = BUCKETS[bucket];
+    const buckets = new Map<number, HistogramBucket>();
+    for (const entry of entries) {
+        const start = Math.floor(entry.timestamp / size) * size;
+        let row = buckets.get(start);
+        if (!row) {
+            row = { start: new Date(start).toISOString(), total: 0, byLevel: {} };
+            buckets.set(start, row);
+        }
+        row.total++;
+        row.byLevel[entry.priority] = (row.byLevel[entry.priority] || 0) + 1;
+    }
+    return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([, row]) => row);
+}
+
+/** The `n` largest counts of a tally, largest first. */
+export function topCounts(counts: Record<string, number>, n: number): Array<{ name: string; count: number }> {
+    return Object.entries(counts)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, n)
+        .map(([name, count]) => ({ name, count }));
+}
+
 /**
  * Compute comprehensive statistics for a set of enriched entries.
  */
@@ -16,12 +58,15 @@ export function calculateStats(
     patterns?: LogPattern[],
 ): LogStats {
     const byLevel: Record<string, number> = {};
+    const byLogger: Record<string, number> = {};
     let noiseCount = 0;
     const correlationIds = new Set<string>();
     const timestamps: number[] = [];
 
     for (const entry of entries) {
         byLevel[entry.priority] = (byLevel[entry.priority] || 0) + 1;
+        const logger = entry.loggerName || UNKNOWN_LOGGER;
+        byLogger[logger] = (byLogger[logger] || 0) + 1;
         if (isNoise(entry)) noiseCount++;
         if (entry.correlationId) correlationIds.add(entry.correlationId);
         if (entry.timestamp) timestamps.push(entry.timestamp);
@@ -38,6 +83,7 @@ export function calculateStats(
         totalLines,
         totalEntries,
         byLevel,
+        byLogger,
         errorRate,
         timeRange: {
             start: timestamps.length > 0 ? new Date(timestamps[0]).toISOString() : '',

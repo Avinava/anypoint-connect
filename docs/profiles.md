@@ -32,6 +32,36 @@ no credentials. Add it to `.gitignore` anyway, because a profile name can reveal
 .anypoint-connect.json
 ```
 
+## Naming conventions
+
+The same file can hold the organization's Exchange naming convention for application JARs. `deploy_jar`,
+`publish_app_jar` and `anc deploy` use it when no `assetId` / `assetVersion` is given:
+
+```json
+{
+    "profile": "org-a",
+    "conventions": {
+        "assetId": "{app}-{pomVersion}-{timestamp}",
+        "assetVersion": "1.0.0"
+    }
+}
+```
+
+| Token | Value |
+| --- | --- |
+| `{app}` | The application name |
+| `{artifactId}` | The JAR's Maven artifact ID |
+| `{pomVersion}` | The JAR's Maven version |
+| `{timestamp}` | UTC time as `yyyyMMddHHmmss` |
+| `{gitShort}` | The short commit hash of the project |
+
+`assetVersion` can be a fixed value or a template, and `groupId` sets the Exchange group. Each preview
+reports which rule chose each coordinate.
+
+Without a convention, the coordinates come from the JAR. `suggest_asset_name` and the deploy preview still
+detect the pattern of the asset an app runs today, for example `{app}-{pomVersion}-{timestamp}` at `1.0.0`,
+and show the `conventions` block to add. A detected pattern is never applied until it is written here.
+
 ## Managing configuration
 
 ```bash

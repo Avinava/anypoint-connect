@@ -111,9 +111,12 @@ export function registerAnypointMQTools(server: McpServer, client: AnypointClien
                 region: z.string().describe('MQ region ID (e.g. "us-east-1")'),
                 queueId: z.string().describe('Queue ID (destination ID) as returned by list_queues'),
                 body: z.string().describe('Message body content (typically JSON-stringified payload)'),
-                headers: z.record(z.string()).optional().describe('Optional message headers as key-value pairs'),
+                headers: z
+                    .record(z.string(), z.string())
+                    .optional()
+                    .describe('Optional message headers as key-value pairs'),
                 properties: z
-                    .record(z.string())
+                    .record(z.string(), z.string())
                     .optional()
                     .describe('Optional message properties as key-value pairs (used for routing or metadata)'),
             },

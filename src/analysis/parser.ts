@@ -6,18 +6,48 @@
 
 import type { EnrichedLogEntry } from './types.js';
 
+/** ISO timestamp, level and replica: the prefix every new entry starts with. */
+const HEADER_PREFIX = String.raw`^(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:?\d{2}))\s+(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s+\[([^\]]*)\]`;
+
 /**
- * Enhanced log line regex that captures:
- *  - timestamp, level, instanceId, loggerName, eventId, thread, message
+ * Full Mule line: timestamp, level, instanceId, loggerName, optional eventId, thread, message.
+ * The first " - " separates the thread from the message.
  */
-const LOG_LINE_REGEX =
-    /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s+\[([^\]]*)\]\s+(\S+)\s+(?:event:(\S+)\s+)?(.+?)(?:\s+-\s+(.*))?$/;
+const LOG_LINE_REGEX = new RegExp(HEADER_PREFIX + String.raw`\s+(\S+)\s+(?:event:(\S+)\s+)?(.+?)\s+-(?:\s(.*))?$`);
+
+/** Any other line with the header prefix: the rest of the line is the message. */
+const LOOSE_LINE_REGEX = new RegExp(HEADER_PREFIX + String.raw`\s*(.*)$`);
+
+interface HeaderParts {
+    timestamp: string;
+    level: string;
+    instanceId: string;
+    loggerName?: string;
+    eventId?: string;
+    threadName?: string;
+    message: string;
+}
+
+/** Parse the first line of an entry, or return null for a continuation line. */
+function parseHeader(line: string): HeaderParts | null {
+    const full = line.match(LOG_LINE_REGEX);
+    if (full) {
+        const [, timestamp, level, instanceId, loggerName, eventId, threadName, message] = full;
+        return { timestamp, level, instanceId, loggerName, eventId, threadName, message: message ?? '' };
+    }
+    const loose = line.match(LOOSE_LINE_REGEX);
+    if (loose) {
+        const [, timestamp, level, instanceId, message] = loose;
+        return { timestamp, level, instanceId, message };
+    }
+    return null;
+}
 
 /**
  * Parse raw log text into enriched entries, joining multi-line blocks.
  */
 export function parseRawLogs(rawText: string): EnrichedLogEntry[] {
-    const lines = rawText.split('\n');
+    const lines = rawText.split(/\r?\n/);
     const entries: EnrichedLogEntry[] = [];
     let current: EnrichedLogEntry | null = null;
     let jsonBuffer: string[] | null = null;
@@ -26,9 +56,9 @@ export function parseRawLogs(rawText: string): EnrichedLogEntry[] {
     for (const line of lines) {
         if (!line.trim()) continue;
 
-        const match = line.match(LOG_LINE_REGEX);
+        const header = parseHeader(line);
 
-        if (match) {
+        if (header) {
             // Flush any pending entry
             if (current) {
                 if (jsonBuffer) {
@@ -39,16 +69,14 @@ export function parseRawLogs(rawText: string): EnrichedLogEntry[] {
                 entries.push(current);
             }
 
-            const [, timestamp, level, instanceId, loggerName, eventId, threadOrMessage, messageAfterDash] = match;
-
             current = {
-                timestamp: new Date(timestamp).getTime(),
-                priority: level,
-                instanceId,
-                loggerName,
-                eventId,
-                threadName: messageAfterDash !== undefined ? threadOrMessage : undefined,
-                message: messageAfterDash !== undefined ? messageAfterDash : threadOrMessage,
+                timestamp: new Date(header.timestamp.replace(/([+-]\d{2})(\d{2})$/, '$1:$2')).getTime(),
+                priority: header.level,
+                instanceId: header.instanceId,
+                loggerName: header.loggerName,
+                eventId: header.eventId,
+                threadName: header.threadName,
+                message: header.message,
             };
 
             // Check if this is a JSON Logger entry starting with "{"

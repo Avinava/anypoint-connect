@@ -5,8 +5,14 @@
  */
 
 import type { HttpClient } from '../client/HttpClient.js';
-import type { CloudHub2Api, CH2Deployment } from './CloudHub2Api.js';
+import type { CloudHub2Api } from './CloudHub2Api.js';
+import type { EnrichedLogEntry } from '../analysis/types.js';
+import { parseRawLogs } from '../analysis/parser.js';
+import { buildFilter, searchEntries, type LogFilter, type LogSearchOptions } from '../analysis/filter.js';
 import { errorMessage } from '../utils/errors.js';
+
+export { MAX_LOG_LINES } from '../analysis/filter.js';
+export type { LogFilter, LogSearchOptions } from '../analysis/filter.js';
 
 export interface LogEntry {
     timestamp: number;
@@ -18,22 +24,41 @@ export interface LogEntry {
     deploymentId?: string;
 }
 
+/** Where a log file came from. */
+export interface LogSource {
+    deploymentId: string;
+    /** The spec whose log file was read */
+    specId: string;
+    /** Set when the desired spec had no log file or an empty one, and the last successful spec was read instead */
+    fallbackFromSpecId?: string;
+}
+
+export interface LogFile extends LogSource {
+    text: string;
+}
+
 export interface LogSearchResponse {
+    /** Matches before `limit` was applied */
     total: number;
-    data: LogEntry[];
+    /** Entries returned */
+    returned: number;
+    truncated: boolean;
+    /** Newest first */
+    entries: EnrichedLogEntry[];
+    source: LogSource;
 }
 
 const AMC_BASE = '/amc/application-manager/api/v2';
 
-/** Numeric priority for log level filtering */
-const LEVEL_PRIORITY: Record<string, number> = {
-    TRACE: 0,
-    DEBUG: 1,
-    INFO: 2,
-    WARN: 3,
-    ERROR: 4,
-    FATAL: 5,
-};
+function httpStatus(error: unknown): number | undefined {
+    return (error as { response?: { status?: number } } | undefined)?.response?.status;
+}
+
+function sourceOf(file: LogFile): LogSource {
+    const source: LogSource = { deploymentId: file.deploymentId, specId: file.specId };
+    if (file.fallbackFromSpecId) source.fallbackFromSpecId = file.fallbackFromSpecId;
+    return source;
+}
 
 export class LogsApi {
     constructor(
@@ -58,62 +83,56 @@ export class LogsApi {
     }
 
     /**
-     * Resolve an app name to its deployment + spec ID.
+     * Resolve an app name to its deployment and the specs whose logs to read, preferred first:
+     * the desired spec, then the last successful one when it differs.
      */
     private async resolveDeployment(
         orgId: string,
         envId: string,
         appName: string,
-    ): Promise<{ deploymentId: string; specId: string }> {
+    ): Promise<{ deploymentId: string; specIds: string[] }> {
         if (!this.ch2) {
             throw new Error('CloudHub2Api required for log operations');
         }
 
-        // Get full deployment detail to access desiredVersion (spec ID)
         const deployment = await this.ch2.findByName(orgId, envId, appName);
         if (!deployment) {
             throw new Error(`Application "${appName}" not found in environment`);
         }
 
-        // Get detailed deployment info with desiredVersion
         const detail = await this.ch2.getDeployment(orgId, envId, deployment.id);
-        const detailRecord = detail as unknown as Record<string, unknown>;
-        const specId = (detailRecord.desiredVersion || detailRecord.lastSuccessfulVersion) as string | undefined;
+        const specIds = [detail.desiredVersion, detail.lastSuccessfulVersion].filter(
+            (id, i, all): id is string => !!id && all.indexOf(id) === i,
+        );
 
-        if (!specId) {
-            throw new Error(`No spec version found for "${appName}" — app may not be fully deployed`);
+        if (specIds.length === 0) {
+            throw new Error(`No spec version found for "${appName}". The app may not be fully deployed yet`);
         }
 
-        return { deploymentId: deployment.id, specId };
+        return { deploymentId: deployment.id, specIds };
     }
 
     /**
-     * Parse a CH2 log line into structured LogEntry.
-     * Format: "2026-02-13T22:42:32.359Z INFO [replicaId] message..."
+     * Fetch the log file for an app. Reads the desired spec's file; right after a change that
+     * file can be missing or empty while the platform starts the new replicas, so the last
+     * successful spec's file is read instead and `fallbackFromSpecId` says so.
      */
-    private parseLogLine(line: string): LogEntry | null {
-        if (!line.trim()) return null;
+    async getLogFile(orgId: string, envId: string, appName: string): Promise<LogFile> {
+        const { deploymentId, specIds } = await this.resolveDeployment(orgId, envId, appName);
+        const [desired, previous] = specIds;
 
-        // Match: timestamp LEVEL [instance] rest
-        const match = line.match(
-            /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s+\[([^\]]*)\]\s+(.*)$/,
-        );
-
-        if (match) {
-            return {
-                timestamp: new Date(match[1]).getTime(),
-                priority: match[2],
-                instanceId: match[3],
-                message: match[4],
-            };
+        let text = '';
+        try {
+            text = (await this.downloadLogFile(orgId, envId, deploymentId, desired)).toString('utf-8');
+        } catch (error) {
+            if (!previous || httpStatus(error) !== 404) throw error;
+        }
+        if (text.trim() || !previous) {
+            return { deploymentId, specId: desired, text };
         }
 
-        // Continuation line (no timestamp prefix) — attach to last timestamp
-        return {
-            timestamp: Date.now(),
-            priority: 'INFO',
-            message: line,
-        };
+        const fallback = (await this.downloadLogFile(orgId, envId, deploymentId, previous)).toString('utf-8');
+        return { deploymentId, specId: previous, fallbackFromSpecId: desired, text: fallback };
     }
 
     /**
@@ -121,64 +140,53 @@ export class LogsApi {
      * Returns the full log file as a string without parsing.
      */
     async getRawText(orgId: string, envId: string, appName: string): Promise<string> {
-        const { deploymentId, specId } = await this.resolveDeployment(orgId, envId, appName);
-        const buffer = await this.downloadLogFile(orgId, envId, deploymentId, specId);
-        return buffer.toString('utf-8');
+        return (await this.getLogFile(orgId, envId, appName)).text;
     }
 
     /**
-     * Get parsed log entries for a CH2 application.
-     * Fetches the log file and parses it.
+     * Search an app's log file. Multi-line entries (stack traces, error reports, JSON Logger
+     * bodies) are joined to the line that starts them and keep its timestamp and level.
+     * Returns the newest `limit` matches (default 100, at most MAX_LOG_LINES) and the full match count.
+     */
+    async searchLogs(
+        orgId: string,
+        envId: string,
+        appName: string,
+        options: LogSearchOptions = {},
+    ): Promise<LogSearchResponse> {
+        const file = await this.getLogFile(orgId, envId, appName);
+        return { ...searchEntries(parseRawLogs(file.text), options), source: sourceOf(file) };
+    }
+
+    /**
+     * Get parsed log entries for a CH2 application, newest first.
+     * See `searchLogs` for the counts and the source spec.
      */
     async getLogs(
         orgId: string,
         envId: string,
         appName: string,
-        options: {
-            startTime?: number;
-            endTime?: number;
-            level?: string;
-            limit?: number;
-            search?: string;
-        } = {},
-    ): Promise<LogEntry[]> {
-        const { deploymentId, specId } = await this.resolveDeployment(orgId, envId, appName);
-        const buffer = await this.downloadLogFile(orgId, envId, deploymentId, specId);
-        const text = buffer.toString('utf-8');
-        const lines = text.split('\n');
-
-        const minLevel = options.level ? (LEVEL_PRIORITY[options.level.toUpperCase()] ?? 0) : 0;
-
-        let entries: LogEntry[] = [];
-        for (const line of lines) {
-            const entry = this.parseLogLine(line);
-            if (!entry) continue;
-
-            // Filter by time
-            if (options.startTime && entry.timestamp < options.startTime) continue;
-            if (options.endTime && entry.timestamp > options.endTime) continue;
-
-            // Filter by level
-            if ((LEVEL_PRIORITY[entry.priority] ?? 0) < minLevel) continue;
-
-            // Filter by search
-            if (options.search && !entry.message.toLowerCase().includes(options.search.toLowerCase())) continue;
-
-            entries.push(entry);
-        }
-
-        // Sort descending by default (newest first), limit
-        entries.sort((a, b) => b.timestamp - a.timestamp);
-        if (options.limit) {
-            entries = entries.slice(0, options.limit);
-        }
-
-        return entries;
+        options: LogSearchOptions = {},
+    ): Promise<EnrichedLogEntry[]> {
+        return (await this.searchLogs(orgId, envId, appName, options)).entries;
     }
 
     /**
-     * Tail logs — generator that yields new log entries.
-     * Polls the log file periodically and yields new entries since last check.
+     * Every entry that passes a filter, oldest first, with no line cap.
+     */
+    async queryLogs(
+        orgId: string,
+        envId: string,
+        appName: string,
+        filter: LogFilter = {},
+    ): Promise<{ entries: EnrichedLogEntry[]; source: LogSource }> {
+        const file = await this.getLogFile(orgId, envId, appName);
+        return { entries: parseRawLogs(file.text).filter(buildFilter(filter)), source: sourceOf(file) };
+    }
+
+    /**
+     * Tail logs: a generator that yields new log entries.
+     * Polls the log file and re-resolves the spec each time, so a restart is followed.
      */
     async *tailLogs(
         orgId: string,
@@ -188,33 +196,27 @@ export class LogsApi {
             level?: string;
             intervalMs?: number;
             search?: string;
+            regex?: boolean;
+            logger?: string;
         } = {},
     ): AsyncGenerator<LogEntry[], void, unknown> {
         const intervalMs = options.intervalMs || 5000;
-        const { deploymentId, specId } = await this.resolveDeployment(orgId, envId, appName);
+        const keep = buildFilter({
+            level: options.level,
+            search: options.search,
+            regex: options.regex,
+            logger: options.logger,
+        });
 
         let lastTimestamp = Date.now() - 30000; // start from 30 seconds ago
 
         while (true) {
             try {
-                const buffer = await this.downloadLogFile(orgId, envId, deploymentId, specId);
-                const text = buffer.toString('utf-8');
+                const { text } = await this.getLogFile(orgId, envId, appName);
                 // Only parse the last portion for performance (last 100KB)
                 const tail = text.length > 100000 ? text.substring(text.length - 100000) : text;
-                const lines = tail.split('\n');
 
-                const levelPriority = LEVEL_PRIORITY;
-                const minLevel = options.level ? (levelPriority[options.level.toUpperCase()] ?? 0) : 0;
-
-                const newEntries: LogEntry[] = [];
-                for (const line of lines) {
-                    const entry = this.parseLogLine(line);
-                    if (!entry) continue;
-                    if (entry.timestamp <= lastTimestamp) continue;
-                    if ((levelPriority[entry.priority] ?? 0) < minLevel) continue;
-                    if (options.search && !entry.message.toLowerCase().includes(options.search.toLowerCase())) continue;
-                    newEntries.push(entry);
-                }
+                const newEntries = parseRawLogs(tail).filter((e) => e.timestamp > lastTimestamp && keep(e));
 
                 if (newEntries.length > 0) {
                     newEntries.sort((a, b) => a.timestamp - b.timestamp);
@@ -230,7 +232,7 @@ export class LogsApi {
     }
 
     /**
-     * Get all logs for a time range.
+     * Get all logs for a time range, newest first.
      */
     async getLogsForPeriod(
         orgId: string,
@@ -239,11 +241,8 @@ export class LogsApi {
         startTime: number,
         endTime: number,
         level?: string,
-    ): Promise<LogEntry[]> {
-        return this.getLogs(orgId, envId, appName, {
-            startTime,
-            endTime,
-            level,
-        });
+    ): Promise<EnrichedLogEntry[]> {
+        const { entries } = await this.queryLogs(orgId, envId, appName, { startTime, endTime, level });
+        return entries.reverse();
     }
 }

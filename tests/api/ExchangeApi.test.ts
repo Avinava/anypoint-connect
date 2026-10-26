@@ -77,3 +77,78 @@ describe('ExchangeApi.publishAppAsset', () => {
         expect(form.get('files.mule-application.jar')).toBeInstanceOf(Blob);
     });
 });
+
+describe('ExchangeApi.downloadAppJar', () => {
+    let api: ExchangeApi;
+    const jar = Buffer.from('PK jar bytes');
+    const asset = (files: unknown[]) => ({ groupId: 'org-1', assetId: 'orders-sapi', version: '1.0.0', files });
+
+    beforeEach(() => {
+        vi.resetAllMocks();
+        api = new ExchangeApi(mockHttp, new Cache());
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('reads the asset metadata and downloads the mule-application jar with a size bound', async () => {
+        mockGet.mockResolvedValue(
+            asset([
+                { classifier: 'raml', packaging: 'zip', externalLink: '/spec' },
+                {
+                    classifier: 'mule-application',
+                    packaging: 'jar',
+                    externalLink: '/exchange/api/v2/assets/org-1/orders-sapi/1.0.0/files/jar',
+                    md5: createHash('md5').update(jar).digest('hex'),
+                },
+            ]),
+        );
+        mockDownload.mockResolvedValue(jar);
+
+        const result = await api.downloadAppJar('org-1', 'org-1', 'orders-sapi', '1.0.0', { maxBytes: 1024 });
+
+        expect(mockGet).toHaveBeenCalledWith('/exchange/api/v2/assets/org-1/orders-sapi/1.0.0');
+        expect(mockDownload).toHaveBeenCalledWith(
+            '/exchange/api/v2/assets/org-1/orders-sapi/1.0.0/files/jar',
+            expect.objectContaining({ maxContentLength: 1024 }),
+        );
+        expect(result).toMatchObject({
+            sha256: createHash('sha256').update(jar).digest('hex'),
+            md5Matches: true,
+            fileName: 'orders-sapi-1.0.0-mule-application.jar',
+        });
+    });
+
+    it('fetches a link on another host without the platform token', async () => {
+        const axios = (await import('axios')).default;
+        const plainGet = vi.spyOn(axios, 'get').mockResolvedValue({ data: jar });
+        mockGet.mockResolvedValue(
+            asset([
+                { classifier: 'mule-application', packaging: 'jar', downloadURL: 'https://storage.example.com/x.jar' },
+            ]),
+        );
+
+        await api.downloadAppJar('org-1', 'org-1', 'orders-sapi', '1.0.0');
+
+        expect(plainGet).toHaveBeenCalledWith(
+            'https://storage.example.com/x.jar',
+            expect.objectContaining({ responseType: 'arraybuffer' }),
+        );
+        expect(mockDownload).not.toHaveBeenCalled();
+    });
+
+    it('refuses a jar over the size bound and reports missing jars', async () => {
+        mockGet.mockResolvedValue(asset([{ classifier: 'mule-application', packaging: 'jar', externalLink: '/f' }]));
+        mockDownload.mockResolvedValue(Buffer.alloc(2048));
+        await expect(api.downloadAppJar('org-1', 'org-1', 'orders-sapi', '1.0.0', { maxBytes: 1024 })).rejects.toThrow(
+            'exceeds 1024 bytes',
+        );
+
+        const other = new ExchangeApi(mockHttp, new Cache());
+        mockGet.mockResolvedValue(asset([{ classifier: 'raml', packaging: 'zip' }]));
+        await expect(other.downloadAppJar('org-1', 'org-1', 'orders-sapi', '1.0.0')).rejects.toThrow(
+            'No mule-application jar',
+        );
+    });
+});

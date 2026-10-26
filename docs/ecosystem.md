@@ -55,9 +55,12 @@ as `assetVersion`, and `artifact.sha256` as `expectedSha256`. Resolve the Exchan
 when it differs from the Maven group. The publication preview shows both the embedded identity
 and the chosen Exchange coordinates; explicit coordinate mappings remain supported.
 
-Without explicit asset ID/version, these MCP tools use embedded Maven metadata. They never derive
-identity from a timestamped filename or silently choose version 1.0.0. If metadata is absent,
-supply both values explicitly. A preview returns `expectedSha256`; pass it back on confirmation.
+Without explicit asset ID/version, these MCP tools use the project's naming convention
+(`.anypoint-connect.json` `conventions`, see [Profiles](profiles.md#naming-conventions)), then embedded
+Maven metadata. They never derive identity from a timestamped filename and only use a fixed version
+such as 1.0.0 when a convention says so. The pattern of the asset an app currently runs is reported
+in the preview and by `suggest_asset_name`, never applied on its own. If metadata is absent and no
+convention applies, supply both values explicitly. A preview returns `expectedSha256`; pass it back on confirmation.
 A changed digest prevents upload. Preview and authentication requirements still apply, and a
 successful local build alone does not authorize publication or deployment.
 

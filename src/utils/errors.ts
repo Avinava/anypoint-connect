@@ -4,12 +4,14 @@
  */
 
 import { AxiosError } from 'axios';
+import { redactDeep } from '../safety/secrets.js';
 
 /**
  * Extracts a human-readable message from an unknown error value.
  * For AxiosErrors, prefers the API response body (which often contains
  * a more descriptive message than the generic HTTP status).
- * Safely handles Error instances, strings, and other types.
+ * Safely handles Error instances, strings, and other types. Secret-looking
+ * fields in an echoed response body are masked.
  */
 export function errorMessage(error: unknown): string {
     if (error instanceof AxiosError && error.response) {
@@ -17,8 +19,8 @@ export function errorMessage(error: unknown): string {
         if (typeof data === 'string' && data.length > 0) return data;
         if (data && typeof data === 'object') {
             if ('message' in data) return String((data as { message: string }).message);
-            // Some APIs return { error: '...' } or { status, ... } — show full body
-            return `HTTP ${error.response.status}: ${JSON.stringify(data)}`;
+            // Some APIs return { error: '...' } or { status, ... } — show the body, masked
+            return `HTTP ${error.response.status}: ${JSON.stringify(redactDeep(data))}`;
         }
         return `HTTP ${error.response.status || 'unknown'}`;
     }

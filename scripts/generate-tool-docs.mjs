@@ -16,15 +16,20 @@ const SECTIONS = [
     [
         'registerAppReadTools',
         'Applications — read',
-        'CloudHub 2.0 deployment state, specs, settings and cross-environment comparison.',
+        'CloudHub 2.0 deployment state and phase, specs, settings (secret-looking values masked), runtime catalogs, asset naming and cross-environment comparison.',
     ],
     [
         'registerAppDeployTools',
         'Applications — deploy',
-        'Publish and deploy artifacts. Existing apps only have their artifact reference changed unless you ask otherwise.',
+        'Publish and deploy artifacts, and change existing apps in one update: artifact, runtime, settings and update strategy, in place or stop-then-start. Every write previews first.',
     ],
-    ['registerAppLifecycleTools', 'Applications — lifecycle', 'Restart, scale, stop, start, settings and deletion.'],
-    ['registerLogTools', 'Logs', 'Raw application logs.'],
+    [
+        'registerAppLifecycleTools',
+        'Applications — lifecycle',
+        'Restart, scale, stop, start, settings and deletion. Settings take secrets from project files or environment variables, never from the conversation.',
+    ],
+    ['registerArtifactTools', 'Artifacts', 'Compare the JAR an app runs with a git ref or a local JAR.'],
+    ['registerLogTools', 'Logs', 'Application logs: search, filters, summaries and file output.'],
     [
         'registerAnalysisTools',
         'Log analysis',
@@ -36,7 +41,11 @@ const SECTIONS = [
         'Traffic, failures, latency, JVM and host metrics. See [Monitoring](monitoring.md) for how to read them.',
     ],
     ['registerExchangeTools', 'Exchange', 'Search assets, read specs and publish application JARs.'],
-    ['registerApiManagerTools', 'API Manager', 'API instances, policies and alerts.'],
+    [
+        'registerApiManagerTools',
+        'API Manager',
+        'API instances, policies, alerts, contracts, client applications and smoke tests. Client secrets never appear in output.',
+    ],
     [
         'registerDesignCenterTools',
         'Design Center',

@@ -18,6 +18,7 @@ import { GovernanceApi } from '../api/GovernanceApi.js';
 import { AuditLogApi } from '../api/AuditLogApi.js';
 import { AnypointMQApi } from '../api/AnypointMQApi.js';
 import { ObjectStoreApi } from '../api/ObjectStoreApi.js';
+import { RuntimesApi } from '../api/RuntimesApi.js';
 import { DEFAULT_CALLBACK_URL } from '../config/profiles.js';
 
 export interface AnypointClientConfig {
@@ -47,6 +48,7 @@ export class AnypointClient {
     public readonly auditLog: AuditLogApi;
     public readonly anypointMQ: AnypointMQApi;
     public readonly objectStore: ObjectStoreApi;
+    public readonly runtimes: RuntimesApi;
 
     constructor(config: AnypointClientConfig) {
         this.tokenManager = new TokenManager({
@@ -76,6 +78,7 @@ export class AnypointClient {
         this.auditLog = new AuditLogApi(this.httpClient);
         this.anypointMQ = new AnypointMQApi(this.httpClient, this.cache);
         this.objectStore = new ObjectStoreApi(this.httpClient, this.cache);
+        this.runtimes = new RuntimesApi(this.httpClient, this.cache);
     }
 
     // ── Auth ──────────────────────────────────────────

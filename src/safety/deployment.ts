@@ -17,6 +17,7 @@ import type {
     CH2DeploymentSpec,
     CreateDeploymentPayload,
 } from '../api/CloudHub2Api.js';
+import { MASKED, looksSecret, redactValue } from './secrets.js';
 
 export const DEFAULT_RUNTIME = '4.8.0';
 export const DEFAULT_REGION = 'cloudhub-us-east-2';
@@ -35,6 +36,8 @@ export interface DeploymentInput {
     artifactId: string;
     version: string;
     runtime?: string;
+    javaVersion?: string;
+    releaseChannel?: string;
     replicas?: number;
     region?: string;
     vcores?: string;
@@ -109,7 +112,11 @@ export function buildCreatePayload(input: DeploymentInput): CreateDeploymentPayl
             provider: 'MC',
             targetId: region,
             deploymentSettings: {
-                runtime: { version: input.runtime || DEFAULT_RUNTIME },
+                runtime: {
+                    version: input.runtime || DEFAULT_RUNTIME,
+                    ...(input.releaseChannel ? { releaseChannel: input.releaseChannel } : {}),
+                    ...(input.javaVersion ? { java: input.javaVersion } : {}),
+                },
                 http: {
                     inbound: {
                         publicUrl: `${input.appName}.${regionToSubdomain(region)}.cloudhub.io`,
@@ -195,19 +202,178 @@ export function resolveRollbackTarget(
     return previousArtifact ? { ref: previousArtifact.application.ref, sourceSpecId: previousArtifact.version } : null;
 }
 
-/** Merge settings while retaining masked secure entries required by the Application Manager API. */
-export function mergeApplicationProperties(
-    existing: CH2Deployment,
-    properties?: Record<string, string>,
-    secureProperties?: Record<string, string>,
-): ApplicationPropertiesService {
+/** A requested change to an application's properties. Values are already resolved (no file references). */
+export interface SettingsChange {
+    properties?: Record<string, string>;
+    secureProperties?: Record<string, string>;
+    removeProperties?: string[];
+    removeSecureProperties?: string[];
+    /** Plaintext keys whose current value moves into secure properties without leaving the server. */
+    moveToSecure?: string[];
+}
+
+export interface PropertyChange {
+    key: string;
+    /** Present only for plaintext keys that do not look secret. */
+    from?: string;
+    to?: string;
+}
+
+export interface SettingsDiff {
+    added: PropertyChange[];
+    changed: PropertyChange[];
+    removed: string[];
+    secureAdded: string[];
+    secureChanged: string[];
+    secureRemoved: string[];
+    movedToSecure: string[];
+}
+
+export interface SettingsPlan {
+    /** The complete properties service to send. The platform replaces the maps wholesale. */
+    service: ApplicationPropertiesService;
+    diff: SettingsDiff;
+    warnings: string[];
+    changed: boolean;
+}
+
+/** Read the properties service of a live deployment. */
+export function currentSettings(existing: CH2Deployment): {
+    properties: Record<string, string>;
+    secureProperties: Record<string, string>;
+} {
     const configuration = existing.application.configuration ?? {};
     const service = (configuration['mule.agent.application.properties.service'] ??
         {}) as Partial<ApplicationPropertiesService>;
+    return { properties: { ...(service.properties ?? {}) }, secureProperties: { ...(service.secureProperties ?? {}) } };
+}
+
+export function isEmptySettingsChange(change: SettingsChange | undefined): boolean {
+    if (!change) return true;
+    return (
+        Object.keys(change.properties ?? {}).length === 0 &&
+        Object.keys(change.secureProperties ?? {}).length === 0 &&
+        (change.removeProperties ?? []).length === 0 &&
+        (change.removeSecureProperties ?? []).length === 0 &&
+        (change.moveToSecure ?? []).length === 0
+    );
+}
+
+/**
+ * Plan a settings change against the live deployment.
+ *
+ * The platform stores secure values encrypted and returns them as `******`. Sending `******` back
+ * for a key keeps its stored value, so every untouched secure key is resent masked; that is what
+ * lets one secret change without wiping the others. Removal works because the full maps are sent.
+ */
+export function planSettingsChange(existing: CH2Deployment, change: SettingsChange): SettingsPlan {
+    const current = currentSettings(existing);
+    const next = { properties: { ...current.properties }, secureProperties: { ...current.secureProperties } };
+    const warnings: string[] = [];
+    const errors: string[] = [];
+    const diff: SettingsDiff = {
+        added: [],
+        changed: [],
+        removed: [],
+        secureAdded: [],
+        secureChanged: [],
+        secureRemoved: [],
+        movedToSecure: [],
+    };
+
+    const setPlain = change.properties ?? {};
+    const setSecure = change.secureProperties ?? {};
+    const removePlain = new Set(change.removeProperties ?? []);
+    const removeSecure = new Set(change.removeSecureProperties ?? []);
+    const moves = new Set(change.moveToSecure ?? []);
+
+    for (const key of Object.keys(setPlain)) {
+        if (key in setSecure) errors.push(`"${key}" is given as both a plain and a secure property`);
+        if (removePlain.has(key)) errors.push(`"${key}" is both set and removed`);
+        if (moves.has(key)) errors.push(`"${key}" is both set as plain and moved to secure`);
+        if (setPlain[key] === MASKED) errors.push(`"${key}": "${MASKED}" is not a valid plain property value`);
+    }
+    for (const key of Object.keys(setSecure)) {
+        if (removeSecure.has(key)) errors.push(`"${key}" is both set and removed`);
+        if (setSecure[key] === MASKED && !(key in current.secureProperties)) {
+            errors.push(`"${key}": "${MASKED}" keeps a stored secret, but no secure property "${key}" exists`);
+        }
+        if (key in current.properties && !removePlain.has(key) && !moves.has(key)) {
+            errors.push(
+                `"${key}" already exists as a plain property. Use moveToSecure to move its current value, or add it to removeProperties`,
+            );
+        }
+    }
+    for (const key of moves) {
+        if (!(key in current.properties)) {
+            if (key in current.secureProperties) warnings.push(`"${key}" is already a secure property`);
+            else errors.push(`"${key}" cannot move to secure: no plain property with that name`);
+        }
+        if (key in setSecure) errors.push(`"${key}" is both moved and given a new secure value`);
+    }
+    if (errors.length) throw new Error(`Invalid settings change:\n- ${errors.join('\n- ')}`);
+
+    const showValue = (key: string, value: string | undefined) =>
+        value === undefined ? undefined : looksSecret(key) ? redactValue(value) : value;
+
+    for (const key of removePlain) {
+        if (!(key in next.properties)) {
+            warnings.push(`"${key}" is not a plain property; nothing to remove`);
+            continue;
+        }
+        delete next.properties[key];
+        diff.removed.push(key);
+    }
+    for (const key of removeSecure) {
+        if (!(key in next.secureProperties)) {
+            warnings.push(`"${key}" is not a secure property; nothing to remove`);
+            continue;
+        }
+        delete next.secureProperties[key];
+        diff.secureRemoved.push(key);
+    }
+    for (const key of moves) {
+        if (!(key in current.properties)) continue;
+        next.secureProperties[key] = current.properties[key];
+        delete next.properties[key];
+        diff.movedToSecure.push(key);
+    }
+    for (const [key, value] of Object.entries(setPlain)) {
+        const before = current.properties[key];
+        if (before === value) continue;
+        next.properties[key] = value;
+        if (before === undefined) diff.added.push({ key, to: showValue(key, value) });
+        else diff.changed.push({ key, from: showValue(key, before), to: showValue(key, value) });
+        if (looksSecret(key)) {
+            warnings.push(`"${key}" looks like a secret but is stored as plain text; consider secureProperties`);
+        }
+    }
+    for (const [key, value] of Object.entries(setSecure)) {
+        if (value === MASKED) continue;
+        if (key in current.secureProperties) diff.secureChanged.push(key);
+        else diff.secureAdded.push(key);
+        next.secureProperties[key] = value;
+    }
+
+    const changed =
+        diff.added.length +
+            diff.changed.length +
+            diff.removed.length +
+            diff.secureAdded.length +
+            diff.secureChanged.length +
+            diff.secureRemoved.length +
+            diff.movedToSecure.length >
+        0;
+
     return {
-        applicationName: existing.name,
-        properties: { ...(service.properties ?? {}), ...(properties ?? {}) },
-        secureProperties: { ...(service.secureProperties ?? {}), ...(secureProperties ?? {}) },
+        service: {
+            applicationName: existing.name,
+            properties: next.properties,
+            secureProperties: next.secureProperties,
+        },
+        diff,
+        warnings,
+        changed,
     };
 }
 

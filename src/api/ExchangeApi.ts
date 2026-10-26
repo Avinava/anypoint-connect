@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'node:crypto';
+import axios, { AxiosError } from 'axios';
 import { verifyArtifactDigest } from '../safety/artifact.js';
 import type { HttpClient } from '../client/HttpClient.js';
 import type { Cache } from '../client/Cache.js';
@@ -71,6 +72,16 @@ const BASE = '/exchange/api/v2';
 
 /** Upload timeout for artifact publish — jars are far larger than API calls (30–80 MB). */
 const PUBLISH_TIMEOUT_MS = 300000;
+
+/** Default ceiling for a downloaded application jar. */
+export const DEFAULT_JAR_MAX_BYTES = 200 * 1024 * 1024;
+
+/** True for an absolute URL outside the Anypoint control plane, such as presigned storage. */
+function isForeignHost(link: string): boolean {
+    if (!/^https?:\/\//i.test(link)) return false;
+    const host = new URL(link).hostname.toLowerCase();
+    return !(host === 'mulesoft.com' || host.endsWith('.mulesoft.com'));
+}
 
 export class ExchangeApi {
     constructor(
@@ -190,6 +201,57 @@ export class ExchangeApi {
             content: buffer.toString('utf-8'),
             classifier: specFile.classifier,
             fileName: specFile.mainFile || `${assetId}.${specFile.classifier}`,
+        };
+    }
+
+    /**
+     * Download the `mule-application` jar of an app asset, bounded by `maxBytes`. The link
+     * comes from the asset's files list. Links on another host (a presigned storage URL) are
+     * fetched without the platform token so it never leaves Anypoint.
+     */
+    async downloadAppJar(
+        orgId: string,
+        groupId: string,
+        artifactId: string,
+        version: string,
+        options: { maxBytes?: number } = {},
+    ): Promise<{ buffer: Buffer; sha256: string; md5Matches: boolean; fileName: string }> {
+        const maxBytes = options.maxBytes ?? DEFAULT_JAR_MAX_BYTES;
+        const detail = await this.getAsset(groupId, artifactId, version);
+        const jarFile = detail.files?.find(
+            (file) => file.classifier === 'mule-application' && (!file.packaging || file.packaging === 'jar'),
+        );
+        const link = jarFile?.externalLink || jarFile?.downloadURL;
+        if (!jarFile || !link) {
+            throw new Error(
+                `No mule-application jar found for ${groupId}/${artifactId}/${version} in organization ${orgId}. ` +
+                    `Available files: ${(detail.files || []).map((f) => `${f.classifier}.${f.packaging}`).join(', ') || 'none'}`,
+            );
+        }
+
+        const config = { maxContentLength: maxBytes, timeout: PUBLISH_TIMEOUT_MS };
+        let buffer: Buffer;
+        try {
+            if (isForeignHost(link)) {
+                const response = await axios.get<ArrayBuffer>(link, { ...config, responseType: 'arraybuffer' });
+                buffer = Buffer.from(response.data);
+            } else {
+                buffer = await this.http.download(link, config);
+            }
+        } catch (error) {
+            if (error instanceof AxiosError && /maxContentLength/i.test(error.message)) {
+                throw new Error(`Application jar exceeds ${maxBytes} bytes`);
+            }
+            throw error;
+        }
+        if (buffer.length > maxBytes) throw new Error(`Application jar exceeds ${maxBytes} bytes`);
+
+        const md5 = createHash('md5').update(buffer).digest('hex');
+        return {
+            buffer,
+            sha256: createHash('sha256').update(buffer).digest('hex'),
+            md5Matches: jarFile.md5 ? jarFile.md5 === md5 : true,
+            fileName: `${artifactId}-${version}-mule-application.jar`,
         };
     }
 

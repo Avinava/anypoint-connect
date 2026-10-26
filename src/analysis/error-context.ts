@@ -13,7 +13,11 @@ export interface ErrorContextOptions {
     afterCount?: number;
     /** Time window in ms for fallback mode (default: 30000) */
     timeWindowMs?: number;
+    /** Which entries count as errors (default: ERROR and FATAL) */
+    isError?: (entry: EnrichedLogEntry) => boolean;
 }
+
+const isErrorLevel = (entry: EnrichedLogEntry) => entry.priority === 'ERROR' || entry.priority === 'FATAL';
 
 /**
  * Build error context for all ERROR entries.
@@ -23,7 +27,7 @@ export function buildErrorContexts(entries: EnrichedLogEntry[], options: ErrorCo
     const afterCount = options.afterCount ?? 10;
     const timeWindowMs = options.timeWindowMs ?? 30000;
 
-    const errorEntries = entries.filter((e) => e.priority === 'ERROR');
+    const errorEntries = entries.filter(options.isError ?? isErrorLevel);
     const contexts: ErrorWithContext[] = [];
 
     // Build correlation index for fast lookup

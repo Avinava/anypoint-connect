@@ -33,7 +33,7 @@ The `mcpServers` form, used by Claude Code, Claude Desktop, Copilot CLI, and Gem
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
     }
   }
 }
@@ -47,7 +47,7 @@ VS Code wraps the same entry in `servers` and wants an explicit transport:
     "anypoint-connect": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
     }
   }
 }
@@ -59,7 +59,7 @@ extension all see it:
 ```toml
 [mcp_servers.anypoint-connect]
 command = "npx"
-args = ["-y", "@sfdxy/anypoint-connect@0.15.0", "mcp"]
+args = ["-y", "@sfdxy/anypoint-connect@0.16.0", "mcp"]
 ```
 
 Installed globally, point at the binary instead and skip the download:
@@ -100,10 +100,16 @@ guarded Design Center writes come as `preview_<verb>_<noun>` paired with `<verb>
 
 Properties that matter more than the list:
 
-- **Deployment tools are dry-run by default.** `deploy_jar`, `deploy_app`, `update_app_artifact`,
-  `rollback_app`, `publish_app_jar`, and `delete_app` return a preview and change nothing without
-  `confirm: true`. Restart, scale, stop, start, settings, Object Store writes, and MQ publish apply on
-  call. The [safety model](safety.md) lists every case.
+- **Every application write previews by default.** Deploy, update, settings, rollback, restart, scale,
+  stop, start, publish and delete return a preview and change nothing without `confirm: true`; production
+  also needs `confirmProduction: true`. Object Store writes and MQ publish apply on call. The
+  [safety model](safety.md) lists every case.
+- **One call per change.** `update_app` changes artifact, runtime, settings and update strategy together,
+  checks the runtime against the target first, and can stop, change and start (`mode: "stopStart"`) for
+  listener-driven apps.
+- **Secrets stay out of the conversation.** Settings take secret values from project files or environment
+  variables (`securePropertiesFrom`), `get_app_settings` masks secret-looking values, and client secrets
+  are never returned.
 - **Design Center writes need a preview token** from the matching `preview_*` tool.
 - **Readiness is checkable.** `whoami` and `list_environments` establish access before real work, which
   stops a missing permission from being reported as an application problem. See

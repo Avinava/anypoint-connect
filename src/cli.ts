@@ -14,6 +14,7 @@ import { createMonitorCommand } from './commands/monitor.js';
 import { createExchangeCommand } from './commands/exchange.js';
 import { createApiCommand } from './commands/api.js';
 import { createDesignCenterCommand } from './commands/design-center.js';
+import { createRuntimesCommand } from './commands/runtimes.js';
 import { VERSION } from './version.js';
 import { migrateIfNeeded } from './config/profiles.js';
 
@@ -38,6 +39,7 @@ program.addCommand(createMonitorCommand());
 program.addCommand(createExchangeCommand());
 program.addCommand(createApiCommand());
 program.addCommand(createDesignCenterCommand());
+program.addCommand(createRuntimesCommand());
 
 program
     .command('mcp')
