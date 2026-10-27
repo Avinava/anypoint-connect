@@ -72,6 +72,13 @@ release does not support the `client_credentials` grant, and its encrypted token
 | Design Center | Projects, branches, file reads, preview-then-apply file sync, verified Exchange publication |
 | Platform services | Environments, entitlements, audit log, Anypoint MQ, Object Store v2 |
 
+New in 0.17:
+
+- Jars whose build marks them not production deployable (`META-INF/mule-build/build-info.json`) are refused for production: [safety model](https://avinava.github.io/anypoint-connect/safety/#stripped-builds-never-reach-production)
+- `scan_logs_for_credentials`: [check logs for leaked credentials](https://avinava.github.io/anypoint-connect/recipes/#check-logs-for-leaked-credentials)
+- `get_audit_log` actor classes: [find who changed an app](https://avinava.github.io/anypoint-connect/recipes/#find-who-changed-an-app)
+- `productionPreapproval` in `.anypoint-connect.json`: [production pre-approval](https://avinava.github.io/anypoint-connect/safety/#production-pre-approval)
+
 New in 0.16, each with a recipe:
 
 - `update_app` with `mode: "stopStart"`: [deploy a listener-driven app without overlap](https://avinava.github.io/anypoint-connect/recipes/#deploy-a-listener-driven-app-without-overlap)
@@ -97,7 +104,7 @@ OAuth tokens; it sends tool calls to the local server that owns the session.
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.3", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
     }
   }
 }
@@ -119,7 +126,8 @@ Preview a deployment of target/sample-orders-api-1.3.0-mule-application.jar to S
 ## Safety
 
 Every MCP write tool returns a preview first and changes nothing until it is called again with
-`confirm: true`; in production it also needs `confirmProduction: true`. `anc deploy --dry-run` and
+`confirm: true`; in production it also needs `confirmProduction: true`, unless the project pre-approved
+that tool for that environment. A jar not marked production deployable never reaches production. `anc deploy --dry-run` and
 `anc apps update --dry-run` print the same plan.
 Publishing binds the JAR's SHA-256. A change to an existing app is one update that carries only what you
 asked to change, with the runtime checked against the target first. Secret values come from project files

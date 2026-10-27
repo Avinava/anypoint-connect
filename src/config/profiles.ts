@@ -112,6 +112,25 @@ export interface ProjectConfig {
         assetVersion?: string;
         groupId?: string;
     };
+    /**
+     * Production writes the user approved ahead of time, so confirmProduction (MCP) or the typed
+     * phrase (CLI) is not asked again. Validated and matched by src/safety/preapproval.ts.
+     * One entry, or a list of entries.
+     */
+    productionPreapproval?: unknown;
+}
+
+/** Walk up from startDir to the nearest .anypoint-connect.json, or null. */
+export function findProjectConfigFile(startDir?: string): string | null {
+    let dir = path.resolve(startDir || process.cwd());
+    const root = path.parse(dir).root;
+
+    while (dir !== root) {
+        const candidate = path.join(dir, PROJECT_CONFIG_FILE);
+        if (fs.existsSync(candidate)) return candidate;
+        dir = path.dirname(dir);
+    }
+    return null;
 }
 
 /**
@@ -119,35 +138,46 @@ export interface ProjectConfig {
  * Returns the parsed content or null if not found.
  */
 export function discoverProjectConfig(startDir?: string): ProjectConfig | null {
-    let dir = path.resolve(startDir || process.cwd());
-    const root = path.parse(dir).root;
-
-    while (dir !== root) {
-        const candidate = path.join(dir, PROJECT_CONFIG_FILE);
-        if (fs.existsSync(candidate)) {
-            try {
-                const content = fs.readFileSync(candidate, 'utf8');
-                return JSON.parse(content) as ProjectConfig;
-            } catch {
-                return null;
-            }
-        }
-        dir = path.dirname(dir);
+    const file = findProjectConfigFile(startDir);
+    if (!file) return null;
+    try {
+        return JSON.parse(fs.readFileSync(file, 'utf8')) as ProjectConfig;
+    } catch {
+        return null;
     }
-
-    return null;
 }
 
 /**
- * Write a .anypoint-connect.json file in the given directory
- * to bind it to a profile.
+ * Merge fields into .anypoint-connect.json in the given directory (created when missing). Fields set
+ * to undefined are removed; every other field already in the file is kept.
+ */
+export function updateProjectConfig(updates: Partial<ProjectConfig>, dir?: string): string {
+    const filePath = path.join(dir || process.cwd(), PROJECT_CONFIG_FILE);
+    let current: Record<string, unknown> = {};
+    if (fs.existsSync(filePath)) {
+        try {
+            const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+                current = parsed as Record<string, unknown>;
+        } catch {
+            throw new Error(`${filePath} is not valid JSON; fix or remove it first`);
+        }
+    }
+    const next: Record<string, unknown> = { ...current };
+    for (const [key, value] of Object.entries(updates)) {
+        if (value === undefined) delete next[key];
+        else next[key] = value;
+    }
+    fs.writeFileSync(filePath, JSON.stringify(next, null, 2) + '\n');
+    return filePath;
+}
+
+/**
+ * Bind a directory to a profile in .anypoint-connect.json, keeping its other fields
+ * (conventions, productionPreapproval).
  */
 export function writeProjectConfig(profile: string, dir?: string): string {
-    const targetDir = dir || process.cwd();
-    const filePath = path.join(targetDir, PROJECT_CONFIG_FILE);
-    const content: ProjectConfig = { profile };
-    fs.writeFileSync(filePath, JSON.stringify(content, null, 2) + '\n');
-    return filePath;
+    return updateProjectConfig({ profile }, dir);
 }
 
 // ── Profile Resolution ──────────────────────────────

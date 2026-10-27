@@ -8,7 +8,7 @@ import chalk from 'chalk';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { printTable } from '../utils/formatter.js';
-import { isProductionEnv, confirmProductionDeploy } from '../safety/guards.js';
+import { isProductionEnv, confirmProductionWrite } from '../safety/guards.js';
 import { buildApplicationDeletionPreview, deploymentIdMatches } from '../safety/deletion.js';
 import { currentSettings } from '../safety/deployment.js';
 import { looksSecret, redactRecord, redactText } from '../safety/secrets.js';
@@ -20,6 +20,7 @@ import {
     type SettingsChangeInput,
 } from '../workflows/app-change.js';
 import { deploymentPhase, waitForAppPhase } from '../workflows/app-state.js';
+import { readJarProvenance } from '../workflows/jar-deployment.js';
 import {
     addRolloutOptions,
     addRuntimeOptions,
@@ -36,9 +37,11 @@ import { createClient } from './shared.js';
 
 type ChangeBuilder = (rollout: ReturnType<typeof rolloutFromOptions>) => Omit<
     AppChangeRequest,
-    'orgId' | 'env' | 'appName' | 'settings' | 'secretValues'
+    'orgId' | 'env' | 'appName' | 'settings' | 'secretValues' | 'buildProvenance'
 > & {
     settings?: SettingsChangeInput;
+    /** Local jar whose build marker is checked against the environment. */
+    jarPath?: string;
 };
 
 /** Plan, preview, confirm and apply an application change from the CLI. */
@@ -55,6 +58,8 @@ async function runChangeCommand(
     },
     build: ChangeBuilder,
     done: string,
+    /** The matching MCP tool name, for productionPreapproval. */
+    tool: string,
 ): Promise<void> {
     let secretValues: string[] = [];
     try {
@@ -62,11 +67,13 @@ async function runChangeCommand(
         const orgId = await client.getDefaultOrgId();
         const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
         const rollout = rolloutFromOptions(opts);
-        const { settings, ...change } = build(rollout);
+        const { settings, jarPath, ...change } = build(rollout);
+        const buildProvenance = jarPath ? await readJarProvenance(jarPath) : undefined;
         const resolved = resolveSettingsInput(settings);
         secretValues = resolved.secretValues;
         const plan = await planAppChange(client, {
             ...change,
+            ...(buildProvenance ? { buildProvenance } : {}),
             orgId,
             env,
             appName,
@@ -82,7 +89,7 @@ async function runChangeCommand(
             if (opts.dryRun) log.info('Dry run: nothing was changed.');
             return;
         }
-        if (!(await confirmIfProduction(plan, Boolean(opts.force)))) {
+        if (!(await confirmIfProduction(plan, Boolean(opts.force), tool))) {
             log.warn('Cancelled');
             return;
         }
@@ -315,7 +322,13 @@ export function createAppsCommand(): Command {
         .option('--dry-run', 'Show the steps, then stop', false)
         .option('--force', 'Skip production confirmation', false)
         .action(async (appName: string, opts) => {
-            await runChangeCommand(appName, opts, () => ({ restart: true, mode: 'stopStart' }), 'Restarted');
+            await runChangeCommand(
+                appName,
+                opts,
+                () => ({ restart: true, mode: 'stopStart' }),
+                'Restarted',
+                'restart_app',
+            );
         });
 
     addRolloutOptions(
@@ -328,7 +341,11 @@ export function createAppsCommand(): Command {
                     .requiredOption('-e, --env <name>', 'Environment name or ID')
                     .option('--version <version>', 'New artifact version')
                     .option('--artifact-id <id>', 'New artifact ID')
-                    .option('--group-id <id>', 'New group ID'),
+                    .option('--group-id <id>', 'New group ID')
+                    .option(
+                        '--jar <path>',
+                        'Local jar the new version was published from; a jar not marked production deployable is refused for production',
+                    ),
             ),
         ),
     )
@@ -339,6 +356,7 @@ export function createAppsCommand(): Command {
                 appName,
                 opts,
                 (rollout) => ({
+                    jarPath: opts.jar,
                     ref: { version: opts.version, artifactId: opts.artifactId, groupId: opts.groupId },
                     runtime: runtimeFromOptions(opts),
                     settings: settingsFromOptions(opts),
@@ -346,6 +364,7 @@ export function createAppsCommand(): Command {
                     updateStrategy: rollout.updateStrategy,
                 }),
                 'Updated',
+                'update_app',
             );
         });
 
@@ -373,11 +392,9 @@ export function createAppsCommand(): Command {
                         process.exitCode = 1;
                         return;
                     }
-                    if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
-                        if (!(await confirmProductionDeploy(env.name, env.isProduction))) {
-                            log.warn(`${name} cancelled`);
-                            return;
-                        }
+                    if (!(await confirmProductionWrite(env, `${name}_app`, opts.force))) {
+                        log.warn(`${name} cancelled`);
+                        return;
                     }
                     const sentAt = Date.now();
                     await client.cloudHub2.setDesiredState(orgId, env.id, deployment.id, state);
@@ -469,6 +486,7 @@ export function createAppsCommand(): Command {
                 opts,
                 (rollout) => ({ settings: settingsFromOptions(opts), mode: rollout.mode }),
                 'Updated settings of',
+                'update_app_settings',
             );
         });
 
@@ -496,12 +514,9 @@ export function createAppsCommand(): Command {
                     process.exit(1);
                 }
 
-                if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
-                    const confirmed = await confirmProductionDeploy(env.name, env.isProduction);
-                    if (!confirmed) {
-                        log.warn('Scale cancelled');
-                        return;
-                    }
+                if (!(await confirmProductionWrite(env, 'scale_app', opts.force))) {
+                    log.warn('Scale cancelled');
+                    return;
                 }
 
                 log.info(`Scaling ${appName} to ${replicas} replica(s) in ${env.name}...`);

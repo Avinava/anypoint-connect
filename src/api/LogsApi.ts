@@ -50,6 +50,17 @@ export interface LogFile extends LogSource {
     text: string;
 }
 
+/** One spec's log text. */
+export interface LogPart {
+    specId: string;
+    text: string;
+}
+
+/** The log text of every spec read, kept apart, oldest first. */
+export interface LogParts extends LogSource {
+    parts: LogPart[];
+}
+
 export interface LogSearchResponse {
     /** Matches before `limit` was applied */
     total: number;
@@ -147,6 +158,18 @@ export class LogsApi {
      * successful spec's file is read instead and `fallbackFromSpecId` says so.
      */
     async getLogFile(orgId: string, envId: string, appName: string, read: LogReadOptions = {}): Promise<LogFile> {
+        const { parts, ...source } = await this.getLogParts(orgId, envId, appName, read);
+        if (!source.specIds) return { ...source, text: parts[0]?.text ?? '' };
+        const blocks = parts.filter((p) => p.text.trim()).map((p) => (p.text.endsWith('\n') ? p.text : `${p.text}\n`));
+        return { ...source, text: blocks.join('') };
+    }
+
+    /**
+     * The same read as {@link getLogFile}, with each spec's text kept apart, for callers that
+     * report per spec. With previousSpecs, specs without a log file (never started, or expired)
+     * are skipped.
+     */
+    async getLogParts(orgId: string, envId: string, appName: string, read: LogReadOptions = {}): Promise<LogParts> {
         const previousSpecs = checkPreviousSpecs(read.previousSpecs ?? 0);
         const { deploymentId, specIds } = await this.resolveDeployment(orgId, envId, appName);
         const [desired, previous] = specIds;
@@ -161,42 +184,42 @@ export class LogsApi {
             if (!previous || httpStatus(error) !== 404) throw error;
         }
         if (text.trim() || !previous) {
-            return { deploymentId, specId: desired, text };
+            return { deploymentId, specId: desired, parts: [{ specId: desired, text }] };
         }
 
         const fallback = (await this.downloadLogFile(orgId, envId, deploymentId, previous)).toString('utf-8');
-        return { deploymentId, specId: previous, fallbackFromSpecId: desired, text: fallback };
+        return {
+            deploymentId,
+            specId: previous,
+            fallbackFromSpecId: desired,
+            parts: [{ specId: previous, text: fallback }],
+        };
     }
 
-    /**
-     * Read the desired spec and up to `count` specs before it, joined oldest first.
-     * Specs without a log file (never started, or expired) are skipped.
-     */
+    /** Read the desired spec and up to `count` specs before it, oldest first. */
     private async readSpecs(
         orgId: string,
         envId: string,
         deploymentId: string,
         desired: string,
         count: number,
-    ): Promise<LogFile> {
+    ): Promise<LogParts> {
         if (!this.ch2) throw new Error('CloudHub2Api required for log operations');
         // The specs API lists newest first; start at the desired spec so a newer, unapplied one is not read.
         const all = (await this.ch2.getDeploymentSpecs(orgId, envId, deploymentId)).map((s) => s.version);
         const start = Math.max(all.indexOf(desired), 0);
         const chosen = [desired, ...all.slice(start).filter((id) => id !== desired)].slice(0, count + 1).reverse();
 
-        const read: string[] = [];
-        const blocks: string[] = [];
+        const parts: LogPart[] = [];
         for (const specId of chosen) {
             try {
                 const text = (await this.downloadLogFile(orgId, envId, deploymentId, specId)).toString('utf-8');
-                read.push(specId);
-                if (text.trim()) blocks.push(text.endsWith('\n') ? text : `${text}\n`);
+                parts.push({ specId, text });
             } catch (error) {
                 if (httpStatus(error) !== 404) throw error;
             }
         }
-        return { deploymentId, specId: desired, specIds: read, text: blocks.join('') };
+        return { deploymentId, specId: desired, specIds: parts.map((p) => p.specId), parts };
     }
 
     /**

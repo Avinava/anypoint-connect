@@ -10,7 +10,15 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import type { CH2Deployment } from '../../api/CloudHub2Api.js';
-import { mcpError, mcpText, dryRunPreview, guardWrite, resolveEnvironment, writeInputs } from './shared.js';
+import {
+    mcpError,
+    mcpText,
+    dryRunPreview,
+    guardWrite,
+    productionFields,
+    resolveEnvironment,
+    writeInputs,
+} from './shared.js';
 import { modeInput, runAppChangeTool, settingsFromArgs, settingsInputs, waitInputs } from './app-inputs.js';
 import { buildApplicationDeletionPreview, deploymentIdMatches } from '../../safety/deletion.js';
 import { deploymentPhase, waitForAppPhase } from '../../workflows/app-state.js';
@@ -29,6 +37,7 @@ function notFound(appName: string, envName: string) {
  */
 async function runStateChange(
     client: AnypointClient,
+    tool: 'scale_app' | 'stop_app' | 'start_app',
     args: {
         appName: string;
         environment: string;
@@ -57,14 +66,22 @@ async function runStateChange(
             },
             ...described,
         };
-        const gate = guardWrite({ env, confirm: args.confirm, confirmProduction: args.confirmProduction, preview });
+        const gate = guardWrite({
+            env,
+            tool,
+            confirm: args.confirm,
+            confirmProduction: args.confirmProduction,
+            preview,
+        });
         if (gate) return gate;
 
+        const production = productionFields(env, tool);
         const sentAt = Date.now();
         await apply(orgId, env.id, detail);
         if (!args.wait) {
             return mcpText({
                 ...preview,
+                ...production,
                 applied: true,
                 tip: 'Pass wait: true, or call get_app_status with wait: true, to follow it.',
             });
@@ -75,6 +92,7 @@ async function runStateChange(
         });
         const response = mcpText({
             ...preview,
+            ...production,
             applied: true,
             phase: result.snapshot.phase,
             settled: result.snapshot.settled,
@@ -99,7 +117,13 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
             inputSchema: { ...appInputs, ...waitInputs, ...writeInputs },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
-        async (args) => runAppChangeTool(client, args, { restart: true, mode: 'stopStart' }, { done: 'Restarted' }),
+        async (args) =>
+            runAppChangeTool(
+                client,
+                args,
+                { restart: true, mode: 'stopStart' },
+                { done: 'Restarted', tool: 'restart_app' },
+            ),
     );
 
     server.registerTool(
@@ -119,6 +143,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         async (args) =>
             runStateChange(
                 client,
+                'scale_app',
                 args,
                 (detail) =>
                     detail.target?.replicas === args.replicas
@@ -140,6 +165,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         async (args) =>
             runStateChange(
                 client,
+                'stop_app',
                 args,
                 (detail) =>
                     detail.application.desiredState === 'STOPPED'
@@ -161,6 +187,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         async (args) =>
             runStateChange(
                 client,
+                'start_app',
                 args,
                 (detail) =>
                     detail.application.desiredState === 'STARTED' && deploymentPhase(detail).settled
@@ -197,7 +224,12 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                     isError: true as const,
                 };
             }
-            return runAppChangeTool(client, args, { settings, mode: args.mode }, { done: 'Updated settings of' });
+            return runAppChangeTool(
+                client,
+                args,
+                { settings, mode: args.mode },
+                { done: 'Updated settings of', tool: 'update_app_settings' },
+            );
         },
     );
 
@@ -247,14 +279,18 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                 }
 
                 const preview = buildApplicationDeletionPreview(deployment, env);
+                // Only an entry that names delete_app covers it; "all-mutating" does not.
+                const production = productionFields(env, 'delete_app');
+                const needsConfirmProduction = preview.production && !production.productionPreapproved;
 
                 if (!confirm) {
                     return dryRunPreview({
                         ...preview,
+                        ...production,
                         confirmation: {
                             confirm: true,
                             expectedDeploymentId: deployment.id,
-                            ...(preview.production ? { confirmProduction: true } : {}),
+                            ...(needsConfirmProduction ? { confirmProduction: true } : {}),
                         },
                     });
                 }
@@ -273,7 +309,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                     };
                 }
 
-                if (preview.production && !confirmProduction) {
+                if (needsConfirmProduction && !confirmProduction) {
                     return {
                         ...mcpText({
                             message: 'Deletion refused: production requires confirmProduction:true.',
@@ -328,6 +364,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                     deploymentId: deployment.id,
                     app: deployment.name,
                     environment: env.name,
+                    ...production,
                     preserved: preview.preserved,
                 });
             } catch (error) {

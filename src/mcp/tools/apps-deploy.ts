@@ -11,9 +11,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { guardWrite, mcpText, resolveEnvironment, writeInputs } from './shared.js';
+import { guardWrite, mcpText, productionFields, resolveEnvironment, writeInputs } from './shared.js';
 import {
     modeInput,
+    provenanceJarInput,
     runAppChangeTool,
     runtimeFromArgs,
     runtimeInputs,
@@ -60,7 +61,9 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
             description:
                 'Publishes a locally built Mule application JAR to Exchange and deploys it to CloudHub 2.0: creates the app if it does not exist, otherwise updates it in one change (artifact plus any runtime or settings change). ' +
                 'Asset coordinates come from explicit inputs, then the project naming convention, then the pattern of the asset the app runs today, then the JAR. ' +
-                'Region, vCores, replicas and JVM arguments apply only to a new app. Previews by default; pass confirm: true to publish and deploy.',
+                'Region, vCores, replicas and JVM arguments apply only to a new app. ' +
+                'The JAR build marker (META-INF/mule-build/build-info.json) is read: a JAR not marked productionDeployable (for example, built with secure properties stripped) is refused for a production environment with no override, and flagged elsewhere; a JAR without a marker is allowed and the preview notes that its build provenance is unknown. ' +
+                'Previews by default; pass confirm: true to publish and deploy.',
             inputSchema: {
                 jarPath: z
                     .string()
@@ -113,14 +116,14 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 secretValues = plan.secretValues;
                 const preview = describeJarDeployment(plan);
 
-                if (plan.rejectedSettings.length > 0 || plan.change?.blockers.length) {
+                if (plan.rejectedSettings.length > 0 || plan.blockers.length) {
                     return {
                         ...mcpText({
                             refused: true,
                             message:
                                 plan.rejectedSettings.length > 0
                                     ? `"${args.appName}" already exists in ${env.name}; region, vCores, replicas and JVM arguments apply only to a new app. Remove: ${plan.rejectedSettings.join(', ')}`
-                                    : 'The change cannot be applied.',
+                                    : (plan.provenance.blocker ?? 'The change cannot be applied.'),
                             ...preview,
                         }),
                         isError: true as const,
@@ -128,6 +131,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 }
                 const gate = guardWrite({
                     env,
+                    tool: 'deploy_jar',
                     confirm: args.confirm,
                     confirmProduction: args.confirmProduction,
                     preview,
@@ -145,6 +149,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                                 message: `Deployed "${args.appName}" to ${env.name} (${plan.existing ? 'updated' : 'created'})`,
                                 published: result.published,
                                 deploymentId: result.deployment.id,
+                                ...productionFields(env, 'deploy_jar'),
                                 ...(plan.existing ? { previousRef: plan.existing.application?.ref } : {}),
                                 ...(result.change ? { performed: result.change.performed } : {}),
                                 ...(result.snapshot
@@ -224,7 +229,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                             mode: args.mode,
                             updateStrategy: args.updateStrategy,
                         },
-                        { done: 'Updated' },
+                        { done: 'Updated', tool: 'deploy_app' },
                     );
                 }
 
@@ -270,6 +275,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 };
                 const gate = guardWrite({
                     env,
+                    tool: 'deploy_app',
                     confirm: args.confirm,
                     confirmProduction: args.confirmProduction,
                     preview,
@@ -282,6 +288,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     return mcpText({
                         message: `Created "${args.appName}" in ${env.name}`,
                         deploymentId: deployment.id,
+                        ...productionFields(env, 'deploy_app'),
                         ...preview.next,
                     });
                 }
@@ -292,6 +299,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 const response = mcpText({
                     message: `Created "${args.appName}" in ${env.name}`,
                     deploymentId: deployment.id,
+                    ...productionFields(env, 'deploy_app'),
                     phase: result.snapshot.phase,
                     settled: result.snapshot.settled,
                     ...(result.snapshot.reason ? { reason: result.snapshot.reason } : {}),
@@ -314,12 +322,14 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 'Changes an existing CloudHub 2.0 application in one call: artifact version, Mule runtime, properties and update strategy together, as one new spec. ' +
                 'mode stopStart stops the app, applies the change and starts it, so old and new replicas never process events together; use it for apps with streaming, subscription or polling listeners. ' +
                 'The runtime is checked against what the target offers before anything is written; a retired runtime is refused with the nearest supported versions. ' +
+                'Pass jarPath (the local jar the new version came from) to check its build marker: a jar not marked productionDeployable is refused for production. ' +
                 'Waits for the rollout by default. Previews by default; pass confirm: true to apply.',
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
                 environment: z.string().describe('Environment name or ID'),
                 version: z.string().optional().describe('New artifact version. Default: keep the current one'),
                 ...refInputs,
+                jarPath: provenanceJarInput,
                 ...runtimeInputs,
                 ...settingsInputs,
                 mode: modeInput,
@@ -345,8 +355,9 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     settings: settingsFromArgs(args),
                     mode: args.mode,
                     updateStrategy: args.updateStrategy,
+                    jarPath: args.jarPath,
                 },
-                { done: 'Updated' },
+                { done: 'Updated', tool: 'update_app' },
             ),
     );
 
@@ -356,12 +367,13 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
             title: 'Update Application Artifact',
             description:
                 'Moves an existing CloudHub 2.0 application to another artifact version, optionally with a runtime change in the same update. Target, replicas, resources and settings are preserved. ' +
-                'Use runtime when the current runtime has been retired; the preview names supported versions. For settings changes in the same call use update_app. Previews by default; pass confirm: true to apply.',
+                'Use runtime when the current runtime has been retired; the preview names supported versions. For settings changes in the same call use update_app. Pass jarPath (the local jar the version was published from) to check its build marker: a jar not marked productionDeployable is refused for production. Previews by default; pass confirm: true to apply.',
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
                 environment: z.string().describe('Environment name or ID'),
                 version: z.string().describe('New artifact version (e.g. "1.4.12")'),
                 ...refInputs,
+                jarPath: provenanceJarInput,
                 ...runtimeInputs,
                 mode: modeInput,
                 ...waitInputs,
@@ -382,8 +394,9 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     },
                     runtime: runtimeFromArgs(args),
                     mode: args.mode,
+                    jarPath: args.jarPath,
                 },
-                { done: 'Updated artifact of' },
+                { done: 'Updated artifact of', tool: 'update_app_artifact' },
             ),
     );
 
@@ -428,7 +441,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     client,
                     args,
                     { existing, ref: target.ref, mode: args.mode },
-                    { done: 'Rolled back' },
+                    { done: 'Rolled back', tool: 'rollback_app' },
                 );
             } catch (error) {
                 return errorText(error, []);

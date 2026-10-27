@@ -1,7 +1,88 @@
 import { createHash } from 'node:crypto';
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
-import { inspectArtifact, verifyArtifactDigest } from '../../src/safety/artifact.js';
+import {
+    BUILD_INFO_PATH,
+    checkBuildProvenance,
+    inspectArtifact,
+    readBuildProvenance,
+    verifyArtifactDigest,
+} from '../../src/safety/artifact.js';
+
+function markedJar(info: unknown): Uint8Array {
+    return zipSync({
+        'META-INF/MANIFEST.MF': strToU8('Manifest-Version: 1.0\n'),
+        [BUILD_INFO_PATH]: strToU8(typeof info === 'string' ? info : JSON.stringify(info)),
+    });
+}
+
+const STRIPPED = {
+    schemaVersion: 1,
+    tool: 'mule-build',
+    toolVersion: '3.2.0',
+    stripped: true,
+    productionDeployable: false,
+};
+const RELEASE = { ...STRIPPED, stripped: false, productionDeployable: true };
+
+describe('build provenance marker', () => {
+    it('reads a recorded marker', () => {
+        expect(readBuildProvenance(markedJar(STRIPPED))).toEqual({ status: 'recorded', ...STRIPPED });
+    });
+
+    it('reports unknown provenance for a jar without a marker', () => {
+        expect(readBuildProvenance(zipSync({ 'META-INF/MANIFEST.MF': strToU8('x') }))).toEqual({ status: 'unknown' });
+    });
+
+    it.each([
+        ['not JSON', 'not json'],
+        ['an array', '[]'],
+        [
+            'missing productionDeployable',
+            { schemaVersion: 1, tool: 'mule-build', toolVersion: '3.2.0', stripped: true },
+        ],
+        ['a string flag', { ...RELEASE, productionDeployable: 'true' }],
+    ])('marks %s as invalid', (_name, info) => {
+        expect(readBuildProvenance(markedJar(info)).status).toBe('invalid');
+    });
+
+    it('marks an oversized marker as invalid without reading it', () => {
+        const result = readBuildProvenance(markedJar(' '.repeat(70000)));
+        expect(result).toMatchObject({ status: 'invalid' });
+    });
+
+    it('refuses a non-deployable jar for production, with no override', () => {
+        const check = checkBuildProvenance(readBuildProvenance(markedJar(STRIPPED)), true);
+        expect(check.blocker).toContain('cannot go to a production environment');
+        expect(check.blocker).toContain('stripped: true');
+    });
+
+    it('warns for a non-deployable jar outside production, and when the target is unknown', () => {
+        for (const production of [false, undefined]) {
+            const check = checkBuildProvenance(readBuildProvenance(markedJar(STRIPPED)), production);
+            expect(check.blocker).toBeUndefined();
+            expect(check.warnings[0]).toContain('not production deployable');
+        }
+    });
+
+    it('refuses an unreadable marker for production', () => {
+        expect(checkBuildProvenance({ status: 'invalid', reason: 'x' }, true).blocker).toContain('unreadable');
+    });
+
+    it('allows a jar without a marker, noting unknown provenance', () => {
+        const check = checkBuildProvenance({ status: 'unknown' }, true);
+        expect(check.blocker).toBeUndefined();
+        expect(check.warnings).toEqual([]);
+        expect(check.buildProvenance.note).toContain('build provenance unknown');
+    });
+
+    it('passes a production-deployable jar silently', () => {
+        expect(checkBuildProvenance(readBuildProvenance(markedJar(RELEASE)), true)).toEqual({
+            buildProvenance: { status: 'recorded', ...RELEASE },
+            warnings: [],
+        });
+    });
+});
 
 function jar(version = '2.4.1'): Uint8Array {
     return zipSync({

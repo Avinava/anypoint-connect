@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.17.0 - 2026-10-27
+
+### Added
+
+- Stripped builds are refused for production. mule-build 3.2.0 writes
+  `META-INF/mule-build/build-info.json` into every jar; `deploy_jar`, `publish_app_jar` and `anc deploy`
+  read it, and so do `update_app`, `update_app_artifact` and `anc apps update` given the local jar as
+  the new `jarPath` input (CLI: `--jar`). A jar with `productionDeployable: false`, or an unreadable
+  marker, is refused for a production environment in the preview and on confirm, with no override, and
+  flagged with a warning elsewhere. A jar without a marker is allowed and the preview notes "build
+  provenance unknown". Every preview reports `buildProvenance`. `publish_app_jar` takes an optional
+  `environment` to apply the same check.
+- `scan_logs_for_credentials` (CLI: `anc logs credentials`) counts log lines that carry session or bearer
+  credentials (`Authorization: Bearer`, bearer tokens, `sessionId`, `Sforce-Session`, Salesforce session
+  IDs, `access_token` / `refresh_token` / `id_token`, JWTs) per marker, per spec and per replica, over the
+  same window as `get_logs`, `previousSpecs` included. It never returns the lines or the values. A
+  separate read-only tool keeps `get_logs` and `download_logs` returning lines and this one never.
+- `get_audit_log` classifies each entry with `actorClass` (`platform-patch`, `platform-replica`,
+  `platform-infrastructure`, `user-or-pipeline`) and the `actorRule` that matched, adds
+  `summary.byClass`, `returned`, a `notice` when the result was cut, and a `platformClientIds` input for
+  the platform patcher's client IDs. The rules live in one table (`src/analysis/audit-actors.ts`).
+- Production pre-approval: `productionPreapproval` in `.anypoint-connect.json` (`environments`, `tools`
+  or `"all-mutating"`, optional `expires`) stands in for `confirmProduction` and the CLI's typed phrase
+  for the named tools and environments. `confirm: true`, `expectedSha256`, `expectedDeploymentId` and
+  refusals still apply; `delete_app` is covered only when named. Production previews and results carry
+  `production`, `productionPreapproved` and `preapprovalSource`. `set_project_profile` sets or clears it
+  (`productionPreapproval`, `clearProductionPreapproval`) behind a preview and `confirm: true`;
+  `get_project_profile` and `whoami` show it.
+- `LogsApi.getLogParts` returns each spec's log text separately.
+
+### Changed
+
+- `set_project_profile` and `anc config use` keep the other fields of `.anypoint-connect.json`
+  (`conventions`, `productionPreapproval`) instead of rewriting the file with only `profile`, and a
+  binding to a profile that has no credentials yet is now actually written, as its warning says.
+- `set_project_profile` takes `profile` as optional, so a call can change only the pre-approval.
+
 ## 0.16.3 - 2026-10-26
 
 ### Fixed

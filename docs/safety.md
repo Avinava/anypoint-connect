@@ -15,7 +15,8 @@ the same rules. Direct library calls do not pass through them; see the [library 
 | Delete a deployment | Preview, then `confirm: true` plus the exact `expectedDeploymentId`; production also needs `confirmProduction: true` (`delete_app`) | `anc apps delete` is a dry run until `--confirm <deployment-id>`; production also needs `--allow-production` |
 | Design Center project creation, file sync, Exchange publication | A `preview_*` tool returns a single-use token; the paired write tool consumes it | `anc dc push` and `anc dc publish` preview, then ask; `--yes` skips the question |
 | API smoke test with a method other than GET, HEAD or OPTIONS | Preview unless `confirm: true`; production also needs `confirmProduction: true` (`smoke_test_api`) | `anc api smoke` asks unless `--yes`; production needs `--allow-production` |
-| Object Store writes, MQ publish, project-profile binding | Applied on call (`put_store_value`, `delete_store_value`, `publish_mq_message`, `set_project_profile`) | — |
+| Object Store writes, MQ publish, project-profile binding | Applied on call (`put_store_value`, `delete_store_value`, `publish_mq_message`, `set_project_profile` with `profile` only) | — |
+| Production pre-approval | `set_project_profile` with `productionPreapproval` or `clearProductionPreapproval` previews unless `confirm: true` | Edit `.anypoint-connect.json` |
 | Local files: `download_logs` `outputFile`, `get_client_application` `writeCredentialsTo` | Written only inside the project root; an existing file needs `overwrite` | Same rule for `anc api client-app --write-credentials` |
 | Everything else | Read-only | Read-only |
 
@@ -142,6 +143,30 @@ against the allowed sizes.
 coordinates to use with `deploy_app` (new app) or `update_app_artifact` (existing app). Nothing is
 uploaded by a preview.
 
+### Stripped builds never reach production
+
+mule-build 3.2.0 and later write `META-INF/mule-build/build-info.json` into every jar:
+
+```json
+{ "schemaVersion": 1, "tool": "mule-build", "toolVersion": "3.2.0", "stripped": true, "productionDeployable": false }
+```
+
+The marker is read in `deploy_jar`, `publish_app_jar`, `anc deploy`, and in `update_app`,
+`update_app_artifact` and `anc apps update` when the local jar is given as `jarPath` (CLI: `--jar`).
+Every preview reports it as `buildProvenance`.
+
+| Marker | Production target | Other target |
+| --- | --- | --- |
+| `productionDeployable: true` | allowed | allowed |
+| `productionDeployable: false` (for example, secure properties stripped) | refused in the preview and on confirm | allowed, with a warning |
+| present but unreadable or incomplete | refused | allowed, with a warning |
+| absent (older builds, other tools) | allowed; the preview notes "build provenance unknown" | same |
+
+There is no override flag, and a production pre-approval does not waive the refusal. Rebuild a
+production-deployable jar instead. `publish_app_jar` refuses only when `environment` names a production
+environment; without it, a non-deployable jar is published with a warning. For the two-step flow, pass the
+same `jarPath` to `update_app_artifact`.
+
 Exchange calls the coordinate `assetId`; CloudHub 2.0 calls the same value `artifactId`. They are mapped
 explicitly at the deploy boundary.
 
@@ -236,6 +261,42 @@ An environment is treated as production when the platform flags it as production
 
 Add `--force` in CI only when the operation is intended and reviewed.
 
+### Production pre-approval
+
+A project can approve production writes ahead of time in `.anypoint-connect.json`:
+
+```json
+{
+  "profile": "default",
+  "productionPreapproval": {
+    "environments": ["Production"],
+    "tools": ["update_app", "deploy_jar"],
+    "expires": "2026-12-31T00:00:00Z"
+  }
+}
+```
+
+- **`environments`**: exact environment names (case-insensitive) or IDs. Wildcards are refused.
+- **`tools`**: MCP tool names, or `"all-mutating"`. Pre-approvable: `deploy_jar`, `deploy_app`,
+  `update_app`, `update_app_artifact`, `rollback_app`, `update_app_settings`, `restart_app`, `scale_app`,
+  `stop_app`, `start_app`, `smoke_test_api`, `delete_app`. `"all-mutating"` covers all of them except
+  `delete_app`, which is covered only when named.
+- **`expires`**: optional ISO 8601 date-time. From then on the entry is ignored.
+- The field can also hold a list of such entries. Invalid entries are ignored and reported by
+  `get_project_profile`.
+
+When an entry covers the tool and the environment, `confirmProduction: true` is not required, and the CLI
+skips the typed phrase. The CLI matches its commands to the same names: `anc deploy` is `deploy_jar`,
+`anc apps update` is `update_app`, `anc apps settings set` is `update_app_settings`, `anc apps restart`,
+`stop`, `start` and `scale` are `restart_app`, `stop_app`, `start_app` and `scale_app`.
+`anc apps delete` and `anc api smoke` keep their `--allow-production` flag.
+
+Nothing else changes. Previews are still the default, `confirm: true` is still required, `expectedSha256`
+and `expectedDeploymentId` are still checked, and refusals such as a stripped jar still apply. Production
+previews and results carry `production: true`, `productionPreapproved` and, when it applied,
+`preapprovalSource` and `preapprovalExpires`. `get_project_profile` and `whoami` show the active entries.
+Setting or clearing it with `set_project_profile` is a guarded change: it previews until `confirm: true`.
+
 ## Secrets in output
 
 - **API errors.** Error bodies the platform echoes back have secret-looking fields masked.
@@ -282,4 +343,6 @@ A readiness probe is never approval to deploy. Confirmed access means confirmed 
   that is what you want; the confirmation steps guard against mistakes, not against permissions.
 - **Correctness of the artifact.** A confirmed deploy of a broken JAR is a successful deploy.
 - **Data you export.** Downloaded logs and metrics are production data once they are on your disk. Keep
-  them out of repositories and remove identifiers before sharing.
+  them out of repositories and remove identifiers before sharing. `scan_logs_for_credentials` (CLI:
+  `anc logs credentials`) counts lines that carry session or bearer credentials before you share, without
+  returning the lines.

@@ -12,7 +12,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
-import { isProductionEnv, buildDeploySummary, confirmProductionDeploy } from '../safety/guards.js';
+import { buildDeploySummary, confirmProductionWrite } from '../safety/guards.js';
 import { DEFAULT_REGION, DEFAULT_RUNTIME, DEFAULT_VCORES, VALID_VCORES } from '../safety/deployment.js';
 import { redactText } from '../safety/secrets.js';
 import { describeJarDeployment, executeJarDeployment, planJarDeployment } from '../workflows/jar-deployment.js';
@@ -95,6 +95,21 @@ export function createDeployCommand(): Command {
                     );
                 }
                 log.kv('SHA-256', plan.artifact.sha256);
+                const provenance = plan.provenance.buildProvenance;
+                log.kv(
+                    'Build',
+                    provenance.status === 'recorded'
+                        ? `${provenance.tool} ${provenance.toolVersion}, stripped: ${provenance.stripped}, productionDeployable: ${provenance.productionDeployable}`
+                        : provenance.status === 'invalid'
+                          ? `marker unreadable (${provenance.reason})`
+                          : 'provenance unknown (no build marker)',
+                );
+                for (const warning of plan.provenance.warnings) log.warn(warning);
+                if (plan.provenance.blocker) {
+                    log.error(plan.provenance.blocker);
+                    process.exitCode = 1;
+                    return;
+                }
                 let ok = true;
                 if (plan.change) {
                     ok = printAppChange(plan.change);
@@ -116,11 +131,9 @@ export function createDeployCommand(): Command {
                     return;
                 }
 
-                if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
-                    if (!(await confirmProductionDeploy(env.name, env.isProduction))) {
-                        log.warn('Deployment cancelled');
-                        return;
-                    }
+                if (!(await confirmProductionWrite(env, 'deploy_jar', opts.force))) {
+                    log.warn('Deployment cancelled');
+                    return;
                 }
 
                 const { spinner, onStatus } = rolloutSpinner('Publishing to Exchange and deploying...');

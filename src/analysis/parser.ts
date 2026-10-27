@@ -43,6 +43,17 @@ function parseHeader(line: string): HeaderParts | null {
     return null;
 }
 
+/** Epoch milliseconds of a header timestamp (accepts +hhmm offsets). */
+function headerTime(timestamp: string): number {
+    return new Date(timestamp.replace(/([+-]\d{2})(\d{2})$/, '$1:$2')).getTime();
+}
+
+/** The time and replica of a line that starts an entry, or null for a continuation line. */
+export function lineHeader(line: string): { timestamp: number; instanceId: string } | null {
+    const loose = line.match(LOOSE_LINE_REGEX);
+    return loose ? { timestamp: headerTime(loose[1]), instanceId: loose[3] } : null;
+}
+
 /**
  * Parse raw log text into enriched entries, joining multi-line blocks.
  */
@@ -70,7 +81,7 @@ export function parseRawLogs(rawText: string): EnrichedLogEntry[] {
             }
 
             current = {
-                timestamp: new Date(header.timestamp.replace(/([+-]\d{2})(\d{2})$/, '$1:$2')).getTime(),
+                timestamp: headerTime(header.timestamp),
                 priority: header.level,
                 instanceId: header.instanceId,
                 loggerName: header.loggerName,

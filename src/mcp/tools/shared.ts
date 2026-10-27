@@ -8,6 +8,7 @@ import type { Environment } from '../../api/AccessManagementApi.js';
 import { z } from 'zod';
 import { errorMessage } from '../../utils/errors.js';
 import { isProductionEnv } from '../../safety/guards.js';
+import { checkPreapproval } from '../../safety/preapproval.js';
 
 /** Resolve the default org and an environment name or ID in one step. */
 export async function resolveEnvironment(
@@ -68,24 +69,52 @@ export const writeInputs = {
         .describe('Required in addition to confirm when the target environment is production'),
 };
 
+type GuardEnv = Pick<Environment, 'name' | 'isProduction'> & { id?: string };
+
+/**
+ * Production fields for previews and results: `production`, whether a project pre-approval covers
+ * this tool and environment, and where it is configured. Empty outside production.
+ */
+export function productionFields(
+    env: GuardEnv,
+    tool: string,
+): { production?: true; productionPreapproved?: boolean; preapprovalSource?: string; preapprovalExpires?: string } {
+    if (!isProductionEnv(env.name, env.isProduction)) return {};
+    const decision = checkPreapproval(env, tool);
+    return {
+        production: true as const,
+        productionPreapproved: decision.productionPreapproved,
+        ...(decision.preapprovalSource ? { preapprovalSource: decision.preapprovalSource } : {}),
+        ...(decision.preapprovalExpires ? { preapprovalExpires: decision.preapprovalExpires } : {}),
+    };
+}
+
 /**
  * Gate a write. Returns the response to send instead of writing (a preview, or a refusal for
- * production without `confirmProduction`), or `null` when the caller may proceed.
+ * production without `confirmProduction`), or `null` when the caller may proceed. A project
+ * pre-approval covering `tool` and the environment stands in for `confirmProduction`; `confirm`
+ * is always required.
  */
 export function guardWrite(input: {
-    env: Pick<Environment, 'name' | 'isProduction'>;
+    env: GuardEnv;
+    /** The MCP tool name, matched against productionPreapproval. */
+    tool: string;
     confirm?: boolean;
     confirmProduction?: boolean;
     preview: Record<string, unknown>;
 }) {
-    const production = isProductionEnv(input.env.name, input.env.isProduction);
+    const production = productionFields(input.env, input.tool);
+    const preapproved = production.productionPreapproved === true;
     if (!input.confirm) {
         return dryRunPreview({
             ...input.preview,
-            ...(production ? { production: true, requires: 'confirm: true and confirmProduction: true' } : {}),
+            ...production,
+            ...(production.production
+                ? { requires: preapproved ? 'confirm: true' : 'confirm: true and confirmProduction: true' }
+                : {}),
         });
     }
-    if (production && !input.confirmProduction) {
+    if (production.production && !preapproved && !input.confirmProduction) {
         return {
             content: [
                 {
@@ -95,6 +124,7 @@ export function guardWrite(input: {
                             refused: true,
                             message: `${input.env.name} is a production environment. Nothing was changed. Re-call with confirm: true and confirmProduction: true to apply.`,
                             ...input.preview,
+                            ...production,
                         },
                         null,
                         2,

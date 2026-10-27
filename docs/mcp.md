@@ -33,7 +33,7 @@ The `mcpServers` form, used by Claude Code, Claude Desktop, Copilot CLI, and Gem
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.3", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
     }
   }
 }
@@ -47,7 +47,7 @@ VS Code wraps the same entry in `servers` and wants an explicit transport:
     "anypoint-connect": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.3", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
     }
   }
 }
@@ -59,7 +59,7 @@ extension all see it:
 ```toml
 [mcp_servers.anypoint-connect]
 command = "npx"
-args = ["-y", "@sfdxy/anypoint-connect@0.16.3", "mcp"]
+args = ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
 ```
 
 Installed globally, point at the binary instead and skip the download:
@@ -102,8 +102,15 @@ Properties that matter more than the list:
 
 - **Every application write previews by default.** Deploy, update, settings, rollback, restart, scale,
   stop, start, publish and delete return a preview and change nothing without `confirm: true`; production
-  also needs `confirmProduction: true`. Object Store writes and MQ publish apply on call. The
-  [safety model](safety.md) lists every case.
+  also needs `confirmProduction: true`, unless a project
+  [production pre-approval](safety.md#production-pre-approval) covers the tool and environment. Object
+  Store writes and MQ publish apply on call. The [safety model](safety.md) lists every case.
+- **Stripped builds stay out of production.** A jar whose build marker says it is not production
+  deployable is refused for production by `deploy_jar`, `publish_app_jar` (with `environment`), and
+  `update_app` / `update_app_artifact` given `jarPath`.
+- **Logs can be checked for credentials** with `scan_logs_for_credentials`, which returns counts only.
+- **Audit entries say who acted.** `get_audit_log` classifies each entry as a platform patch, replica
+  move, infrastructure patch, or user or pipeline change.
 - **One call per change.** `update_app` changes artifact, runtime, settings and update strategy together,
   checks the runtime against the target first, and can stop, change and start (`mode: "stopStart"`) for
   listener-driven apps.

@@ -17,8 +17,9 @@ import {
     type SettingsChangeInput,
 } from '../../workflows/app-change.js';
 import type { RuntimeSpec } from '../../safety/runtime.js';
+import { readJarProvenance } from '../../workflows/jar-deployment.js';
 import { errorMessage } from '../../utils/errors.js';
-import { guardWrite, mcpText, resolveEnvironment } from './shared.js';
+import { guardWrite, mcpText, productionFields, resolveEnvironment } from './shared.js';
 
 export const settingsInputs = {
     properties: z
@@ -67,6 +68,13 @@ export const waitInputs = {
     wait: z.boolean().optional().describe('Wait until every replica runs the new spec, or the change fails'),
     waitTimeoutSeconds: z.number().min(10).max(1800).optional().describe('Wait limit in seconds (default 300)'),
 };
+
+export const provenanceJarInput = z
+    .string()
+    .optional()
+    .describe(
+        'Local .jar the new version was built and published from. Its META-INF/mule-build/build-info.json is checked: a jar not marked productionDeployable is refused for a production environment and flagged elsewhere',
+    );
 
 export const modeInput = z
     .enum(['inPlace', 'stopStart'])
@@ -125,18 +133,23 @@ export interface AppChangeToolArgs {
 export async function runAppChangeTool(
     client: AnypointClient,
     args: AppChangeToolArgs,
-    change: Omit<AppChangeRequest, 'orgId' | 'env' | 'appName' | 'secretValues' | 'settings'> & {
+    change: Omit<AppChangeRequest, 'orgId' | 'env' | 'appName' | 'secretValues' | 'settings' | 'buildProvenance'> & {
         settings?: SettingsChangeInput;
+        /** Local jar whose build marker is checked against the environment. */
+        jarPath?: string;
     },
-    labels: { done: string },
+    labels: { done: string; /** MCP tool name, for productionPreapproval. */ tool: string },
 ) {
     let secretValues: string[] = [];
     try {
+        const { jarPath, ...request } = change;
+        const buildProvenance = jarPath ? await readJarProvenance(jarPath) : undefined;
         const { orgId, env } = await resolveEnvironment(client, args.environment);
         const resolved = resolveSettingsInput(change.settings);
         secretValues = resolved.secretValues;
         const plan = await planAppChange(client, {
-            ...change,
+            ...request,
+            ...(buildProvenance ? { buildProvenance } : {}),
             orgId,
             env,
             appName: args.appName,
@@ -152,7 +165,13 @@ export async function runAppChangeTool(
                 isError: true as const,
             };
         }
-        const gate = guardWrite({ env, confirm: args.confirm, confirmProduction: args.confirmProduction, preview });
+        const gate = guardWrite({
+            env,
+            tool: labels.tool,
+            confirm: args.confirm,
+            confirmProduction: args.confirmProduction,
+            preview,
+        });
         if (gate) return gate;
 
         const result = await executeAppChange(client, plan, {
@@ -162,6 +181,7 @@ export async function runAppChangeTool(
         const response = {
             message: `${labels.done} "${plan.existing.name}" in ${env.name}`,
             deploymentId: result.deployment.id,
+            ...productionFields(env, labels.tool),
             performed: result.performed,
             changes: plan.changes,
             ...(plan.settings ? { settings: plan.settings.diff } : {}),

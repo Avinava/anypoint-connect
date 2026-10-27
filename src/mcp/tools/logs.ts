@@ -1,6 +1,6 @@
 /**
  * MCP Tool Registrar - Log tools
- * get_logs, download_logs, and the log fetch shared with the analysis tools
+ * get_logs, download_logs, scan_logs_for_credentials, and the log fetch shared with the analysis tools
  */
 
 import * as fs from 'node:fs';
@@ -13,6 +13,7 @@ import type { EnrichedLogEntry } from '../../analysis/types.js';
 import { buildFilter, MAX_LOG_LINES, searchEntries } from '../../analysis/filter.js';
 import { formatEntries, summarizeEntries } from '../../analysis/summary.js';
 import { BUCKETS, type Bucket } from '../../analysis/stats.js';
+import { CREDENTIAL_MARKERS, scanForCredentials } from '../../analysis/credentials.js';
 import { resolveWritablePath } from '../../safety/paths.js';
 import { mcpError, mcpText, resolveEnvironment } from './shared.js';
 
@@ -322,6 +323,42 @@ export function registerLogTools(server: McpServer, client: AnypointClient) {
                     );
                 }
                 return mcpText([...header, formatEntries(shown)].join('\n'));
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'scan_logs_for_credentials',
+        {
+            title: 'Scan Logs for Credential Markers',
+            description: `Checks whether an application's logs carry session or bearer credentials: ${CREDENTIAL_MARKERS.map((m) => m.id).join(', ')}. Reads the same log window as get_logs (time window, previousSpecs) line by line, including stack traces and JSON Logger bodies, and returns counts only: lines with a marker per marker, per spec and per replica. Matching lines and values are never returned. Use it after a deployment or before sharing logs; a non-zero count means the app logs credentials and its logging should change.`,
+            inputSchema: {
+                appName: z.string().describe('Application name exactly as deployed'),
+                environment: z.string().describe('Environment name or ID'),
+                ...logWindowInputs,
+                previousSpecs: previousSpecsInput,
+            },
+            annotations: { readOnlyHint: true },
+        },
+        async ({ appName, environment, hoursBack, startTime, endTime, previousSpecs }) => {
+            try {
+                const window = logWindow({ hoursBack, startTime, endTime });
+                const { orgId, env } = await resolveEnvironment(client, environment);
+                const { parts, ...source } = await client.logs.getLogParts(orgId, env.id, appName, { previousSpecs });
+                const notice = sourceNotice(source);
+                const scan = scanForCredentials(parts, window);
+                return mcpText({
+                    app: appName,
+                    environment: env.name,
+                    ...(window.period ? { period: window.period } : {}),
+                    ...specView(source),
+                    ...(notice ? { notice } : {}),
+                    ...scan,
+                    markers: CREDENTIAL_MARKERS.map((m) => ({ id: m.id, description: m.description })),
+                    note: 'Counts of lines only; matching lines and values are never returned.',
+                });
             } catch (error) {
                 return mcpError(error);
             }

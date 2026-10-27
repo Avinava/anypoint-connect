@@ -85,6 +85,10 @@ describe('LogsApi', () => {
 
             expect(file).toMatchObject({ deploymentId: 'dep-1', specId: 'spec-1', fallbackFromSpecId: 'spec-2' });
             expect(file.text).toBe(STARTUP_LOG);
+
+            const parts = await api.getLogParts('org-1', 'env-1', 'orders-sapi');
+            expect(parts).toMatchObject({ specId: 'spec-1', fallbackFromSpecId: 'spec-2' });
+            expect(parts.parts).toEqual([{ specId: 'spec-1', text: STARTUP_LOG }]);
         });
 
         it('falls back when the desired spec log file does not exist yet', async () => {
@@ -166,6 +170,19 @@ describe('LogsApi', () => {
                 'old generation late tick',
                 'new generation tick',
             ]);
+        });
+
+        it('keeps each spec apart in getLogParts', async () => {
+            const parts = await api.getLogParts('org-1', 'env-1', 'orders-sapi', { previousSpecs: 1 });
+            expect(parts).toEqual({
+                deploymentId: 'dep-1',
+                specId: 'spec-2',
+                specIds: ['spec-1', 'spec-2'],
+                parts: [
+                    { specId: 'spec-1', text: OLD + OVERLAP },
+                    { specId: 'spec-2', text: NEW },
+                ],
+            });
         });
 
         it('skips a spec without a log file', async () => {

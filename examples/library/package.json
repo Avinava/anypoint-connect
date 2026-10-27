@@ -6,7 +6,7 @@
         "start": "node --env-file=.env list-apps.mjs"
     },
     "dependencies": {
-        "@sfdxy/anypoint-connect": "0.16.3"
+        "@sfdxy/anypoint-connect": "0.17.0"
     },
     "engines": {
         "node": ">=22.0.0"

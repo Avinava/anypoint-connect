@@ -18,7 +18,7 @@ timestamp (`2026-02-01T00:00:00Z`).
 | `anc apps list \| status \| update \| settings get\|set \| restart \| stop \| start \| scale \| compare \| delete` | CloudHub 2.0 applications |
 | `anc deploy <jar>` | Publish a JAR to Exchange and deploy it |
 | `anc runtimes list` | Mule runtime versions a target accepts |
-| `anc logs tail \| search \| download` | Application logs |
+| `anc logs tail \| search \| download \| credentials` | Application logs |
 | `anc monitor summary \| runtime \| trend \| query \| download` | Anypoint Monitoring metrics |
 | `anc exchange search \| info \| download-spec` | Exchange assets |
 | `anc api list \| policies \| sla-tiers \| alerts \| contracts \| client-app \| smoke` | API Manager |
@@ -60,7 +60,7 @@ Enter the Client Secret through `anc config init`, not `anc config set`, so it s
 | --- | --- |
 | `anc apps list` | `-e, --env <name>` (required) |
 | `anc apps status <appName>` | `-e, --env <name>` (required), `--wait` polls until the app settles or fails, `--timeout <seconds>` |
-| `anc apps update <appName>` | `-e, --env <name>` (required), `--version`, `--artifact-id`, `--group-id`, runtime flags, settings flags, rollout flags, `--dry-run`, `--force` |
+| `anc apps update <appName>` | `-e, --env <name>` (required), `--version`, `--artifact-id`, `--group-id`, `--jar <path>` (checks the jar's build marker; refused for production when not production deployable), runtime flags, settings flags, rollout flags, `--dry-run`, `--force` |
 | `anc apps settings get <appName>` | `-e, --env <name>` (required), `--reveal` shows secret-looking plain values |
 | `anc apps settings set <appName>` | `-e, --env <name>` (required), settings flags, `--stop-start`, `--no-wait`, `--timeout`, `--dry-run`, `--force` |
 | `anc apps restart <appName>` | `-e, --env <name>` (required); stops, waits, starts. `--no-wait`, `--timeout`, `--dry-run`, `--force` |
@@ -165,6 +165,7 @@ for the rollout and exits non-zero when it fails or times out. See the
 | `anc logs tail <appName>` | `-e, --env <name>` (required), `-l, --level <level>` (ERROR, WARN, INFO, DEBUG), `-s, --search <text>`, `--regex`, `--logger <name>` |
 | `anc logs search <appName>` | `-e, --env <name>` (required), `-g, --grep <text>`, `--regex`, `--logger <name>`, `-l, --level <level>`, `--since <1h\|ISO>`, `--until <date>`, `-n, --limit <n>` (default 100, max 1000), `--previous-specs <n>` (max 10), `--json` |
 | `anc logs download <appName>` | `-e, --env <name>` (required), `--from <date>` (required), `--to <date>`, `-l, --level <level>`, `-g, --grep <text>`, `--regex`, `--logger <name>`, `--summary`, `--bucket 5m\|15m\|1h`, `-o, --output <path>`, `--previous-specs <n>` (max 10) |
+| `anc logs credentials <appName>` | `-e, --env <name>` (required), `--since <1h\|ISO>`, `--until <date>`, `--previous-specs <n>` (max 10), `--json`. Counts lines with session or bearer credential markers per marker, spec and replica; never prints lines or values. Exit code 2 when any marker is found |
 
 Search covers the message, logger, thread, event ID, stack trace and logged payload. Multi-line entries
 (error reports, banners, stack traces) stay together with their timestamp and level.

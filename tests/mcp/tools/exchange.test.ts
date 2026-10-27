@@ -228,6 +228,89 @@ describe('artifact publication handoff', () => {
         expect(client.cloudHub2.createDeployment).not.toHaveBeenCalled();
     });
 
+    describe('build provenance', () => {
+        const production = { id: 'prod-env', name: 'Production', isProduction: true };
+        const marker = (productionDeployable: boolean) =>
+            strToU8(
+                JSON.stringify({
+                    schemaVersion: 1,
+                    tool: 'mule-build',
+                    toolVersion: '3.2.0',
+                    stripped: !productionDeployable,
+                    productionDeployable,
+                }),
+            );
+        const writeJar = (productionDeployable?: boolean) =>
+            writeFileSync(
+                jarPath,
+                zipSync({
+                    'META-INF/maven/dev.sample/sample/pom.properties': strToU8(
+                        'groupId=dev.sample\nartifactId=sample\nversion=2.4.1\n',
+                    ),
+                    ...(productionDeployable === undefined
+                        ? {}
+                        : { 'META-INF/mule-build/build-info.json': marker(productionDeployable) }),
+                }),
+            );
+        const input = { appName: 'sample', environment: 'Production' };
+        afterEach(() =>
+            client.accessManagement.resolveEnvironment.mockResolvedValue({ id: 'sample-env', name: 'Test' }),
+        );
+
+        it.each(['deploy_jar', 'publish_app_jar'])(
+            'refuses a stripped jar for production in %s preview and commit',
+            async (name) => {
+                writeJar(false);
+                client.accessManagement.resolveEnvironment.mockResolvedValue(production);
+                for (const extra of [{}, { confirm: true, confirmProduction: true }]) {
+                    const result = await handlers.get(name)!({ ...input, jarPath, ...extra });
+                    const body = JSON.parse(result.content[0].text);
+                    expect(result.isError).toBe(true);
+                    expect(body.refused).toBe(true);
+                    expect(body.message).toContain('cannot go to a production environment');
+                    expect(body.buildProvenance).toMatchObject({ status: 'recorded', productionDeployable: false });
+                }
+                expect(client.exchange.publishAppAsset).not.toHaveBeenCalled();
+                expect(client.cloudHub2.createDeployment).not.toHaveBeenCalled();
+            },
+        );
+
+        it('warns about a stripped jar outside production and still deploys on confirm', async () => {
+            writeJar(false);
+            const preview = JSON.parse(
+                (await handlers.get('deploy_jar')!({ ...input, jarPath, environment: 'Test' })).content[0].text,
+            );
+            expect(preview.dryRun).toBe(true);
+            expect(preview.provenanceWarnings[0]).toContain('not production deployable');
+            const result = await handlers.get('deploy_jar')!({ ...input, jarPath, environment: 'Test', confirm: true });
+            expect(result.isError).not.toBe(true);
+            expect(client.cloudHub2.createDeployment).toHaveBeenCalled();
+        });
+
+        it('notes unknown provenance for a jar without a marker and does not refuse production', async () => {
+            writeJar(undefined);
+            client.accessManagement.resolveEnvironment.mockResolvedValue(production);
+            const body = JSON.parse((await handlers.get('deploy_jar')!({ ...input, jarPath })).content[0].text);
+            expect(body.dryRun).toBe(true);
+            expect(body.buildProvenance.note).toContain('build provenance unknown');
+        });
+
+        it('lets a production-deployable jar through', async () => {
+            writeJar(true);
+            client.accessManagement.resolveEnvironment.mockResolvedValue(production);
+            const body = JSON.parse((await handlers.get('deploy_jar')!({ ...input, jarPath })).content[0].text);
+            expect(body).toMatchObject({ dryRun: true, production: true, productionPreapproved: false });
+            expect(body.blockers).toBeUndefined();
+        });
+
+        it('publish_app_jar without an environment only warns', async () => {
+            writeJar(false);
+            const body = JSON.parse((await handlers.get('publish_app_jar')!({ jarPath })).content[0].text);
+            expect(body.dryRun).toBe(true);
+            expect(body.warnings[0]).toContain('not production deployable');
+        });
+    });
+
     it('requires explicit coordinates when embedded metadata is missing', async () => {
         writeFileSync(jarPath, zipSync({ 'META-INF/MANIFEST.MF': strToU8('Manifest-Version: 1.0\n') }));
         const handler = handlers.get('publish_app_jar')!;

@@ -210,6 +210,34 @@ download_logs({ "appName": "orders-sapi", "environment": "Sandbox", "hoursBack":
 Summary mode returns counts by level, logger and hour plus the top message templates. `outputFile` writes
 everything matched to a file inside the project and returns only the path and counts.
 
+## Check logs for leaked credentials
+
+```jsonc
+scan_logs_for_credentials({ "appName": "orders-sapi", "environment": "Production", "previousSpecs": 1 })
+```
+
+```bash
+anc logs credentials orders-sapi --env Production --since 24h --previous-specs 1
+```
+
+The result counts lines that carry an `Authorization: Bearer` header, a bearer token, a `sessionId`, a
+`Sforce-Session` header, a Salesforce session ID, an `access_token` / `refresh_token` / `id_token`
+parameter, or a JWT, per marker, per spec and per replica. It never returns the lines or the values. A
+non-zero count means the app logs credentials; fix its logging, then scan again after the next deploy.
+
+## Find who changed an app
+
+```jsonc
+get_audit_log({ "hoursBack": 72, "objectTypes": ["Application"], "actions": ["Create", "Modify", "Delete"] })
+```
+
+Each entry carries `actorClass`: `platform-patch` (platform staff or the automatic patcher modifying an
+app), `platform-replica` (a replica restarted or moved by the platform), `platform-infrastructure` (Patch
+Fabric, Patch Network) or `user-or-pipeline`, plus the `actorRule` that matched. `summary.byClass` counts
+the returned entries per class. Pass `platformClientIds` when the platform patcher appears under a client
+ID in your organization. Keep the filters: an unfiltered query over several days can return more entries
+than one response holds, and the response then says how many matched.
+
 ## Update an API specification in Design Center
 
 ```bash
@@ -231,7 +259,7 @@ Authenticate in a terminal first, then use a pinned server command:
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.3", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
     }
   }
 }

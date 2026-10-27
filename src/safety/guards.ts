@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import type { CH2Deployment } from '../api/CloudHub2Api.js';
 import chalk from 'chalk';
+import { checkPreapproval } from './preapproval.js';
 
 /**
  * Check if an environment is a production environment
@@ -87,6 +88,29 @@ export function validateJarFile(jarPath: string): {
         artifactId: match?.[1],
         version: match?.[2],
     };
+}
+
+/**
+ * Confirm a production write from the CLI. Outside production, with --force, or when a project
+ * productionPreapproval covers `tool` (the matching MCP tool name) and the environment, no prompt
+ * is shown; otherwise the typed phrase is required.
+ */
+export async function confirmProductionWrite(
+    env: { name: string; id?: string; isProduction?: boolean },
+    tool: string,
+    force = false,
+): Promise<boolean> {
+    if (!isProductionEnv(env.name, env.isProduction) || force) return true;
+    const decision = checkPreapproval(env, tool);
+    if (decision.productionPreapproved) {
+        console.log(
+            chalk.yellow(
+                `  Production pre-approved for ${tool} in ${env.name} (${decision.preapprovalSource}${decision.preapprovalExpires ? `, until ${decision.preapprovalExpires}` : ''})`,
+            ),
+        );
+        return true;
+    }
+    return confirmProductionDeploy(env.name, env.isProduction);
 }
 
 /**

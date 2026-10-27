@@ -49,6 +49,12 @@ same state names as [Access readiness](readiness.md).
 
 ## Verified artifact handoff
 
+mule-build 3.2.0 and later record how a jar was built in `META-INF/mule-build/build-info.json`,
+including `stripped` and `productionDeployable`. Every jar-reading tool reports it as `buildProvenance`,
+and a jar not marked production deployable is refused for a production environment, with no override.
+When the publish and deploy steps are separate, pass the jar as `jarPath` to `update_app_artifact` too.
+See [Stripped builds never reach production](safety.md#stripped-builds-never-reach-production).
+
 For application publication, carry `jarPath` and the build's verified `artifact` fields into
 `publish_app_jar` or `deploy_jar`. Pass `artifact.artifactId` as `assetId`, `artifact.version`
 as `assetVersion`, and `artifact.sha256` as `expectedSha256`. Resolve the Exchange group explicitly

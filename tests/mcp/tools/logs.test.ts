@@ -303,3 +303,87 @@ describe('logWindow', () => {
         );
     });
 });
+
+describe('scan_logs_for_credentials', () => {
+    const handlers = new Map<string, (input: any) => Promise<any>>();
+    const server = {
+        registerTool: vi.fn((name: string, _definition: unknown, handler: (input: any) => Promise<any>) => {
+            handlers.set(name, handler);
+        }),
+    };
+    const client = {
+        getDefaultOrgId: vi.fn().mockResolvedValue('org-1'),
+        accessManagement: { resolveEnvironment: vi.fn().mockResolvedValue({ id: 'env-1', name: 'Sandbox' }) },
+        logs: { getLogFile: vi.fn(), getLogParts: vi.fn() },
+    };
+    const FAKE_TOKEN = 'sampleTokenValue0123456789abcdef';
+    const line = (minute: number, replica: string, message: string) =>
+        `2026-01-01T10:0${minute}:00.000Z INFO [${replica}] sample.Logger [thread] - ${message}`;
+
+    beforeEach(() => {
+        handlers.clear();
+        vi.clearAllMocks();
+        client.logs.getLogParts.mockResolvedValue({
+            deploymentId: 'dep-1',
+            specId: 'spec-2',
+            specIds: ['spec-1', 'spec-2'],
+            parts: [
+                { specId: 'spec-1', text: line(1, 'r-old', `Authorization: Bearer ${FAKE_TOKEN}`) },
+                { specId: 'spec-2', text: line(2, 'r-new', 'healthy') },
+            ],
+        });
+        registerLogTools(server as any, client as any);
+    });
+
+    it('passes previousSpecs through and returns counts per spec and replica only', async () => {
+        const result = await handlers.get('scan_logs_for_credentials')!({
+            appName: 'orders-sapi',
+            environment: 'Sandbox',
+            previousSpecs: 1,
+        });
+        expect(client.logs.getLogParts).toHaveBeenCalledWith('org-1', 'env-1', 'orders-sapi', { previousSpecs: 1 });
+        const text = result.content[0].text;
+        expect(text).not.toContain(FAKE_TOKEN);
+        expect(text).not.toContain('Authorization: Bearer');
+        const body = JSON.parse(text);
+        expect(body).toMatchObject({
+            app: 'orders-sapi',
+            environment: 'Sandbox',
+            specId: 'spec-2',
+            specIds: ['spec-1', 'spec-2'],
+            clean: false,
+            linesWithMarkers: 1,
+        });
+        expect(body.byMarker['authorization-bearer']).toBe(1);
+        expect(body.bySpec).toEqual([
+            {
+                specId: 'spec-1',
+                scannedLines: 1,
+                linesWithMarkers: 1,
+                byMarker: { 'authorization-bearer': 1, 'bearer-token': 1 },
+                byReplica: [
+                    {
+                        replica: 'r-old',
+                        linesWithMarkers: 1,
+                        byMarker: { 'authorization-bearer': 1, 'bearer-token': 1 },
+                    },
+                ],
+            },
+            { specId: 'spec-2', scannedLines: 1, linesWithMarkers: 0, byMarker: {}, byReplica: [] },
+        ]);
+    });
+
+    it('applies the time window', async () => {
+        const body = JSON.parse(
+            (
+                await handlers.get('scan_logs_for_credentials')!({
+                    appName: 'orders-sapi',
+                    environment: 'Sandbox',
+                    startTime: '2026-01-01T10:02:00Z',
+                })
+            ).content[0].text,
+        );
+        expect(body).toMatchObject({ clean: true, scannedLines: 1 });
+        expect(body.period.from).toBe('2026-01-01T10:02:00.000Z');
+    });
+});

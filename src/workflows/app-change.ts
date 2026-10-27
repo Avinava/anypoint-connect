@@ -17,6 +17,7 @@ import {
     type SettingsChange,
     type SettingsPlan,
 } from '../safety/deployment.js';
+import { checkBuildProvenance, type BuildProvenance, type ProvenanceCheck } from '../safety/artifact.js';
 import { isProductionEnv } from '../safety/guards.js';
 import { parseRuntimeString, resolveRuntime, suggestRuntimes, type RuntimeSpec } from '../safety/runtime.js';
 import { looksSecret, redactText } from '../safety/secrets.js';
@@ -73,6 +74,8 @@ export interface AppChangeRequest {
     mode?: ChangeMode;
     /** Restart even when nothing else changes (stop then start). */
     restart?: boolean;
+    /** Build marker of the local jar the new artifact was published from; checked against the environment. */
+    buildProvenance?: BuildProvenance;
     /** Values to scrub from every response and error. */
     secretValues?: string[];
 }
@@ -99,6 +102,8 @@ export interface AppChangePlan {
     /** Problems that stop the change before anything is written. */
     blockers: string[];
     production: boolean;
+    /** Present when the request carried a local jar's build marker. */
+    provenance?: ProvenanceCheck;
     /** Nothing would change. */
     noop: boolean;
 }
@@ -281,6 +286,13 @@ export async function planAppChange(client: AnypointClient, request: AppChangeRe
         warnings.push('The application is stopped; the change applies but it stays stopped until started.');
     }
 
+    const production = isProductionEnv(request.env.name, request.env.isProduction);
+    const provenance = request.buildProvenance ? checkBuildProvenance(request.buildProvenance, production) : undefined;
+    if (provenance) {
+        warnings.push(...provenance.warnings);
+        if (provenance.blocker) blockers.push(provenance.blocker);
+    }
+
     const steps = noop
         ? []
         : mode === 'stopStart'
@@ -304,7 +316,8 @@ export async function planAppChange(client: AnypointClient, request: AppChangeRe
         steps,
         warnings,
         blockers,
-        production: isProductionEnv(request.env.name, request.env.isProduction),
+        production,
+        ...(provenance ? { provenance } : {}),
         noop,
     };
 }
@@ -326,6 +339,7 @@ export function describeAppChange(plan: AppChangePlan) {
         changes: plan.changes,
         ...(plan.settings ? { settings: plan.settings.diff } : {}),
         runtimeCheck: plan.runtimeCheck,
+        ...(plan.provenance ? { buildProvenance: plan.provenance.buildProvenance } : {}),
         steps: plan.steps,
         ...(plan.warnings.length ? { warnings: plan.warnings } : {}),
         ...(plan.blockers.length ? { blockers: plan.blockers } : {}),

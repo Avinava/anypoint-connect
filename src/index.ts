@@ -33,7 +33,7 @@ export {
     type DeploymentDeletionVerification,
     type DeploymentPatch,
 } from './api/CloudHub2Api.js';
-export { LogsApi, type LogEntry } from './api/LogsApi.js';
+export { LogsApi, type LogEntry, type LogPart, type LogParts } from './api/LogsApi.js';
 export {
     MonitoringApi,
     AMQL_MAX_LIMIT,
@@ -127,6 +127,29 @@ export {
 export { resolveRuntime, suggestRuntimes, parseRuntimeString, type RuntimeSpec } from './safety/runtime.js';
 export { looksSecret, redactValue, redactRecord, redactText, MASKED } from './safety/secrets.js';
 export { resolveSecretSource, resolveSecretSources, type SecretSource } from './safety/secret-sources.js';
+export {
+    BUILD_INFO_PATH,
+    readBuildProvenance,
+    checkBuildProvenance,
+    type BuildProvenance,
+    type ProvenanceCheck,
+} from './safety/artifact.js';
+export {
+    PREAPPROVABLE_TOOLS,
+    checkPreapproval,
+    readPreapproval,
+    validatePreapproval,
+    type ProductionPreapproval,
+    type PreapprovalDecision,
+} from './safety/preapproval.js';
+export {
+    ACTOR_CLASSES,
+    ACTOR_RULES,
+    classifyAuditActor,
+    classifyAuditEntries,
+    type ActorClass,
+} from './analysis/audit-actors.js';
+export { CREDENTIAL_MARKERS, scanForCredentials, type CredentialScan } from './analysis/credentials.js';
 
 // Utils
 export { AmqlQueryError, errorMessage } from './utils/errors.js';
