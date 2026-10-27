@@ -40,13 +40,17 @@ export const PREAPPROVABLE_TOOLS = [
     'start_app',
     'smoke_test_api',
     'delete_app',
+    'create_alert',
+    'update_alert',
+    'set_alert_enabled',
+    'delete_alert',
 ] as const;
 export type PreapprovableTool = (typeof PREAPPROVABLE_TOOLS)[number];
 
 export const ALL_MUTATING = 'all-mutating';
 
 /** Tools that "all-mutating" does not cover; they are pre-approved only when named. */
-export const NAMED_ONLY_TOOLS: readonly PreapprovableTool[] = ['delete_app'];
+export const NAMED_ONLY_TOOLS: readonly PreapprovableTool[] = ['delete_app', 'delete_alert'];
 
 export const APPROVALS_FILE_NAME = 'production-approvals.json';
 

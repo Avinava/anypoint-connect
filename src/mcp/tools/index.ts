@@ -16,5 +16,6 @@ export { registerDesignCenterTools } from './design-center.js';
 export { registerGovernanceTools } from './governance.js';
 export { registerProfileTools } from './profile.js';
 export { registerAuditTools } from './audit.js';
+export { registerAlertTools } from './alerts.js';
 export { registerAnypointMQTools } from './anypoint-mq.js';
 export { registerObjectStoreTools } from './object-store.js';

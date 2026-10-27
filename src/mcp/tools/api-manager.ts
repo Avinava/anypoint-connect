@@ -17,6 +17,7 @@ import {
     writeCredentialsFile,
 } from '../../client/smoke-test.js';
 import { redactText } from '../../safety/secrets.js';
+import { monitoringAlertsForApi } from './alerts.js';
 import { errorMessage } from '../../utils/errors.js';
 
 const apiRefSchema = z.string().describe('API name (partial match) or numeric API instance ID from list_api_instances');
@@ -109,7 +110,7 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
         {
             title: 'Get API Alerts',
             description:
-                'Returns the configured alerts for a managed API instance. Shows alert conditions, thresholds, notification settings, and enabled/disabled status. Use this to audit monitoring coverage, verify alerting is configured for critical APIs, or troubleshoot why alerts are not firing.',
+                'Returns the configured alerts for a managed API instance: API Manager alerts (alerts) and Anypoint Monitoring alerts on the instance (monitoringAlerts, normalized as in list_alerts with recipients masked, or supported: false). Shows alert conditions, thresholds, notification settings, and enabled/disabled status. Use this to audit monitoring coverage, verify alerting is configured for critical APIs, or troubleshoot why alerts are not firing.',
             inputSchema: {
                 apiName: apiRefSchema,
                 environment: z.string().describe('Environment name or ID'),
@@ -122,12 +123,14 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
                 const { apiId } = await client.apiManager.resolveApiInstance(orgId, env, apiName);
 
                 const alerts = await client.apiManager.getAlerts(orgId, env.id, apiId);
+                const monitoring = await monitoringAlertsForApi(client, orgId, env.id, apiId);
 
                 return mcpText({
                     apiId,
                     environment: env.name,
                     alertCount: alerts.length,
                     alerts,
+                    monitoringAlerts: monitoring,
                 });
             } catch (error) {
                 return mcpError(error);

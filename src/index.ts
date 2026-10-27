@@ -88,6 +88,26 @@ export {
 } from './api/ObjectStoreApi.js';
 
 export { RuntimesApi, type RuntimeVersion, type RuntimeTarget } from './api/RuntimesApi.js';
+export {
+    AlertsApi,
+    AlertsUnsupportedError,
+    AlertPendingError,
+    ALERT_METRIC_IDS,
+    ALERT_OPERATORS,
+    type MonitoringAlert,
+    type AlertWriteBody,
+    type AlertEntity,
+    type AlertNotification,
+} from './api/AlertsApi.js';
+export {
+    ALERT_METRICS,
+    normalizeAlert,
+    planCreateAlert,
+    planUpdateAlert,
+    executeDeleteAlert,
+    type CreateAlertInput,
+    type AlertPatch,
+} from './workflows/alerts.js';
 
 // Application changes
 export {

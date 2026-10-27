@@ -27,6 +27,7 @@ import {
     registerGovernanceTools,
     registerProfileTools,
     registerAuditTools,
+    registerAlertTools,
     registerAnypointMQTools,
     registerObjectStoreTools,
 } from './tools/index.js';
@@ -71,6 +72,7 @@ export class AnypointConnectMcpServer {
         registerGovernanceTools(this.server, this.client);
         registerProfileTools(this.server, this.client);
         registerAuditTools(this.server, this.client);
+        registerAlertTools(this.server, this.client);
         registerAnypointMQTools(this.server, this.client);
         registerObjectStoreTools(this.server, this.client);
 
