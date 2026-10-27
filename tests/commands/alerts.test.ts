@@ -13,7 +13,7 @@ vi.mock('../../src/utils/formatter.js', async (importOriginal) => ({
 }));
 
 import { createAlertsCommand } from '../../src/commands/alerts.js';
-import { ORG, PRODUCTION, SANDBOX, appAlert, deployment } from '../fixtures/alerts.js';
+import { ORG, PRODUCTION, SANDBOX, appAlert, deployment, runtimeManagerAlert } from '../fixtures/alerts.js';
 
 describe('anc alerts', () => {
     const alerts = {
@@ -55,10 +55,11 @@ describe('anc alerts', () => {
     });
 
     it('regression: applies --app and --name to Runtime Manager rows too', async () => {
+        const on = (app: string) => ({ type: 'deployment-failed', resourceType: 'mc-application', resources: [app] });
         alerts.listRuntimeManager.mockResolvedValue([
-            { id: 'rm-1', name: 'deploy failed', resourceName: 'orders-sapi' },
-            { id: 'rm-2', name: 'deploy failed', resourceName: 'billing-sapi' },
-            { id: 'rm-3', name: 'cpu', resourceName: 'orders-sapi' },
+            runtimeManagerAlert({ id: 'rm-1', name: 'deploy failed', condition: on('orders-sapi') }),
+            runtimeManagerAlert({ id: 'rm-2', name: 'deploy failed', condition: on('billing-sapi') }),
+            runtimeManagerAlert({ id: 'rm-3', name: 'cpu', condition: on('orders-sapi') }),
         ]);
         await run(
             'list',
@@ -132,6 +133,17 @@ describe('anc alerts', () => {
         await run(...create);
         expect(alerts.create.mock.calls[0][1].settings.threshold).toBe(0.9);
         expect(alerts.create.mock.calls[0][1].enabled).toBe(false);
+    });
+
+    it('takes a severity label and points to the CLI command to enable', async () => {
+        const args = [...create];
+        args[args.indexOf('--severity') + 1] = 'high';
+        await run(...args, '--dry-run');
+        const warnings = mocks.log.warn.mock.calls.map((c) => String(c[0]));
+        expect(warnings.some((w) => w.includes('anc alerts enable'))).toBe(true);
+        expect(warnings.some((w) => w.includes('set_alert_enabled'))).toBe(false);
+        const printed = vi.mocked(console.log).mock.calls.map((c) => String(c[0]));
+        expect(printed.some((text) => text.includes('"severity": 2'))).toBe(true);
     });
 
     it('delete is a dry run until --confirm matches, and production needs --allow-production', async () => {

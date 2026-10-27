@@ -108,7 +108,16 @@ export function notificationDifferences(before: AlertNotification[], after: Aler
     return [...fields];
 }
 
-/** Notifications for display: masked unless `reveal`. */
+/**
+ * A recipient summary for display. Domains can identify clients, so they are shown only with `reveal`;
+ * otherwise only the counts.
+ */
+export function displayRecipients(notifications: AlertNotification[], reveal = false) {
+    const { recipientDomains, ...counts } = summarizeRecipients(notifications);
+    return reveal ? { ...counts, recipientDomains } : counts;
+}
+
+/** Notifications for display: masked to counts unless `reveal`. */
 export function describeNotifications(notifications: AlertNotification[], reveal = false) {
     return notifications.map((n) =>
         reveal
@@ -116,9 +125,47 @@ export function describeNotifications(notifications: AlertNotification[], reveal
             : {
                   type: n.type,
                   ...(n.subject !== undefined ? { subject: n.subject } : {}),
-                  ...summarizeRecipients([n]),
+                  ...displayRecipients([n]),
               },
     );
+}
+
+// ── Severity ──────────────────────────────────────────
+
+/** The Monitoring UI's levels: the stored number is the index. */
+export const SEVERITY_LABELS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+export type SeverityLabel = (typeof SEVERITY_LABELS)[number];
+
+/** Other alert families use words; map them onto the same labels. */
+const SEVERITY_WORDS: Record<string, SeverityLabel> = {
+    info: 'LOW',
+    low: 'LOW',
+    warning: 'MEDIUM',
+    warn: 'MEDIUM',
+    medium: 'MEDIUM',
+    error: 'HIGH',
+    high: 'HIGH',
+    critical: 'CRITICAL',
+};
+
+/** A severity given as 0-3 or a label (LOW, MEDIUM, HIGH, CRITICAL), as the stored number. */
+export function parseSeverity(input: number | string): number {
+    if (typeof input === 'number' || /^\d+$/.test(String(input).trim())) {
+        const n = Number(input);
+        if (!Number.isInteger(n) || n < 0 || n > 3)
+            throw new Error('severity must be 0-3 or LOW, MEDIUM, HIGH, CRITICAL');
+        return n;
+    }
+    const index = SEVERITY_LABELS.indexOf(String(input).trim().toUpperCase() as SeverityLabel);
+    if (index < 0) throw new Error('severity must be 0-3 or LOW, MEDIUM, HIGH, CRITICAL');
+    return index;
+}
+
+/** One label for any family's severity: a Monitoring number, or a word such as INFO or warning. */
+export function severityLabel(value: unknown): string | undefined {
+    if (typeof value === 'number') return SEVERITY_LABELS[value] ?? String(value);
+    if (typeof value === 'string' && value) return SEVERITY_WORDS[value.toLowerCase()] ?? value.toUpperCase();
+    return undefined;
 }
 
 export function windowMinutes(interval: string | undefined): number | undefined {
@@ -147,7 +194,8 @@ export function normalizeAlert(alert: MonitoringAlert, options: { reveal?: boole
         source: 'monitoring' as AlertSource,
         name: alert.name,
         enabled: alert.enabled,
-        severity: alert.severity,
+        severity: severityLabel(alert.severity),
+        severityLevel: alert.severity,
         status: alert.alertStatus,
         state: alert.state?.currentState,
         entity: {
@@ -165,28 +213,56 @@ export function normalizeAlert(alert: MonitoringAlert, options: { reveal?: boole
             unit: metric !== undefined ? metricInfo(metric)?.unit : undefined,
             windowMinutes: windowMinutes(alert.settings?.evaluationInterval),
         },
-        ...summarizeRecipients(notifications),
+        ...displayRecipients(notifications, options.reveal),
         ...(options.reveal ? { notifications } : {}),
     };
 }
 
-/** Best-effort view of a Runtime Manager event alert; its shape is not documented. */
-export function normalizeRuntimeManagerAlert(alert: RuntimeManagerAlert) {
-    const pick = (key: string) =>
-        typeof alert[key] === 'string' || typeof alert[key] === 'number' ? alert[key] : undefined;
+const RM_RESOURCE_TYPES: Record<string, string> = { 'mc-application': 'application' };
+
+/**
+ * View of a Runtime Manager event alert (deployment failed and similar). Observed shape:
+ * condition{type, resourceType, resources[]}, actions[]{type, userIds[], emails[], subject, content},
+ * plus conditionType, isSystem and productName.
+ */
+export function normalizeRuntimeManagerAlert(alert: RuntimeManagerAlert, options: { reveal?: boolean } = {}) {
+    const text = (value: unknown) => (typeof value === 'string' || typeof value === 'number' ? value : undefined);
     const condition = (alert.condition ?? {}) as Record<string, unknown>;
-    const recipients = Array.isArray(alert.recipients) ? (alert.recipients as unknown[]) : [];
+    const actions = (Array.isArray(alert.actions) ? alert.actions : []) as Array<Record<string, unknown>>;
+    const strings = (value: unknown) =>
+        Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+    const emails = actions.flatMap((a) => strings(a.emails));
+    const userIds = actions.flatMap((a) => strings(a.userIds));
+    const resources = strings(condition.resources);
+    const resourceType = text(condition.resourceType);
     return {
-        id: pick('id'),
+        id: text(alert.id),
         source: 'runtime-manager' as AlertSource,
-        name: pick('name'),
+        name: text(alert.name),
         enabled: typeof alert.enabled === 'boolean' ? alert.enabled : undefined,
-        severity: pick('severity'),
-        status: pick('status'),
-        state: pick('state'),
-        entity: { type: 'application', name: pick('resourceName') ?? pick('applicationName') },
-        condition: { metric: condition.type ?? pick('type') },
-        recipientCount: recipients.length,
+        severity: severityLabel(alert.severity),
+        status: text(alert.status),
+        state: text(alert.state),
+        entity: {
+            type: (resourceType && RM_RESOURCE_TYPES[String(resourceType)]) ?? resourceType,
+            name: resources.length ? resources.join(', ') : undefined,
+            ...(resources.length > 1 ? { count: resources.length } : {}),
+        },
+        condition: { event: text(condition.type) },
+        ...(text(alert.conditionType) !== undefined ? { conditionType: text(alert.conditionType) } : {}),
+        ...(typeof alert.isSystem === 'boolean' ? { isSystem: alert.isSystem } : {}),
+        ...(text(alert.productName) !== undefined ? { productName: text(alert.productName) } : {}),
+        recipientCount: emails.length + userIds.length,
+        ...(options.reveal
+            ? {
+                  recipientDomains: [...new Set(emails.map(domainOf))].sort(),
+                  actions: actions.map((a) => ({
+                      type: a.type,
+                      emails: strings(a.emails),
+                      userIds: strings(a.userIds),
+                  })),
+              }
+            : {}),
     };
 }
 
@@ -245,10 +321,7 @@ export function evaluationInterval(durationMinutes: number): string {
     return `${durationMinutes}m`;
 }
 
-export function checkSeverity(severity: number): number {
-    if (!Number.isInteger(severity) || severity < 0 || severity > 2) throw new Error('severity must be 0, 1 or 2');
-    return severity;
-}
+export const checkSeverity = parseSeverity;
 
 export interface ApiFilterInput {
     responseCodes?: string[];
@@ -266,7 +339,8 @@ export interface CreateAlertInput {
     /** In the metric's unit: percent (0-100] for cpu and memory, a count, or milliseconds. */
     threshold: number;
     durationMinutes: number;
-    severity: number;
+    /** 0-3, or LOW, MEDIUM, HIGH, CRITICAL. */
+    severity: number | string;
     enabled?: boolean;
     notifications: NotificationInput[];
     apiFilters?: ApiFilterInput;
@@ -351,7 +425,21 @@ export interface CreateAlertPlan {
     duplicate?: { id: string; name: string; status?: string };
 }
 
-export async function planCreateAlert(client: AnypointClient, input: CreateAlertInput): Promise<CreateAlertPlan> {
+/**
+ * The create payload for a preview. For an API target only the instance ID the caller passed is shown;
+ * the API name and endpoint resolved from API Manager are sent but not printed.
+ */
+export function previewPayload(body: AlertWriteBody): AlertWriteBody {
+    if (body.entity.entityType !== 'api') return body;
+    const { apiName: _apiName, endpoint: _endpoint, ...entity } = body.entity;
+    return { ...body, entity: { ...entity, apiName: '(resolved from API Manager)' } };
+}
+
+export async function planCreateAlert(
+    client: AnypointClient,
+    input: CreateAlertInput,
+    options: { enableHint?: string } = {},
+): Promise<CreateAlertPlan> {
     const orgId = await client.getDefaultOrgId();
     const env = await client.accessManagement.resolveEnvironment(orgId, input.environment);
     if (!input.name?.trim()) throw new Error('name is required');
@@ -385,7 +473,11 @@ export async function planCreateAlert(client: AnypointClient, input: CreateAlert
     }
     const outside = outsideDomains(notifications, userEmail);
     if (outside.length) warnings.push(`Recipients outside your email domain: ${outside.join(', ')}`);
-    if (!body.enabled) warnings.push('The alert is created disabled; enable it with set_alert_enabled once reviewed.');
+    if (!body.enabled) {
+        warnings.push(
+            `The alert is created disabled; enable it with ${options.enableHint ?? 'set_alert_enabled'} once reviewed.`,
+        );
+    }
 
     const existing = await client.alerts.list(orgId, { environmentId: env.id, name: body.name });
     const match = existing.find(
@@ -404,7 +496,8 @@ export async function planCreateAlert(client: AnypointClient, input: CreateAlert
 
 export interface AlertPatch {
     name?: string;
-    severity?: number;
+    /** 0-3, or LOW, MEDIUM, HIGH, CRITICAL. */
+    severity?: number | string;
     enabled?: boolean;
     operator?: AlertOperator;
     /** In the metric's unit, as for create. */
@@ -488,7 +581,7 @@ export async function planUpdateAlert(client: AnypointClient, id: string, patch:
         if (JSON.stringify(from) !== JSON.stringify(to)) changes.push({ field, from, to });
     };
     push('name', existing.name, body.name);
-    push('severity', existing.severity, body.severity);
+    push('severity', severityLabel(existing.severity), severityLabel(body.severity));
     push('enabled', existing.enabled, body.enabled);
     push('operator', existing.settings.evaluationOperator, settings.evaluationOperator);
     push(
@@ -526,23 +619,63 @@ export interface DeleteAlertResult {
     message: string;
 }
 
-/** Request deletion and report what the platform shows right after. Never claims deleted while PENDING. */
-export async function executeDeleteAlert(
+export const CHANGE_IN_PROGRESS =
+    'A change to this alert is in progress (PENDING); the platform refuses changes and deletion until it finishes. Retry later.';
+
+/**
+ * Read an alert for deletion. The list is fresher than GET right after a change (GET can keep
+ * answering ACTIVE, or 404 while the list still shows PENDING), so the listed entry wins.
+ */
+export async function readAlertForDelete(
     client: AnypointClient,
     orgId: string,
     id: string,
+): Promise<MonitoringAlert | null> {
+    const got = await client.alerts.get(orgId, id);
+    const listed = (await client.alerts.list(orgId, got ? { environmentId: got.entity.environmentId } : {})).find(
+        (a) => a.id === id,
+    );
+    if (listed) return listed;
+    return got && got.alertStatus !== 'DELETED' ? got : null;
+}
+
+/**
+ * Request deletion, then verify it from the list. Never claims deleted while the list still shows the
+ * alert. A 404 on DELETE with the alert absent from the list means it is already gone.
+ */
+export async function executeDeleteAlert(
+    client: AnypointClient,
+    orgId: string,
+    alert: Pick<MonitoringAlert, 'id' | 'entity'>,
 ): Promise<DeleteAlertResult> {
-    await client.alerts.delete(orgId, id);
-    const after = await client.alerts.get(orgId, id);
-    if (!after) return { accepted: true, status: 'GONE', verifiedAbsent: true, message: 'Deleted; the alert is gone.' };
-    if (after.alertStatus === 'DELETED') {
-        return { accepted: true, status: 'DELETED', verifiedAbsent: true, message: 'Deleted.' };
+    const outcome = await client.alerts.delete(orgId, alert.id);
+    const still = (await client.alerts.list(orgId, { environmentId: alert.entity.environmentId })).find(
+        (a) => a.id === alert.id && a.alertStatus !== 'DELETED',
+    );
+    if (!still) {
+        return {
+            accepted: outcome === 'accepted',
+            status: 'GONE',
+            verifiedAbsent: true,
+            message:
+                outcome === 'accepted'
+                    ? 'Deleted; the alert no longer appears in the list.'
+                    : 'Already gone: the platform no longer has the alert and it is not in the list.',
+        };
+    }
+    if (outcome === 'not-found') {
+        return {
+            accepted: false,
+            status: still.alertStatus === 'ACTIVE' ? 'ACTIVE' : 'PENDING',
+            verifiedAbsent: false,
+            message: `The platform answered not found but still lists the alert (${still.alertStatus}). ${CHANGE_IN_PROGRESS}`,
+        };
     }
     return {
         accepted: true,
-        status: after.alertStatus === 'ACTIVE' ? 'ACTIVE' : 'PENDING',
+        status: still.alertStatus === 'ACTIVE' ? 'ACTIVE' : 'PENDING',
         verifiedAbsent: false,
         message:
-            'Deletion accepted but not finished: the platform still shows the alert. Deletion is asynchronous and can stay PENDING for a while; check again with get_alert.',
+            'Deletion accepted but not finished: the alert still appears in the list. Deletion is asynchronous and can take a while; check again with list_alerts.',
     };
 }

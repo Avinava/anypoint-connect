@@ -71,8 +71,17 @@ describe('AlertsApi', () => {
     it('maps other 400s and 404s to clear messages', async () => {
         http.patch.mockRejectedValueOnce(httpError(400, { message: 'threshold invalid' }));
         await expect(api.update(ORG, 'alert-1', {} as any)).rejects.toThrow('rejected (HTTP 400): threshold invalid');
-        http.delete.mockRejectedValueOnce(httpError(404));
-        await expect(api.delete(ORG, 'alert-1')).rejects.toThrow('Alert alert-1 not found');
+        http.patch.mockRejectedValueOnce(httpError(404));
+        await expect(api.update(ORG, 'alert-1', {} as any)).rejects.toThrow('Alert alert-1 not found');
+    });
+
+    it('reports DELETE outcomes instead of throwing on 404, so callers check the list', async () => {
+        http.delete.mockResolvedValueOnce(undefined);
+        expect(await api.delete(ORG, 'alert-1')).toBe('accepted');
+        http.delete.mockRejectedValueOnce(httpError(404, { message: 'Alert not found' }));
+        expect(await api.delete(ORG, 'alert-1')).toBe('not-found');
+        http.delete.mockRejectedValueOnce(httpError(500));
+        await expect(api.delete(ORG, 'alert-1')).rejects.toThrow('HTTP 500');
     });
 
     it('reads Runtime Manager alerts with org and environment headers', async () => {

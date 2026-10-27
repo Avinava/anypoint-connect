@@ -219,10 +219,13 @@ export class AlertsApi {
     }
 
     /** Request deletion. It is asynchronous: the alert can stay PENDING for a while before it is gone. */
-    async delete(orgId: string, id: string): Promise<void> {
+    async delete(orgId: string, id: string): Promise<'accepted' | 'not-found'> {
         try {
             await this.http.delete(this.url(orgId, id));
+            return 'accepted';
         } catch (error) {
+            // The platform also answers 404 while a change is still PENDING; callers check the list.
+            if (status(error) === 404) return 'not-found';
             throw alertError(error, id);
         }
     }

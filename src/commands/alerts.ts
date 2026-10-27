@@ -20,13 +20,15 @@ import { ALERT_METRIC_IDS, ALERT_OPERATORS, type AlertMetricId, type AlertOperat
 import { confirmProductionWrite, isProductionEnv } from '../safety/guards.js';
 import { checkPreapproval } from '../safety/preapproval.js';
 import {
+    CHANGE_IN_PROGRESS,
     alertEnvironment,
     executeDeleteAlert,
     normalizeAlert,
     normalizeRuntimeManagerAlert,
     planCreateAlert,
     planUpdateAlert,
-    summarizeRecipients,
+    previewPayload,
+    readAlertForDelete,
     type AlertPatch,
     type NotificationInput,
 } from '../workflows/alerts.js';
@@ -68,7 +70,9 @@ function printAlerts(alerts: AlertRow[]): void {
             String(a.entity?.name ?? '-'),
             'operator' in a.condition && a.condition.operator
                 ? `${a.condition.metric} ${a.condition.operator} ${a.condition.threshold}${a.condition.unit === 'percent' ? '%' : ''} for ${a.condition.windowMinutes}m`
-                : String(a.condition.metric ?? '-'),
+                : 'event' in a.condition
+                  ? `event ${a.condition.event ?? '-'}`
+                  : '-',
             String(a.recipientCount),
         ]),
     );
@@ -128,7 +132,7 @@ export function createAlertsCommand(): Command {
         .option('--app <name>', 'Only alerts on this application')
         .option('--api-instance <id>', 'Only alerts on this API instance')
         .option('--name <text>', 'Only alerts whose name contains this text')
-        .option('--status <status>', 'PENDING, ACTIVE or DELETED')
+        .option('--status <status>', 'PENDING or ACTIVE (deleted alerts never appear in the list)')
         .option('--source <source>', 'monitoring, runtime-manager or all', 'all')
         .option('--reveal', 'Show notification recipients')
         .option('--json', 'Print as JSON')
@@ -153,7 +157,7 @@ export function createAlertsCommand(): Command {
                     const needle = opts.name?.toLowerCase();
                     rows.push(
                         ...(await client.alerts.listRuntimeManager(orgId, env.id))
-                            .map(normalizeRuntimeManagerAlert)
+                            .map((a) => normalizeRuntimeManagerAlert(a, { reveal: opts.reveal }))
                             .filter(
                                 (a) =>
                                     !needle ||
@@ -226,7 +230,7 @@ export function createAlertsCommand(): Command {
             number('--threshold'),
         )
         .requiredOption('--duration <minutes>', 'Minutes the condition must hold', number('--duration'))
-        .requiredOption('--severity <n>', 'Severity 0, 1 or 2', number('--severity'));
+        .requiredOption('--severity <level>', 'Severity: 0-3 or LOW, MEDIUM, HIGH, CRITICAL');
     addNotificationOptions(create)
         .option('--response-codes <codes>', 'For api_response_code_count: comma-separated codes', list)
         .option('--policies <names>', 'For api_policy_violation_count: comma-separated policies', list)
@@ -240,20 +244,24 @@ export function createAlertsCommand(): Command {
                     throw new Error('Pass exactly one of --app or --api-instance');
                 const notifications = notificationsFromOptions(opts) ?? [];
                 const client = createClient();
-                const plan = await planCreateAlert(client, {
-                    environment: opts.env,
-                    name: opts.name,
-                    target: opts.app ? { app: opts.app } : { apiInstanceId: opts.apiInstance },
-                    metric: opts.metric as AlertMetricId,
-                    operator: opts.operator as AlertOperator,
-                    threshold: opts.threshold,
-                    durationMinutes: opts.duration,
-                    severity: opts.severity,
-                    enabled: opts.enabled,
-                    notifications,
-                    apiFilters: { responseCodes: opts.responseCodes, policies: opts.policies },
-                });
-                printChange(`Create alert in ${plan.env.name}`, plan.body, plan.warnings);
+                const plan = await planCreateAlert(
+                    client,
+                    {
+                        environment: opts.env,
+                        name: opts.name,
+                        target: opts.app ? { app: opts.app } : { apiInstanceId: opts.apiInstance },
+                        metric: opts.metric as AlertMetricId,
+                        operator: opts.operator as AlertOperator,
+                        threshold: opts.threshold,
+                        durationMinutes: opts.duration,
+                        severity: opts.severity,
+                        enabled: opts.enabled,
+                        notifications,
+                        apiFilters: { responseCodes: opts.responseCodes, policies: opts.policies },
+                    },
+                    { enableHint: '`anc alerts enable <id>`' },
+                );
+                printChange(`Create alert in ${plan.env.name}`, previewPayload(plan.body), plan.warnings);
                 if (plan.duplicate && !opts.allowDuplicate) {
                     log.error(
                         `An alert with this name already exists on the target: ${plan.duplicate.id}. Pass --allow-duplicate to create another.`,
@@ -316,7 +324,7 @@ export function createAlertsCommand(): Command {
         )
         .argument('<id>', 'Alert ID')
         .option('--name <name>', 'New name')
-        .option('--severity <n>', 'Severity 0, 1 or 2', number('--severity'))
+        .option('--severity <level>', 'Severity: 0-3 or LOW, MEDIUM, HIGH, CRITICAL')
         .option('--operator <op>', `Operator: ${ALERT_OPERATORS.join(', ')}`, oneOf('--operator', ALERT_OPERATORS))
         .option('--threshold <n>', 'Threshold in the metric unit', number('--threshold'))
         .option('--duration <minutes>', 'Minutes the condition must hold', number('--duration'));
@@ -364,20 +372,25 @@ export function createAlertsCommand(): Command {
             try {
                 const client = createClient();
                 const orgId = await client.getDefaultOrgId();
-                const alert = await client.alerts.get(orgId, id);
-                if (!alert || alert.alertStatus === 'DELETED') {
+                const alert = await readAlertForDelete(client, orgId, id);
+                if (!alert) {
                     log.info(`Alert ${id} does not exist (any more)`);
                     return;
                 }
                 const env = await alertEnvironment(client, orgId, alert);
-                const view = normalizeAlert(alert);
+                const pending = alert.alertStatus === 'PENDING';
                 if (!opts.confirm) {
                     log.header('Delete alert: dry run');
-                    printAlerts([view]);
-                    log.kv('Recipients', JSON.stringify(summarizeRecipients(alert.notificationTemplates)));
+                    printAlerts([normalizeAlert(alert)]);
+                    if (pending) log.warn(CHANGE_IN_PROGRESS);
                     log.info(
                         `Re-run with --confirm "${alert.name}"${isProductionEnv(env.name, env.isProduction) ? ' --allow-production' : ''}`,
                     );
+                    return;
+                }
+                if (pending) {
+                    log.error(CHANGE_IN_PROGRESS);
+                    process.exitCode = 1;
                     return;
                 }
                 if (opts.confirm !== alert.name) {
@@ -394,7 +407,7 @@ export function createAlertsCommand(): Command {
                     }
                     log.warn(`Production deletion pre-approved (${decision.preapprovalSource})`);
                 }
-                const result = await executeDeleteAlert(client, orgId, id);
+                const result = await executeDeleteAlert(client, orgId, alert);
                 if (result.verifiedAbsent) log.success(result.message);
                 else log.warn(`${result.message} Status: ${result.status}`);
             } catch (error) {

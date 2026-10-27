@@ -99,3 +99,27 @@ export const apiInstance = {
     asset: { exchangeAssetName: 'orders-api', assetId: 'orders-api', apis: [] },
     instance: { id: 1001, assetId: 'orders-api', endpointUri: 'https://orders.example.com/api' },
 };
+
+/** A Runtime Manager event alert in the observed shape, with synthetic values. */
+export function runtimeManagerAlert(overrides: Record<string, unknown> = {}) {
+    return {
+        id: 'rm-1',
+        name: 'orders deploy failed',
+        enabled: true,
+        severity: 'INFO',
+        conditionType: 'event',
+        isSystem: false,
+        productName: 'cloudhub',
+        condition: { type: 'deployment-failed', resourceType: 'mc-application', resources: ['orders-sapi'] },
+        actions: [
+            {
+                type: 'email',
+                userIds: ['user-1', 'user-2'],
+                emails: ['ops@example.com'],
+                subject: 'Deploy failed',
+                content: 'A deployment failed',
+            },
+        ],
+        ...overrides,
+    };
+}

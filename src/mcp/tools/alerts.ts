@@ -18,7 +18,9 @@ import {
     type MonitoringAlert,
 } from '../../api/AlertsApi.js';
 import {
+    CHANGE_IN_PROGRESS,
     MAX_DURATION_MINUTES,
+    SEVERITY_LABELS,
     alertEnvironment,
     describeNotifications,
     executeDeleteAlert,
@@ -26,6 +28,8 @@ import {
     normalizeRuntimeManagerAlert,
     planCreateAlert,
     planUpdateAlert,
+    previewPayload,
+    readAlertForDelete,
     summarizeRecipients,
     type AlertPatch,
 } from '../../workflows/alerts.js';
@@ -60,7 +64,9 @@ const conditionInputs = {
         .min(1)
         .max(MAX_DURATION_MINUTES)
         .describe('How many minutes the condition must hold (evaluation window)'),
-    severity: z.number().int().min(0).max(2).describe('Severity 0, 1 or 2, as the platform stores it'),
+    severity: z
+        .union([z.number().int().min(0).max(3), z.enum(SEVERITY_LABELS)])
+        .describe('Severity: 0 LOW, 1 MEDIUM, 2 HIGH, 3 CRITICAL, by number or label'),
 };
 
 function unsupported(error: AlertsUnsupportedError) {
@@ -88,7 +94,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
         {
             title: 'List Alerts',
             description:
-                'Lists alerts across Anypoint Monitoring (metric alerts on apps and API instances) and, with an environment, Runtime Manager event alerts. Each alert is normalized to {id, source, name, enabled, severity, status, state, entity{type, name, deploymentType, environment}, condition{metric, operator, threshold, unit, windowMinutes}, recipientCount, recipientDomains}. Recipients are masked (count and domains) unless revealRecipients is true. Deleted alerts are hidden unless status is DELETED. ' +
+                'Lists alerts across Anypoint Monitoring (metric alerts on apps and API instances) and, with an environment, Runtime Manager event alerts. Each alert is normalized to {id, source, name, enabled, severity (LOW, MEDIUM, HIGH, CRITICAL), status, state, entity{type, name, deploymentType, environment}, condition{metric, operator, threshold, unit, windowMinutes} (Runtime Manager: condition{event}), recipientCount}. Recipients are masked to counts; revealRecipients adds the recipients and their domains. Deleted alerts do not appear: the platform drops them from the list. ' +
                 'Uses an undocumented API; a family the organization or token cannot reach is reported as unsupported.',
             inputSchema: {
                 environment: z
@@ -102,7 +108,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                 app: z.string().optional().describe('Only alerts on this application name'),
                 apiInstanceId: z.string().optional().describe('Only alerts on this API instance ID'),
                 name: z.string().optional().describe('Only alerts whose name contains this text (case-insensitive)'),
-                status: z.enum(['PENDING', 'ACTIVE', 'DELETED']).optional().describe('Only alerts with this status'),
+                status: z.enum(['PENDING', 'ACTIVE']).optional().describe('Only alerts with this status'),
                 source: z
                     .enum(['monitoring', 'runtime-manager', 'all'])
                     .optional()
@@ -147,7 +153,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                     } else {
                         try {
                             const found = (await client.alerts.listRuntimeManager(orgId, env.id))
-                                .map(normalizeRuntimeManagerAlert)
+                                .map((a) => normalizeRuntimeManagerAlert(a, { reveal: input.revealRecipients }))
                                 .filter(
                                     (a) =>
                                         !needle ||
@@ -256,7 +262,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                 const preview = {
                     action: 'create alert',
                     environment: plan.env.name,
-                    payload: plan.body,
+                    payload: previewPayload(plan.body),
                     recipients: summarizeRecipients(plan.body.notifications),
                     ...(plan.warnings.length ? { warnings: plan.warnings } : {}),
                 };
@@ -388,7 +394,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
         {
             title: 'Delete Alert',
             description:
-                'Deletes an Anypoint Monitoring alert. Bound like delete_app: call without confirm for a preview, then with confirm: true and expectedName exactly as the preview shows. Production also needs confirmProduction, unless a pre-approval names delete_alert ("all-mutating" does not cover it). Deletion is asynchronous: the result reports accepted and the status, and never claims the alert is deleted while it is PENDING.',
+                'Deletes an Anypoint Monitoring alert. Bound like delete_app: call without confirm for a preview, then with confirm: true and expectedName exactly as the preview shows. Production also needs confirmProduction, unless a pre-approval names delete_alert ("all-mutating" does not cover it). A PENDING alert (a change in progress) is refused with retry later. Deletion is asynchronous and verified from the alert list: the result reports accepted and the status, and never claims the alert is deleted while the list still shows it.',
             inputSchema: {
                 id: z.string().describe('Alert ID'),
                 expectedName: z.string().optional().describe('The alert name from the preview; binds the delete to it'),
@@ -399,22 +405,36 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
         async ({ id, expectedName, confirm, confirmProduction }) => {
             try {
                 const orgId = await client.getDefaultOrgId();
-                const alert = await client.alerts.get(orgId, id);
-                if (!alert || alert.alertStatus === 'DELETED') {
+                const alert = await readAlertForDelete(client, orgId, id);
+                if (!alert) {
                     return mcpText({
                         accepted: false,
-                        status: alert ? 'DELETED' : 'GONE',
+                        status: 'GONE',
                         message: `Alert ${id} does not exist (any more)`,
                     });
                 }
                 const env = await alertEnvironment(client, orgId, alert);
+                const pending = alert.alertStatus === 'PENDING';
                 const preview = { action: 'delete alert', alert: normalizeAlert(alert) };
                 if (!confirm) {
                     return dryRunPreview({
                         ...preview,
+                        ...(pending ? { warnings: [CHANGE_IN_PROGRESS] } : {}),
                         ...productionFields(orgId, env, 'delete_alert'),
                         confirmation: { confirm: true, expectedName: alert.name },
                     });
+                }
+                if (pending) {
+                    return {
+                        ...mcpText({
+                            refused: true,
+                            retryLater: true,
+                            status: 'PENDING',
+                            message: CHANGE_IN_PROGRESS,
+                            id,
+                        }),
+                        isError: true as const,
+                    };
                 }
                 if (expectedName !== alert.name) {
                     return {
@@ -428,7 +448,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                 }
                 const gate = guardWrite({ orgId, env, tool: 'delete_alert', confirm, confirmProduction, preview });
                 if (gate) return gate;
-                const result = await executeDeleteAlert(client, orgId, id);
+                const result = await executeDeleteAlert(client, orgId, alert);
                 return mcpText({ id, ...result, ...productionFields(orgId, env, 'delete_alert') });
             } catch (error) {
                 return failure(error);

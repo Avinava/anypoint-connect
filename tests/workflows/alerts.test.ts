@@ -4,13 +4,16 @@ import {
     displayThreshold,
     evaluationInterval,
     normalizeAlert,
+    normalizeRuntimeManagerAlert,
     notificationsOf,
     outsideDomains,
+    parseSeverity,
+    severityLabel,
     storedThreshold,
     summarizeRecipients,
     windowMinutes,
 } from '../../src/workflows/alerts.js';
-import { apiAlert, appAlert } from '../fixtures/alerts.js';
+import { apiAlert, appAlert, runtimeManagerAlert } from '../fixtures/alerts.js';
 
 describe('alert thresholds and windows', () => {
     it('converts percent inputs to fractions for percent metrics only', () => {
@@ -84,6 +87,43 @@ describe('alert notifications', () => {
         const outside = outsideDomains(notificationsOf(appAlert()), 'someone@example.com');
         expect(outside).toEqual(['example.org']);
         expect(JSON.stringify(outside)).not.toContain('someone');
+    });
+});
+
+describe('severity', () => {
+    it('accepts 0-3 and labels, and shows labels for every family', () => {
+        expect(parseSeverity(3)).toBe(3);
+        expect(parseSeverity('low')).toBe(0);
+        expect(parseSeverity('CRITICAL')).toBe(3);
+        expect(parseSeverity('2')).toBe(2);
+        expect(() => parseSeverity(4)).toThrow('severity');
+        expect(() => parseSeverity('urgent')).toThrow('severity');
+        expect([0, 1, 2, 3].map(severityLabel)).toEqual(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
+        expect(['INFO', 'warning', 'Error'].map(severityLabel)).toEqual(['LOW', 'MEDIUM', 'HIGH']);
+    });
+});
+
+describe('normalizeRuntimeManagerAlert', () => {
+    it('reads recipients from actions, the target from condition.resources, and the event type', () => {
+        const view = normalizeRuntimeManagerAlert(runtimeManagerAlert());
+        expect(view).toEqual({
+            id: 'rm-1',
+            source: 'runtime-manager',
+            name: 'orders deploy failed',
+            enabled: true,
+            severity: 'LOW',
+            status: undefined,
+            state: undefined,
+            entity: { type: 'application', name: 'orders-sapi' },
+            condition: { event: 'deployment-failed' },
+            conditionType: 'event',
+            isSystem: false,
+            productName: 'cloudhub',
+            recipientCount: 3,
+        });
+        expect(JSON.stringify(view)).not.toContain('example.com');
+        const revealed = normalizeRuntimeManagerAlert(runtimeManagerAlert(), { reveal: true });
+        expect(revealed.recipientDomains).toEqual(['example.com']);
     });
 });
 

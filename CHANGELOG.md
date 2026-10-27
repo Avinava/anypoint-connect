@@ -52,16 +52,24 @@
   (`AlertsApi`, `client.alerts`):
   - `list_alerts` (`environment?`, `entityType?`, `app?`, `apiInstanceId?`, `name?`, `status?`,
     `source` `monitoring|runtime-manager|all`, `revealRecipients?`) returns alerts normalized to `id`,
-    `source`, `name`, `enabled`, `severity`, `status`, `state`, `entity`, `condition` and a recipient count
-    and domains; Runtime Manager event alerts are read only. `get_alert` returns one.
+    `source`, `name`, `enabled`, `severity` (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL` for every family),
+    `status`, `state`, `entity`, `condition` and a recipient count; domains and recipients only with
+    `revealRecipients`. Runtime Manager event alerts are read only, from their `condition` (event type and
+    resources) and `actions` (user IDs and addresses). Deleted alerts never appear. `get_alert` returns
+    one.
   - `create_alert` resolves the target from CloudHub 2.0 or API Manager, converts percent thresholds to
     fractions, validates ranges, takes explicit notifications only (written as `notifications`, read back
     as `notificationTemplates`), creates disabled by default, warns about recipients outside your email
-    domain, and refuses a duplicate name on the same target unless `allowDuplicate`.
-  - `update_alert` and `set_alert_enabled` read the alert, merge the change and send the full body;
-    a `PENDING` alert is refused with a retry-later message.
-  - `delete_alert` is bound to `expectedName` and reports `accepted` and `status`, never "deleted" while
-    the alert is `PENDING`.
+    domain, and refuses a duplicate name on the same target unless `allowDuplicate`. Severity is 0-3 or a
+    label. For an API target the preview shows only the instance ID passed.
+  - `update_alert` and `set_alert_enabled` read the alert, merge the change and send the full body,
+    keeping every writable field; notification changes are detected on the full bodies. A `PENDING`
+    alert is refused with a retry-later message.
+  - `delete_alert` is bound to `expectedName`, reads the alert from the list first (refusing a `PENDING`
+    one), and verifies the deletion from the list, since a read of one alert can lag. It reports
+    `accepted` and `status`, and says deleted only once the list no longer shows the alert.
+  - Platform error text is sanitized: email addresses keep only their domain, token-like values are
+    masked.
   - Writes preview by default and use the production guard of the alert's own environment. The new write
     tools are pre-approvable; `"all-mutating"` covers all but `delete_alert`, which must be named.
   - A family that answers 404 or 403 is reported as unsupported. `get_api_alerts` also returns the

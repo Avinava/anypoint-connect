@@ -9,7 +9,8 @@ Slack. The MCP tools and `anc alerts` list, read, create, change, enable, disabl
     (`/observability/api/v1/organizations/{orgId}/alerts`). It is not publicly documented and can change
     without notice. When an organization or token cannot reach it (HTTP 404 or 403), the tools report the
     family as unsupported instead of returning "no alerts". Runtime Manager event alerts
-    (`/armui/api/v1/alerts`) are read only, and their shape is read best effort.
+    (`/armui/api/v1/alerts`) are read only. Right after a change the alert list and a read of one alert
+    can disagree; the tools trust the list for deletion.
 
 ## Read
 
@@ -24,14 +25,20 @@ Every alert is normalized to:
 | Field | Meaning |
 | --- | --- |
 | `id`, `source` | Alert ID; `monitoring` or `runtime-manager` |
-| `name`, `enabled`, `severity` | As stored. Names are not unique |
-| `status` | `PENDING` (being provisioned or deleted), `ACTIVE`, `DELETED` |
+| `name`, `enabled` | As stored. Names are not unique |
+| `severity` | One label set for every family: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Monitoring stores 0-3 (also shown as `severityLevel`); Runtime Manager and older alerts use words such as `INFO` or `warning`, mapped to the same labels |
+| `status` | `PENDING` (a change in progress) or `ACTIVE` |
 | `state` | `OK` or `ALERTING` |
 | `entity` | `type` (`application`, `api`, `server`), `name`, `deploymentType` (`CLOUDHUB`, `CLOUDHUB2`, `RTF`, `HYBRID`), `environment` |
-| `condition` | `metric`, `operator`, `threshold` and `unit` (percent for cpu and memory), `windowMinutes` |
-| `recipientCount`, `recipientDomains`, `slackChannels` | Recipients are masked to a count and domains. `revealRecipients: true` (CLI `--reveal`) shows them |
+| `condition` | `metric`, `operator`, `threshold` and `unit` (percent for cpu and memory), `windowMinutes`; for Runtime Manager alerts, `event` (for example `deployment-failed`) |
+| `recipientCount`, `slackChannels` | Recipients are masked to counts. `revealRecipients: true` (CLI `--reveal`) adds the recipients and their `recipientDomains`; domains alone can identify clients, so they are hidden otherwise |
 
-Deleted alerts are hidden unless `status: "DELETED"` is asked for.
+Deleted alerts do not appear: the platform drops them from the list, so there is no `DELETED` filter.
+
+Runtime Manager event alerts are read from `condition{type, resourceType, resources[]}` (the target is the
+resources, `mc-application` meaning an app) and `actions[]{type, userIds[], emails[], subject, content}`
+(the recipient count is user IDs plus addresses), with `conditionType`, `isSystem` and `productName` passed
+through.
 
 ## Metrics
 
@@ -90,8 +97,15 @@ create_alert({
 - `set_alert_enabled({ id, enabled })` switches an alert on or off.
 - A `PENDING` alert cannot be changed; the tool refuses with a retry-later message.
 - `delete_alert({ id, expectedName })` is bound like `delete_app`: preview first, then `confirm: true` with
-  the name from the preview. Deletion is asynchronous. The result reports `accepted` and `status`; it says
-  deleted only when the alert is gone or `DELETED`, never while it is `PENDING`.
+  the name from the preview. The alert is read from the list first: a `PENDING` alert (a change in
+  progress) is refused with retry later, and the dry run warns. The platform can answer 404 for such an
+  alert while still listing it, so a 404 alone never counts as deleted. After the delete, the result
+  is verified from the list, because a read of the single alert can keep answering `ACTIVE`: `GONE`
+  with `verifiedAbsent: true` once the list no longer shows it (also when DELETE answers 404 and the
+  list agrees), otherwise `accepted` with `PENDING` or `ACTIVE`, never "deleted".
+- Severity is given as 0-3 or as `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`.
+- For an API target, the create preview names only the instance ID you passed; the API name and
+  endpoint resolved from API Manager are sent but not printed.
 
 ## Safety
 

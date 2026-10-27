@@ -98,14 +98,13 @@ describe('alert MCP tools', () => {
         it('normalizes, filters and masks recipients by default', async () => {
             const body = parse(await handlers.get('list_alerts')!({ entityType: 'application', source: 'monitoring' }));
             expect(body.alerts).toHaveLength(1);
-            expect(body.alerts[0]).toMatchObject({
-                id: 'alert-1',
-                recipientCount: 2,
-                recipientDomains: ['example.com', 'example.org'],
-            });
-            expect(JSON.stringify(body)).not.toContain('ops@example.com');
+            expect(body.alerts[0]).toMatchObject({ id: 'alert-1', recipientCount: 2, severity: 'MEDIUM' });
+            // Domains can identify clients: hidden unless revealRecipients
+            expect(body.alerts[0].recipientDomains).toBeUndefined();
+            expect(JSON.stringify(body)).not.toContain('example.org');
             const revealed = parse(await handlers.get('get_alert')!({ id: 'alert-1', revealRecipients: true }));
             expect(revealed.notifications[0].recipients).toContain('ops@example.com');
+            expect(revealed.recipientDomains).toEqual(['example.com', 'example.org']);
         });
 
         it('reports an unsupported family cleanly', async () => {
@@ -174,16 +173,40 @@ describe('alert MCP tools', () => {
                 }),
             );
             expect(body.payload.settings).toMatchObject({ aggregationFunction: 'SUM', threshold: 5 });
+            // The preview names only what the caller passed: the instance ID, not the resolved API name or endpoint.
             expect(body.payload.entity).toEqual({
                 entityType: 'api',
                 subOrgId: ORG,
                 environmentId: SANDBOX.id,
                 environmentName: SANDBOX.name,
-                apiName: 'orders-api',
+                apiName: '(resolved from API Manager)',
                 apiInstanceId: '1001',
-                endpoint: 'https://orders.example.com/api',
                 filters: [{ property: 'RESPONSE_CODE', operator: 'IN', values: ['500'] }],
             });
+            expect(JSON.stringify(body)).not.toContain('orders-api');
+            expect(JSON.stringify(body)).not.toContain('orders.example.com');
+
+            // The platform still receives the resolved entity.
+            await handlers.get('create_alert')!({
+                ...createArgs,
+                name: 'orders api errors',
+                target: { apiInstanceId: '1001' },
+                metric: 'api_response_code_count',
+                threshold: 5,
+                apiFilters: { responseCodes: ['500'] },
+                confirm: true,
+            });
+            expect(http.post.mock.calls[0][1].entity).toMatchObject({
+                apiName: 'orders-api',
+                endpoint: 'https://orders.example.com/api',
+            });
+        });
+
+        it('takes severity by number 0-3 or by label', async () => {
+            expect(
+                parse(await handlers.get('create_alert')!({ ...createArgs, severity: 'CRITICAL' })).payload.severity,
+            ).toBe(3);
+            expect(parse(await handlers.get('create_alert')!({ ...createArgs, severity: 0 })).payload.severity).toBe(0);
         });
 
         it('refuses a mismatched metric and target, and an API metric that needs a filter', async () => {
@@ -381,6 +404,53 @@ describe('alert MCP tools', () => {
             expect(result.content[0].text).not.toContain('secret.person@example.net');
             expect(result.content[0].text).not.toContain(token);
             expect(result.content[0].text).toContain('example.net');
+        });
+    });
+
+    describe('delete_alert, regression from live sandbox runs', () => {
+        const confirmed = { id: 'alert-1', confirm: true, expectedName: 'orders memory' };
+
+        it('refuses a PENDING alert even when GET answers 404, and the dry run warns', async () => {
+            serve([appAlert({ alertStatus: 'PENDING' })]);
+            const listOnly = http.get.getMockImplementation()!;
+            http.get.mockImplementation(async (url: string) => {
+                if (url.startsWith(`${BASE}?`)) return listOnly(url);
+                throw httpError(404, { message: 'Alert not found' });
+            });
+            const preview = parse(await handlers.get('delete_alert')!({ id: 'alert-1' }));
+            expect(preview.dryRun).toBe(true);
+            expect(preview.warnings[0]).toContain('in progress');
+            const refused = parse(await handlers.get('delete_alert')!(confirmed));
+            expect(refused).toMatchObject({ refused: true, retryLater: true, status: 'PENDING' });
+            expect(http.delete).not.toHaveBeenCalled();
+        });
+
+        it('verifies from the list when GET keeps answering ACTIVE after the delete', async () => {
+            const original = appAlert();
+            http.delete.mockImplementation(async () => {
+                delete stored['alert-1'];
+            });
+            const listOnly = http.get.getMockImplementation()!;
+            http.get.mockImplementation(async (url: string) =>
+                url.startsWith(`${BASE}?`) ? listOnly(url) : { data: original },
+            );
+            const result = parse(await handlers.get('delete_alert')!(confirmed));
+            expect(result).toMatchObject({ accepted: true, status: 'GONE', verifiedAbsent: true });
+        });
+
+        it('treats a 404 on DELETE with the alert absent from the list as gone', async () => {
+            const original = appAlert();
+            const listOnly = http.get.getMockImplementation()!;
+            http.get.mockImplementation(async (url: string) =>
+                url.startsWith(`${BASE}?`) ? listOnly(url) : { data: original },
+            );
+            http.delete.mockImplementation(async () => {
+                delete stored['alert-1'];
+                throw httpError(404, { message: 'Alert not found' });
+            });
+            const result = parse(await handlers.get('delete_alert')!(confirmed));
+            expect(result).toMatchObject({ accepted: false, status: 'GONE', verifiedAbsent: true });
+            expect(result.message).toContain('Already gone');
         });
     });
 
