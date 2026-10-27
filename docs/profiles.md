@@ -62,26 +62,17 @@ Without a convention, the coordinates come from the JAR. `suggest_asset_name` an
 detect the pattern of the asset an app runs today, for example `{app}-{pomVersion}-{timestamp}` at `1.0.0`,
 and show the `conventions` block to add. A detected pattern is never applied until it is written here.
 
-## Production pre-approval
+## Production approvals are not project settings
 
-The same file can approve production writes ahead of time for named environments and tools, so
-`confirmProduction` (MCP) and the typed phrase (CLI) are not asked again until the entry expires:
+`.anypoint-connect.json` is part of the repository, so it cannot grant production access. Production
+pre-approvals and unmarked-artifact allowances live in `~/.anypoint-connect/production-approvals.json`,
+bound to organization and environment IDs, and are written with `set_production_preapproval` and
+`set_unmarked_artifact_allowance`. A `productionPreapproval` left in a project file is ignored and
+reported by `get_project_profile`. See the [safety model](safety.md#production-pre-approval).
 
-```json
-{
-    "profile": "org-a",
-    "productionPreapproval": {
-        "environments": ["Production"],
-        "tools": ["update_app_artifact", "restart_app"],
-        "expires": "2026-12-31T00:00:00Z"
-    }
-}
-```
-
-Set or clear it with `set_project_profile` (`productionPreapproval`, `clearProductionPreapproval`); the
-change previews until `confirm: true`, and the file's other fields are kept. `get_project_profile` and
-`whoami` show the active entries. The rules, the tool names and what stays required are in the
-[safety model](safety.md#production-pre-approval).
+`set_project_profile` and `anc config use` update the nearest `.anypoint-connect.json` (walking up from
+the working directory) and keep its other fields, so a nested directory does not get a second file that
+shadows the first.
 
 ## Managing configuration
 

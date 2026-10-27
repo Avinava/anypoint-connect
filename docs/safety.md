@@ -16,7 +16,7 @@ the same rules. Direct library calls do not pass through them; see the [library 
 | Design Center project creation, file sync, Exchange publication | A `preview_*` tool returns a single-use token; the paired write tool consumes it | `anc dc push` and `anc dc publish` preview, then ask; `--yes` skips the question |
 | API smoke test with a method other than GET, HEAD or OPTIONS | Preview unless `confirm: true`; production also needs `confirmProduction: true` (`smoke_test_api`) | `anc api smoke` asks unless `--yes`; production needs `--allow-production` |
 | Object Store writes, MQ publish, project-profile binding | Applied on call (`put_store_value`, `delete_store_value`, `publish_mq_message`, `set_project_profile` with `profile` only) | — |
-| Production pre-approval | `set_project_profile` with `productionPreapproval` or `clearProductionPreapproval` previews unless `confirm: true` | Edit `.anypoint-connect.json` |
+| Production pre-approval, unmarked-artifact allowance | `set_production_preapproval` and `set_unmarked_artifact_allowance` preview unless `confirm: true`; stored only in the user-level `~/.anypoint-connect/production-approvals.json` | Same file |
 | Local files: `download_logs` `outputFile`, `get_client_application` `writeCredentialsTo` | Written only inside the project root; an existing file needs `overwrite` | Same rule for `anc api client-app --write-credentials` |
 | Everything else | Read-only | Read-only |
 
@@ -143,29 +143,43 @@ against the allowed sizes.
 coordinates to use with `deploy_app` (new app) or `update_app_artifact` (existing app). Nothing is
 uploaded by a preview.
 
-### Stripped builds never reach production
+### Build markers gate production
 
 mule-build 3.2.0 and later write `META-INF/mule-build/build-info.json` into every jar:
 
 ```json
-{ "schemaVersion": 1, "tool": "mule-build", "toolVersion": "3.2.0", "stripped": true, "productionDeployable": false }
+{ "schemaVersion": 1, "tool": "mule-build", "toolVersion": "3.2.0", "stripped": false, "productionDeployable": true }
 ```
 
-The marker is read in `deploy_jar`, `publish_app_jar`, `anc deploy`, and in `update_app`,
-`update_app_artifact` and `anc apps update` when the local jar is given as `jarPath` (CLI: `--jar`).
-Every preview reports it as `buildProvenance`.
+Which bytes are checked:
+
+- **`deploy_jar`, `anc deploy`**: the local jar, which is then published bound to its SHA-256.
+- **`deploy_app`, `update_app`, `update_app_artifact`, `rollback_app`, `anc apps update`**: for a
+  production target, the artifact the change selects is downloaded from Exchange and its own marker is
+  checked, whether or not a local jar is given. A download failure or an Exchange MD5 mismatch refuses
+  the change.
+- **`jarPath`** (CLI: `--jar`) on those tools binds the change to a local jar: its SHA-256 must equal the
+  Exchange artifact's, in any environment, or the change is refused.
+- **`publish_app_jar`**: the local jar, against `environment` when given; without it, only warnings.
+
+Previews report `buildProvenance`, `artifactVerification` (`checked`, `ref`, `exchangeSha256`,
+`localSha256`) and, for production, `provenancePolicy` (`unmarkedAllowed`, `source`, `expires`).
 
 | Marker | Production target | Other target |
 | --- | --- | --- |
-| `productionDeployable: true` | allowed | allowed |
-| `productionDeployable: false` (for example, secure properties stripped) | refused in the preview and on confirm | allowed, with a warning |
-| present but unreadable or incomplete | refused | allowed, with a warning |
-| absent (older builds, other tools) | allowed; the preview notes "build provenance unknown" | same |
+| `schemaVersion` 1, `tool` `mule-build`, `stripped: false`, `productionDeployable: true` | allowed | allowed |
+| `stripped: true`, `productionDeployable: false` | refused, no override | allowed, with a warning |
+| another schema version or tool, `productionDeployable` not equal to `!stripped`, unreadable, incomplete | refused, no override | allowed, with a warning |
+| absent (older builds, other pipelines) | refused as "build provenance unknown", unless an unmarked-artifact allowance covers the organization and environment | allowed, with a note |
 
-There is no override flag, and a production pre-approval does not waive the refusal. Rebuild a
-production-deployable jar instead. `publish_app_jar` refuses only when `environment` names a production
-environment; without it, a non-deployable jar is published with a warning. For the two-step flow, pass the
-same `jarPath` to `update_app_artifact`.
+Neither a pre-approval nor an allowance waives a refusal of a marked or invalid jar.
+
+**Unmarked-artifact allowance.** For artifacts built by another pipeline, allow unmarked jars for one
+organization and environment with `set_unmarked_artifact_allowance` (`environment`, `expires?`,
+`thisProjectOnly?`, `clear?`, `confirm?`). It is stored in the same user-level file, under
+`unmarkedArtifactAllowances`, with the same fields as a pre-approval except `tools`.
+
+Changes made outside these tools, and direct library calls, are not checked.
 
 Exchange calls the coordinate `assetId`; CloudHub 2.0 calls the same value `artifactId`. They are mapped
 explicitly at the deploy boundary.
@@ -254,7 +268,10 @@ Deletion removes the deployment only. The Exchange artifact and unrelated Anypoi
 An environment is treated as production when the platform flags it as production or its name contains
 `production` (or is `prod`). Classification drives the extra steps:
 
-- **MCP:** every write in production needs `confirmProduction: true` in addition to `confirm: true`.
+- **MCP:** every write in production needs `confirmProduction: true` in addition to `confirm: true`,
+  unless a [pre-approval](#production-pre-approval) covers it.
+- **Artifacts:** production takes only jars whose build marker says production deployable; see
+  [Build markers gate production](#build-markers-gate-production).
 - **CLI:** deploys, updates, settings changes, restarts, stops, starts and scales in production require
   typing `deploy to production`.
 - **Deletions:** production deletions require a separate acknowledgement in both surfaces.
@@ -263,39 +280,52 @@ Add `--force` in CI only when the operation is intended and reviewed.
 
 ### Production pre-approval
 
-A project can approve production writes ahead of time in `.anypoint-connect.json`:
+You can approve production writes ahead of time. Approvals live only in the user-level store
+`~/.anypoint-connect/production-approvals.json` (mode 0600), outside every repository, so a branch cannot
+plant or widen one. Each entry is bound to a resolved organization ID and environment ID:
 
 ```json
 {
-  "profile": "default",
-  "productionPreapproval": {
-    "environments": ["Production"],
-    "tools": ["update_app", "deploy_jar"],
-    "expires": "2026-12-31T00:00:00Z"
-  }
+  "productionPreapprovals": [
+    {
+      "orgId": "<organization id>",
+      "environmentId": "<environment id>",
+      "environmentName": "Production",
+      "tools": ["update_app", "deploy_jar"],
+      "expires": "2026-12-31T00:00:00Z",
+      "projectPath": "/path/to/repo"
+    }
+  ]
 }
 ```
 
-- **`environments`**: exact environment names (case-insensitive) or IDs. Wildcards are refused.
+- **`orgId`, `environmentId`**: matched exactly. Wildcards are refused. Another organization (other
+  credentials or profile) never matches, so approvals do not carry across organizations.
+- **`environmentName`**: display only; never matched.
 - **`tools`**: MCP tool names, or `"all-mutating"`. Pre-approvable: `deploy_jar`, `deploy_app`,
   `update_app`, `update_app_artifact`, `rollback_app`, `update_app_settings`, `restart_app`, `scale_app`,
   `stop_app`, `start_app`, `smoke_test_api`, `delete_app`. `"all-mutating"` covers all of them except
   `delete_app`, which is covered only when named.
 - **`expires`**: optional ISO 8601 date-time. From then on the entry is ignored.
-- The field can also hold a list of such entries. Invalid entries are ignored and reported by
-  `get_project_profile`.
+- **`projectPath`**: optional project root; the entry then applies only to tools run in that project.
 
-When an entry covers the tool and the environment, `confirmProduction: true` is not required, and the CLI
-skips the typed phrase. The CLI matches its commands to the same names: `anc deploy` is `deploy_jar`,
-`anc apps update` is `update_app`, `anc apps settings set` is `update_app_settings`, `anc apps restart`,
-`stop`, `start` and `scale` are `restart_app`, `stop_app`, `start_app` and `scale_app`.
-`anc apps delete` and `anc api smoke` keep their `--allow-production` flag.
+Write entries with `set_production_preapproval` (`environment`, `tools`, `expires?`, `thisProjectOnly?`,
+`clear?`, `confirm?`). It resolves the environment to its IDs, refuses a non-production environment, and
+previews until `confirm: true`. A `productionPreapproval` found in a project's `.anypoint-connect.json` is
+ignored; `get_project_profile`, `whoami` and production previews report it as `ignoredProjectApproval` /
+`preapprovalWarning`.
+
+When an entry covers the organization, the environment and the tool, `confirmProduction: true` is not
+required, and the CLI skips the typed phrase (or `--allow-production` for `anc apps delete`, which needs
+`delete_app` named, and `anc api smoke`). The CLI matches its commands to the same names: `anc deploy` is
+`deploy_jar`, `anc apps update` is `update_app`, `anc apps settings set` is `update_app_settings`,
+`anc apps restart`, `stop`, `start` and `scale` are `restart_app`, `stop_app`, `start_app` and
+`scale_app`, `anc apps delete` is `delete_app`, and `anc api smoke` is `smoke_test_api`.
 
 Nothing else changes. Previews are still the default, `confirm: true` is still required, `expectedSha256`
-and `expectedDeploymentId` are still checked, and refusals such as a stripped jar still apply. Production
-previews and results carry `production: true`, `productionPreapproved` and, when it applied,
-`preapprovalSource` and `preapprovalExpires`. `get_project_profile` and `whoami` show the active entries.
-Setting or clearing it with `set_project_profile` is a guarded change: it previews until `confirm: true`.
+and `expectedDeploymentId` are still checked, and build-marker refusals still apply. Production previews
+and results carry `production: true`, `productionPreapproved` and, when it applied, `preapprovalSource` and
+`preapprovalExpires`. `get_project_profile` and `whoami` show the entries.
 
 ## Secrets in output
 

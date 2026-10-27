@@ -60,14 +60,14 @@ Enter the Client Secret through `anc config init`, not `anc config set`, so it s
 | --- | --- |
 | `anc apps list` | `-e, --env <name>` (required) |
 | `anc apps status <appName>` | `-e, --env <name>` (required), `--wait` polls until the app settles or fails, `--timeout <seconds>` |
-| `anc apps update <appName>` | `-e, --env <name>` (required), `--version`, `--artifact-id`, `--group-id`, `--jar <path>` (checks the jar's build marker; refused for production when not production deployable), runtime flags, settings flags, rollout flags, `--dry-run`, `--force` |
+| `anc apps update <appName>` | `-e, --env <name>` (required), `--version`, `--artifact-id`, `--group-id`, `--jar <path>` (the change is refused unless this jar's SHA-256 equals the Exchange artifact being deployed; production changes always check the Exchange artifact's build marker), runtime flags, settings flags, rollout flags, `--dry-run`, `--force` |
 | `anc apps settings get <appName>` | `-e, --env <name>` (required), `--reveal` shows secret-looking plain values |
 | `anc apps settings set <appName>` | `-e, --env <name>` (required), settings flags, `--stop-start`, `--no-wait`, `--timeout`, `--dry-run`, `--force` |
 | `anc apps restart <appName>` | `-e, --env <name>` (required); stops, waits, starts. `--no-wait`, `--timeout`, `--dry-run`, `--force` |
 | `anc apps stop <appName>` / `anc apps start <appName>` | `-e, --env <name>` (required), `--wait`, `--timeout`, `--force` |
 | `anc apps scale <appName>` | `-e, --env <name>` (required), `--replicas <n>` (required), `--force` |
 | `anc apps compare <appName>` | `-e, --env <name>` (required), `--repo <path>` with `--ref <ref>` (default `HEAD`) and `--working-tree`, or `--jar <path>`. Exits 1 when they differ |
-| `anc apps delete <appName>` | `-e, --env <name>` (required), `--confirm <deploymentId>`, `--allow-production` |
+| `anc apps delete <appName>` | `-e, --env <name>` (required), `--confirm <deploymentId>`, `--allow-production` (not needed when a [pre-approval](safety.md#production-pre-approval) names `delete_app`) |
 
 Shared flags:
 
@@ -234,7 +234,7 @@ an unknown API is reported as an error.
 | `anc api alerts <apiName>` | Alerts configured for the API |
 | `anc api contracts <apiName>` | Contracts: client application, tier and status |
 | `anc api client-app <id>` | A client application, secret masked. `--write-credentials <file>` writes `CLIENT_ID`/`CLIENT_SECRET` to a mode-0600 file inside the project; `--overwrite` |
-| `anc api smoke <apiName>` | Call the API with its client credentials: `--path` or `--url`, `-X, --method`, `--client-app <id>`, `-H, --header`, `-d, --data`, `--expect <status>`, `--timeout <ms>`. Methods other than GET ask unless `-y, --yes`; production needs `--allow-production`. Exits 1 when the status does not match |
+| `anc api smoke <apiName>` | Call the API with its client credentials: `--path` or `--url`, `-X, --method`, `--client-app <id>`, `-H, --header`, `-d, --data`, `--expect <status>`, `--timeout <ms>`. Methods other than GET ask unless `-y, --yes`; production needs `--allow-production` unless a pre-approval covers `smoke_test_api`. Exits 1 when the status does not match |
 
 ```bash
 anc api list --env Sandbox

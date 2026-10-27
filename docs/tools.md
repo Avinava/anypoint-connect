@@ -15,7 +15,7 @@ Start here to confirm access and discover environments.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `whoami` | read | — | Returns the currently authenticated Anypoint Platform user, their username, email, organization name, and org ID, plus the active production pre-approval of this project (environments, tools, expiry). |
+| `whoami` | read | — | Returns the currently authenticated Anypoint Platform user, their username, email, organization name, and org ID, plus the user-level production pre-approvals and unmarked-artifact allowances for this organization. |
 | `list_environments` | read | — | Lists all Anypoint environments in the organization (e.g. Development, Sandbox, Production). |
 | `get_entitlements` | read | — | Returns the platform features and capacity licensed for this organization: vCore allocations (production/sandbox/design), Anypoint MQ quotas, Object Store limits, API Manager, monitoring, Runtime Fabric, autoscaling, alerts, and subscription type/expiration. |
 
@@ -25,8 +25,10 @@ Bind a workspace to a named credential profile.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `get_project_profile` | read | — | Returns the currently active Anypoint profile for this project, how it was resolved (flag, env, project-file, or default), lists all available profiles, and shows the production pre-approval of .anypoint-connect.json (environments, tools, expiry). |
-| `set_project_profile` | write · confirm | `profile?`, `directory?`, `productionPreapproval?`, `clearProductionPreapproval?`, `confirm?` | Binds the current project directory to a named Anypoint profile by writing .anypoint-connect.json, and sets or clears its production pre-approval. |
+| `get_project_profile` | read | — | Returns the currently active Anypoint profile for this project, how it was resolved (flag, env, project-file, or default), lists all available profiles, and shows the user-level production policy: production pre-approvals and unmarked-artifact allowances, each bound to an organization and environment ID. |
+| `set_project_profile` | write · immediate | `profile`, `directory?` | Binds the current project directory to a named Anypoint profile by writing .anypoint-connect.json (the nearest one, walking up, unless directory is given). |
+| `set_production_preapproval` | write · confirm | `environment`, `expires?`, `thisProjectOnly?`, `clear?`, `confirm?`, `tools?` | Pre-approves production writes for one organization and environment (stored by ID in the user-level ~/.anypoint-connect/production-approvals.json, never in the repository), so the named tools do not need confirmProduction (CLI: the typed phrase) until it expires. |
+| `set_unmarked_artifact_allowance` | write · confirm | `environment`, `expires?`, `thisProjectOnly?`, `clear?`, `confirm?` | Allows jars without a mule-build build marker (built by another pipeline) to be deployed to one production organization and environment, stored by ID in the user-level ~/.anypoint-connect/production-approvals.json. |
 
 ## Applications — read
 
@@ -50,7 +52,7 @@ Publish and deploy artifacts, and change existing apps in one update: artifact, 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
 | `deploy_jar` | ⚠️ write · confirm | `jarPath`, `appName`, `environment`, `assetId?`, `assetVersion?`, `groupId?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `replicas?`, `region?`, `vcores?`, `jvmArgs?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `expectedSha256?`, `confirm?`, `confirmProduction?` | Publishes a locally built Mule application JAR to Exchange and deploys it to CloudHub 2.0: creates the app if it does not exist, otherwise updates it in one change (artifact plus any runtime or settings change). |
-| `deploy_app` | ⚠️ write · confirm | `appName`, `environment`, `groupId`, `artifactId`, `version`, `runtime?`, `javaVersion?`, `releaseChannel?`, `replicas?`, `region?`, `vcores?`, `jvmArgs?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Deploys an artifact already in Exchange (groupId:artifactId:version) to CloudHub 2.0. |
+| `deploy_app` | ⚠️ write · confirm | `appName`, `environment`, `groupId`, `artifactId`, `version`, `jarPath?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `replicas?`, `region?`, `vcores?`, `jvmArgs?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Deploys an artifact already in Exchange (groupId:artifactId:version) to CloudHub 2.0. |
 | `update_app` | ⚠️ write · confirm | `appName`, `environment`, `version?`, `artifactId?`, `groupId?`, `packaging?`, `jarPath?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Changes an existing CloudHub 2.0 application in one call: artifact version, Mule runtime, properties and update strategy together, as one new spec. |
 | `update_app_artifact` | ⚠️ write · confirm | `appName`, `environment`, `version`, `artifactId?`, `groupId?`, `packaging?`, `jarPath?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `mode?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Moves an existing CloudHub 2.0 application to another artifact version, optionally with a runtime change in the same update. |
 | `rollback_app` | ⚠️ write · confirm | `appName`, `environment`, `toVersion?`, `mode?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Rolls an existing CloudHub 2.0 application back to a previous artifact; runtime, target, replicas and settings are preserved. |
@@ -163,7 +165,7 @@ Who changed what, and when.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `get_audit_log` | read | `hoursBack?`, `actions?`, `objectTypes?`, `limit?`, `platformClientIds?` | Queries the Anypoint Platform audit log for recent changes: deployments, policy updates, user actions, configuration changes. |
+| `get_audit_log` | read | `hoursBack?`, `actions?`, `objectTypes?`, `limit?` | Queries the Anypoint Platform audit log for recent changes: deployments, policy updates, user actions, configuration changes. |
 
 ## Anypoint MQ
 

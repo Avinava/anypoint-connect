@@ -76,9 +76,9 @@ Every MCP tool is listed in the [tool catalog](tools.md); every command is in th
 Every application change previews by default. Publishing binds the exact JAR bytes, a change to an
 existing app carries only what was asked for and checks the runtime first, secret values never pass
 through the conversation, deletion is bound to the deployment ID that was inspected, Design Center writes
-need a single-use preview token, and production needs an additional acknowledgement or a scoped
-pre-approval in the project file. A jar whose build marks it not production deployable is refused for
-production. Read the [safety model](safety.md) before automating a change.
+need a single-use preview token, and production needs an additional acknowledgement or a user-level
+pre-approval bound to the organization and environment. Production takes only jars whose build marker
+says production deployable, checked on the artifact actually deployed. Read the [safety model](safety.md) before automating a change.
 
 <div class="anc-note" markdown="1">
 

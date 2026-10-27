@@ -234,9 +234,10 @@ get_audit_log({ "hoursBack": 72, "objectTypes": ["Application"], "actions": ["Cr
 Each entry carries `actorClass`: `platform-patch` (platform staff or the automatic patcher modifying an
 app), `platform-replica` (a replica restarted or moved by the platform), `platform-infrastructure` (Patch
 Fabric, Patch Network) or `user-or-pipeline`, plus the `actorRule` that matched. `summary.byClass` counts
-the returned entries per class. Pass `platformClientIds` when the platform patcher appears under a client
-ID in your organization. Keep the filters: an unfiltered query over several days can return more entries
-than one response holds, and the response then says how many matched.
+the returned entries per class. Every platform class needs a recognized platform identity (a staff or
+service user name, or the patcher's client name); a connected app or pipeline with no user stays
+`user-or-pipeline`. Keep the filters: an unfiltered query over several days can return more entries than
+one response holds, and the response then says how many matched.
 
 ## Update an API specification in Design Center
 
