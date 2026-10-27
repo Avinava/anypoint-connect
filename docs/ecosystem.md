@@ -49,6 +49,13 @@ same state names as [Access readiness](readiness.md).
 
 ## Verified artifact handoff
 
+mule-build 3.2.0 and later record how a jar was built in `META-INF/mule-build/build-info.json`,
+including `stripped` and `productionDeployable`. Production takes only jars marked production
+deployable: `deploy_jar` checks the local jar, and `deploy_app`, `update_app`, `update_app_artifact` and
+`rollback_app` download the selected artifact from Exchange and check its marker. When the publish and
+deploy steps are separate, pass the same `jarPath` to `update_app_artifact` to bind the deploy to the
+built file by SHA-256. See [Build markers gate production](safety.md#build-markers-gate-production).
+
 For application publication, carry `jarPath` and the build's verified `artifact` fields into
 `publish_app_jar` or `deploy_jar`. Pass `artifact.artifactId` as `assetId`, `artifact.version`
 as `assetVersion`, and `artifact.sha256` as `expectedSha256`. Resolve the Exchange group explicitly

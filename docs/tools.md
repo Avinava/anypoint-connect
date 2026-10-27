@@ -15,18 +15,20 @@ Start here to confirm access and discover environments.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `whoami` | read | — | Returns the currently authenticated Anypoint Platform user, their username, email, organization name, and org ID. |
+| `whoami` | read | — | Returns the currently authenticated Anypoint Platform user, their username, email, organization name, and org ID, plus the user-level production pre-approvals and unmarked-artifact allowances for this organization. |
 | `list_environments` | read | — | Lists all Anypoint environments in the organization (e.g. Development, Sandbox, Production). |
 | `get_entitlements` | read | — | Returns the platform features and capacity licensed for this organization: vCore allocations (production/sandbox/design), Anypoint MQ quotas, Object Store limits, API Manager, monitoring, Runtime Fabric, autoscaling, alerts, and subscription type/expiration. |
 
-## Project profile
+## Project profile and production policy
 
-Bind a workspace to a named credential profile.
+Bind a workspace to a named credential profile, and manage user-level production pre-approvals and unmarked-artifact allowances.
 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
-| `get_project_profile` | read | — | Returns the currently active Anypoint profile for this project, how it was resolved (flag, env, project-file, or default), and lists all available profiles. |
-| `set_project_profile` | write · immediate | `profile`, `directory?` | Binds the current project directory to a named Anypoint profile by writing .anypoint-connect.json. |
+| `get_project_profile` | read | — | Returns the currently active Anypoint profile for this project, how it was resolved (flag, env, project-file, or default), lists all available profiles, and shows the user-level production policy: production pre-approvals and unmarked-artifact allowances, each bound to an organization and environment ID. |
+| `set_project_profile` | write · immediate | `profile`, `directory?` | Binds the current project directory to a named Anypoint profile by writing .anypoint-connect.json (the nearest one, walking up, unless directory is given). |
+| `set_production_preapproval` | write · confirm | `environment`, `expires?`, `thisProjectOnly?`, `clear?`, `confirm?`, `tools?` | Pre-approves production writes for one organization and environment (stored by ID in the user-level ~/.anypoint-connect/production-approvals.json, never in the repository), so the named tools do not need confirmProduction (CLI: the typed phrase) until it expires. |
+| `set_unmarked_artifact_allowance` | write · confirm | `environment`, `expires?`, `thisProjectOnly?`, `clear?`, `confirm?` | Allows jars without a mule-build build marker (built by another pipeline) to be deployed to one production organization and environment, stored by ID in the user-level ~/.anypoint-connect/production-approvals.json. |
 
 ## Applications — read
 
@@ -50,9 +52,9 @@ Publish and deploy artifacts, and change existing apps in one update: artifact, 
 | Tool | Access | Inputs | Summary |
 | --- | --- | --- | --- |
 | `deploy_jar` | ⚠️ write · confirm | `jarPath`, `appName`, `environment`, `assetId?`, `assetVersion?`, `groupId?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `replicas?`, `region?`, `vcores?`, `jvmArgs?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `expectedSha256?`, `confirm?`, `confirmProduction?` | Publishes a locally built Mule application JAR to Exchange and deploys it to CloudHub 2.0: creates the app if it does not exist, otherwise updates it in one change (artifact plus any runtime or settings change). |
-| `deploy_app` | ⚠️ write · confirm | `appName`, `environment`, `groupId`, `artifactId`, `version`, `runtime?`, `javaVersion?`, `releaseChannel?`, `replicas?`, `region?`, `vcores?`, `jvmArgs?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Deploys an artifact already in Exchange (groupId:artifactId:version) to CloudHub 2.0. |
-| `update_app` | ⚠️ write · confirm | `appName`, `environment`, `version?`, `artifactId?`, `groupId?`, `packaging?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Changes an existing CloudHub 2.0 application in one call: artifact version, Mule runtime, properties and update strategy together, as one new spec. |
-| `update_app_artifact` | ⚠️ write · confirm | `appName`, `environment`, `version`, `artifactId?`, `groupId?`, `packaging?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `mode?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Moves an existing CloudHub 2.0 application to another artifact version, optionally with a runtime change in the same update. |
+| `deploy_app` | ⚠️ write · confirm | `appName`, `environment`, `groupId`, `artifactId`, `version`, `jarPath?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `replicas?`, `region?`, `vcores?`, `jvmArgs?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Deploys an artifact already in Exchange (groupId:artifactId:version) to CloudHub 2.0. |
+| `update_app` | ⚠️ write · confirm | `appName`, `environment`, `version?`, `artifactId?`, `groupId?`, `packaging?`, `jarPath?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `properties?`, `secureProperties?`, `propertiesFrom?`, `securePropertiesFrom?`, `removeProperties?`, `removeSecureProperties?`, `moveToSecure?`, `mode?`, `updateStrategy?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Changes an existing CloudHub 2.0 application in one call: artifact version, Mule runtime, properties and update strategy together, as one new spec. |
+| `update_app_artifact` | ⚠️ write · confirm | `appName`, `environment`, `version`, `artifactId?`, `groupId?`, `packaging?`, `jarPath?`, `runtime?`, `javaVersion?`, `releaseChannel?`, `mode?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Moves an existing CloudHub 2.0 application to another artifact version, optionally with a runtime change in the same update. |
 | `rollback_app` | ⚠️ write · confirm | `appName`, `environment`, `toVersion?`, `mode?`, `wait?`, `waitTimeoutSeconds?`, `confirm?`, `confirmProduction?` | Rolls an existing CloudHub 2.0 application back to a previous artifact; runtime, target, replicas and settings are preserved. |
 
 ## Applications — lifecycle
@@ -84,6 +86,7 @@ Application logs: search, filters, summaries and file output.
 | --- | --- | --- | --- |
 | `get_logs` | read | `appName`, `environment`, `lines?`, `level?`, `search?`, `regex?`, `logger?`, `hoursBack?`, `startTime?`, `endTime?`, `previousSpecs?` | Fetches the most recent log entries of a Mule application, newest first. |
 | `download_logs` | write · immediate | `appName`, `environment`, `hoursBack?`, `startTime?`, `endTime?`, `level?`, `search?`, `regex?`, `logger?`, `previousSpecs?`, `mode?`, `bucket?`, `maxLines?`, `outputFile?`, `overwrite?` | Reads the full application log file for a time window and filters it by level, logger, text or regex. |
+| `scan_logs_for_credentials` | read | `appName`, `environment`, `hoursBack?`, `startTime?`, `endTime?`, `previousSpecs?` | Checks whether an application's logs carry session or bearer credentials: authorization-bearer, bearer-token, session-id, sforce-session, salesforce-session-id, oauth-token-param, jwt. |
 
 ## Log analysis
 
@@ -106,6 +109,19 @@ Traffic, failures, latency, JVM and host metrics. See [Monitoring](monitoring.md
 | `get_metrics_timeseries` | read | `environment`, `signal`, `hoursBack?`, `granularity?`, `appName?` | Bucketed metrics for trend and incident analysis. |
 | `raw_amql_query` | read | `query`, `limit?`, `offset?` | Runs a freeform AMQL query against Anypoint Monitoring when the other metric tools do not answer the question. |
 
+## Alerts
+
+Anypoint Monitoring metric alerts on apps and API instances, and Runtime Manager event alerts (read only). Uses an undocumented API; see [Alerts](alerts.md).
+
+| Tool | Access | Inputs | Summary |
+| --- | --- | --- | --- |
+| `list_alerts` | read | `environment?`, `entityType?`, `app?`, `apiInstanceId?`, `name?`, `status?`, `source?`, `revealRecipients?` | Lists alerts across Anypoint Monitoring (metric alerts on apps and API instances) and, with an environment, Runtime Manager event alerts. |
+| `get_alert` | read | `id`, `revealRecipients?` | Returns one Anypoint Monitoring alert, normalized as in list_alerts, plus its raw settings and entity. |
+| `create_alert` | write · confirm | `environment`, `name`, `target`, `metric`, `operator`, `threshold`, `durationMinutes`, `severity`, `enabled?`, `notifications`, `apiFilters?`, `allowDuplicate?`, `confirm?`, `confirmProduction?` | Creates an Anypoint Monitoring metric alert on a CloudHub 2.0 app (target {app}) or an API instance (target {apiInstanceId}); the target is resolved from CloudHub 2.0 or API Manager. |
+| `update_alert` | ⚠️ write · confirm | `id`, `patch`, `confirm?`, `confirmProduction?` | Changes an Anypoint Monitoring alert: name, severity, enabled, operator, threshold (in the metric unit, percent for cpu and memory), durationMinutes, or notifications (replaces them all). |
+| `set_alert_enabled` | write · confirm | `id`, `enabled`, `confirm?`, `confirmProduction?` | Enables or disables an Anypoint Monitoring alert, keeping everything else. |
+| `delete_alert` | ⚠️ write · confirm | `id`, `expectedName?`, `confirm?`, `confirmProduction?` | Deletes an Anypoint Monitoring alert. |
+
 ## Exchange
 
 Search assets, read specs and publish application JARs.
@@ -115,7 +131,7 @@ Search assets, read specs and publish application JARs.
 | `search_exchange` | read | `query?`, `type?`, `limit?` | Searches Anypoint Exchange for reusable assets: API specifications (RAML, OAS), connectors, integration templates, examples, and policies. |
 | `get_exchange_asset` | read | `groupId`, `assetId`, `version?` | Returns detailed information about a specific Exchange asset including all published versions, dependencies, API instances, contact information, and file classifiers. |
 | `download_api_spec` | read | `groupId`, `assetId`, `version?` | Downloads the API specification file (RAML or OAS/Swagger) for an Exchange asset. |
-| `publish_app_jar` | ⚠️ write · confirm | `jarPath`, `assetId?`, `assetVersion?`, `groupId?`, `expectedSha256?`, `confirm?` | Uploads a locally built Mule application JAR to Anypoint Exchange as a type "app" asset, using the Exchange v2 publication API (multipart, classifier mule-application). |
+| `publish_app_jar` | ⚠️ write · confirm | `jarPath`, `assetId?`, `assetVersion?`, `groupId?`, `environment?`, `expectedSha256?`, `confirm?` | Uploads a locally built Mule application JAR to Anypoint Exchange as a type "app" asset, using the Exchange v2 publication API (multipart, classifier mule-application). |
 
 ## API Manager
 
@@ -125,7 +141,7 @@ API instances, policies, alerts, contracts, client applications and smoke tests.
 | --- | --- | --- | --- |
 | `list_api_instances` | read | `environment` | Lists all managed API instances registered in API Manager for an environment. |
 | `get_api_policies` | read | `apiName`, `environment` | Returns the full policy chain and SLA tier configuration for a managed API instance. |
-| `get_api_alerts` | read | `apiName`, `environment` | Returns the configured alerts for a managed API instance. |
+| `get_api_alerts` | read | `apiName`, `environment` | Returns the configured alerts for a managed API instance: API Manager alerts (alerts) and Anypoint Monitoring alerts on the instance (monitoringAlerts, normalized as in list_alerts with recipients masked, or supported: false). |
 | `list_api_contracts` | read | `environment`, `api` | Lists the contracts on a managed API instance: which client applications may call it, on which SLA tier, and whether each contract is approved, pending or revoked. |
 | `get_client_application` | write · immediate | `appId`, `writeCredentialsTo?`, `overwrite?` | Returns a client application from the API Platform: name, client ID and the client secret masked as "******…last4". |
 | `smoke_test_api` | write · confirm | `environment`, `api`, `path?`, `url?`, `method?`, `clientAppId?`, `headers?`, `body?`, `expectStatus?`, `timeoutMs?`, `confirm?`, `confirmProduction?` | Sends one HTTP request to a managed API and reports the status, latency, a few response headers and a body excerpt (4 KB at most). |

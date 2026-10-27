@@ -8,7 +8,7 @@ import chalk from 'chalk';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { printTable } from '../utils/formatter.js';
-import { isProductionEnv, confirmProductionDeploy } from '../safety/guards.js';
+import { isProductionEnv, confirmProductionWrite } from '../safety/guards.js';
 import { buildApplicationDeletionPreview, deploymentIdMatches } from '../safety/deletion.js';
 import { currentSettings } from '../safety/deployment.js';
 import { looksSecret, redactRecord, redactText } from '../safety/secrets.js';
@@ -20,6 +20,7 @@ import {
     type SettingsChangeInput,
 } from '../workflows/app-change.js';
 import { deploymentPhase, waitForAppPhase } from '../workflows/app-state.js';
+import { checkPreapproval } from '../safety/preapproval.js';
 import {
     addRolloutOptions,
     addRuntimeOptions,
@@ -36,7 +37,7 @@ import { createClient } from './shared.js';
 
 type ChangeBuilder = (rollout: ReturnType<typeof rolloutFromOptions>) => Omit<
     AppChangeRequest,
-    'orgId' | 'env' | 'appName' | 'settings' | 'secretValues'
+    'orgId' | 'env' | 'appName' | 'settings' | 'secretValues' | 'artifactVerifiedLocally'
 > & {
     settings?: SettingsChangeInput;
 };
@@ -55,6 +56,8 @@ async function runChangeCommand(
     },
     build: ChangeBuilder,
     done: string,
+    /** The matching MCP tool name, for productionPreapproval. */
+    tool: string,
 ): Promise<void> {
     let secretValues: string[] = [];
     try {
@@ -82,7 +85,7 @@ async function runChangeCommand(
             if (opts.dryRun) log.info('Dry run: nothing was changed.');
             return;
         }
-        if (!(await confirmIfProduction(plan, Boolean(opts.force)))) {
+        if (!(await confirmIfProduction(plan, Boolean(opts.force), tool))) {
             log.warn('Cancelled');
             return;
         }
@@ -269,9 +272,14 @@ export function createAppsCommand(): Command {
                 }
 
                 if (isProductionEnv(env.name, env.isProduction) && !opts.allowProduction) {
-                    log.error('Deletion refused: production requires --allow-production.');
-                    process.exitCode = 1;
-                    return;
+                    // Same rule as delete_app: only a pre-approval that names delete_app stands in.
+                    const decision = checkPreapproval({ orgId, env }, 'delete_app');
+                    if (!decision.productionPreapproved) {
+                        log.error('Deletion refused: production requires --allow-production.');
+                        process.exitCode = 1;
+                        return;
+                    }
+                    log.warn(`Production deletion pre-approved (${decision.preapprovalSource})`);
                 }
 
                 await client.cloudHub2.deleteDeployment(orgId, env.id, deployment.id);
@@ -315,7 +323,13 @@ export function createAppsCommand(): Command {
         .option('--dry-run', 'Show the steps, then stop', false)
         .option('--force', 'Skip production confirmation', false)
         .action(async (appName: string, opts) => {
-            await runChangeCommand(appName, opts, () => ({ restart: true, mode: 'stopStart' }), 'Restarted');
+            await runChangeCommand(
+                appName,
+                opts,
+                () => ({ restart: true, mode: 'stopStart' }),
+                'Restarted',
+                'restart_app',
+            );
         });
 
     addRolloutOptions(
@@ -328,7 +342,11 @@ export function createAppsCommand(): Command {
                     .requiredOption('-e, --env <name>', 'Environment name or ID')
                     .option('--version <version>', 'New artifact version')
                     .option('--artifact-id <id>', 'New artifact ID')
-                    .option('--group-id <id>', 'New group ID'),
+                    .option('--group-id <id>', 'New group ID')
+                    .option(
+                        '--jar <path>',
+                        'Local jar the new version was published from; refused unless its SHA-256 matches the Exchange artifact',
+                    ),
             ),
         ),
     )
@@ -339,6 +357,7 @@ export function createAppsCommand(): Command {
                 appName,
                 opts,
                 (rollout) => ({
+                    jarPath: opts.jar,
                     ref: { version: opts.version, artifactId: opts.artifactId, groupId: opts.groupId },
                     runtime: runtimeFromOptions(opts),
                     settings: settingsFromOptions(opts),
@@ -346,6 +365,7 @@ export function createAppsCommand(): Command {
                     updateStrategy: rollout.updateStrategy,
                 }),
                 'Updated',
+                'update_app',
             );
         });
 
@@ -373,11 +393,9 @@ export function createAppsCommand(): Command {
                         process.exitCode = 1;
                         return;
                     }
-                    if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
-                        if (!(await confirmProductionDeploy(env.name, env.isProduction))) {
-                            log.warn(`${name} cancelled`);
-                            return;
-                        }
+                    if (!(await confirmProductionWrite(env, orgId, `${name}_app`, opts.force))) {
+                        log.warn(`${name} cancelled`);
+                        return;
                     }
                     const sentAt = Date.now();
                     await client.cloudHub2.setDesiredState(orgId, env.id, deployment.id, state);
@@ -469,6 +487,7 @@ export function createAppsCommand(): Command {
                 opts,
                 (rollout) => ({ settings: settingsFromOptions(opts), mode: rollout.mode }),
                 'Updated settings of',
+                'update_app_settings',
             );
         });
 
@@ -496,12 +515,9 @@ export function createAppsCommand(): Command {
                     process.exit(1);
                 }
 
-                if (isProductionEnv(env.name, env.isProduction) && !opts.force) {
-                    const confirmed = await confirmProductionDeploy(env.name, env.isProduction);
-                    if (!confirmed) {
-                        log.warn('Scale cancelled');
-                        return;
-                    }
+                if (!(await confirmProductionWrite(env, orgId, 'scale_app', opts.force))) {
+                    log.warn('Scale cancelled');
+                    return;
                 }
 
                 log.info(`Scaling ${appName} to ${replicas} replica(s) in ${env.name}...`);

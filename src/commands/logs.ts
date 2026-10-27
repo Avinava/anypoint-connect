@@ -3,6 +3,7 @@
  * anc logs tail <appName> --env <envName> [--level <level>] [--search <text>]
  * anc logs search <appName> --env <envName> [--grep <text>] [--regex] [--logger <name>] [--since <1h|ISO>] [--previous-specs <n>]
  * anc logs download <appName> --env <envName> --from <date> [--to <date>] [--grep <text>] [--summary] [--output <path>] [--previous-specs <n>]
+ * anc logs credentials <appName> --env <envName> [--since <date>] [--until <date>] [--previous-specs <n>] [--json]
  */
 
 import { Command } from 'commander';
@@ -17,6 +18,7 @@ import type { EnrichedLogEntry } from '../analysis/types.js';
 import { MAX_LOG_LINES } from '../analysis/filter.js';
 import { BUCKETS, type Bucket } from '../analysis/stats.js';
 import { formatEntries, summarizeEntries, type LogSummary } from '../analysis/summary.js';
+import { scanForCredentials } from '../analysis/credentials.js';
 import { createClient } from './shared.js';
 
 function parseLimit(value: string): number {
@@ -261,6 +263,56 @@ export function createLogsCommand(): Command {
                 log.success(`Downloaded ${entries.length} log entries → ${chalk.bold(output)}`);
             } catch (error) {
                 log.error(`Log download failed: ${errorMessage(error)}`);
+                process.exitCode = 1;
+            }
+        });
+
+    logs.command('credentials')
+        .description('Count log lines carrying session or bearer credentials; never prints the lines or values')
+        .argument('<appName>', 'Application name')
+        .requiredOption('-e, --env <name>', 'Environment name')
+        .option('--since <date>', 'Only lines since this time (ISO date or relative: 30m, 1h, 2d)')
+        .option('--until <date>', 'Only lines until this time (ISO date or relative)')
+        .option(PREVIOUS_SPECS_FLAG, PREVIOUS_SPECS_HELP)
+        .option('--json', 'Print the counts as JSON')
+        .action(async (appName: string, opts) => {
+            try {
+                const previousSpecs = parsePreviousSpecs(opts.previousSpecs);
+                const startTime = opts.since ? parseDate(opts.since) : undefined;
+                const endTime = opts.until ? parseDate(opts.until) : undefined;
+
+                const client = createClient();
+                const orgId = await client.getDefaultOrgId();
+                const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
+                const { parts, ...source } = await client.logs.getLogParts(orgId, env.id, appName, { previousSpecs });
+                const scan = scanForCredentials(parts, { startTime, endTime });
+
+                if (opts.json) {
+                    console.log(JSON.stringify({ app: appName, environment: env.name, ...source, ...scan }, null, 2));
+                } else {
+                    warnFallback(source);
+                    log.kv('Scanned lines', scan.scannedLines);
+                    if (scan.clean) {
+                        log.success(`No credential markers in ${appName} (${env.name})`);
+                    } else {
+                        log.warn(`${scan.linesWithMarkers} lines carry credential markers`);
+                        printTable(
+                            ['Marker', 'Lines'],
+                            Object.entries(scan.byMarker)
+                                .filter(([, n]) => n > 0)
+                                .map(([id, n]) => [id, String(n)]),
+                        );
+                        printTable(
+                            ['Spec', 'Replica', 'Lines'],
+                            scan.bySpec.flatMap((spec) =>
+                                spec.byReplica.map((r) => [spec.specId, r.replica, String(r.linesWithMarkers)]),
+                            ),
+                        );
+                    }
+                }
+                if (!scan.clean) process.exitCode = 2;
+            } catch (error) {
+                log.error(`Credential scan failed: ${errorMessage(error)}`);
                 process.exitCode = 1;
             }
         });

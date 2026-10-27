@@ -62,6 +62,21 @@ Without a convention, the coordinates come from the JAR. `suggest_asset_name` an
 detect the pattern of the asset an app runs today, for example `{app}-{pomVersion}-{timestamp}` at `1.0.0`,
 and show the `conventions` block to add. A detected pattern is never applied until it is written here.
 
+## Production approvals are not project settings
+
+`.anypoint-connect.json` is part of the repository, so it cannot grant production access. Production
+pre-approvals and unmarked-artifact allowances live in `~/.anypoint-connect/production-approvals.json`,
+bound to organization and environment IDs, and are written with `set_production_preapproval` and
+`set_unmarked_artifact_allowance`. A `productionPreapproval` left in a project file is ignored and
+reported by `get_project_profile`. See the [safety model](safety.md#production-pre-approval).
+
+These entries belong to the organization and environment, not to a profile: switching between two profiles
+of the same organization keeps them in force, and a profile for another organization never matches them.
+
+`set_project_profile` and `anc config use` update the nearest `.anypoint-connect.json` (walking up from
+the working directory) and keep its other fields, so a nested directory does not get a second file that
+shadows the first.
+
 ## Managing configuration
 
 ```bash

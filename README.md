@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="Anypoint Connect — CLI and MCP toolkit for Anypoint Platform" width="640" />
+  <img src="docs/assets/logo.svg" alt="Anypoint Connect: CLI and MCP toolkit for Anypoint Platform, with production safeguards" width="640" />
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Operate Anypoint Platform from a CLI, an MCP client, or JavaScript—with guarded mutations and one shared authentication layer.</strong>
+  <strong>Operate Anypoint Platform from a CLI, an MCP client, or JavaScript, with guarded mutations and one shared authentication layer.</strong>
 </p>
 
 <p align="center">
@@ -65,12 +65,21 @@ release does not support the `client_credentials` grant, and its encrypted token
 | --- | --- |
 | Applications | Status with a start-up-aware phase, deployment spec, resources, cross-environment comparison, publish and deploy a JAR, one-call `update_app` (version, runtime, settings and update strategy, in place or stop-then-start), runtime catalogs with retired-runtime refusal, asset naming conventions, rollback, restart, scale, stop, start, delete, and a check of what runs against a repo or JAR |
 | Settings | Add, change, remove and move properties; secret values read from project files or environment variables; secret-looking plain values masked and flagged |
-| Logs | Tail, search over message, logger and stack trace, download with filters, summaries and file output, error clustering with context, recurring patterns, log health statistics |
+| Logs | Tail, search over message, logger and stack trace, download with filters, summaries and file output, error clustering with context, recurring patterns, log health statistics, counts of lines that carry session or bearer credentials (never the values) |
 | Monitoring | Traffic, failures, and p50–p99 latency per app, worker, or route; heap, old-generation pressure, GC, CPU, and RAM per worker; time series from 1-minute to 1-day buckets; freeform AMQL |
+| Alerts | List, create, change, enable, disable and delete Anypoint Monitoring metric alerts on apps and API instances, recipients masked by default; read Runtime Manager event alerts (undocumented API, see [Alerts](https://avinava.github.io/anypoint-connect/alerts/)) |
 | Exchange | Search, asset details, spec download, application JAR publication |
 | API Manager and Governance | Instances, policies, SLA tiers, alerts, contracts, client applications with masked credentials, smoke tests with the client's credentials, governance rulesets and conformance |
 | Design Center | Projects, branches, file reads, preview-then-apply file sync, verified Exchange publication |
-| Platform services | Environments, entitlements, audit log, Anypoint MQ, Object Store v2 |
+| Platform services | Environments, entitlements, audit log with actor classes (platform patch, replica, infrastructure, or user and pipeline), Anypoint MQ, Object Store v2 |
+
+New in 0.17:
+
+- Production deploys through these tools take only jars whose mule-build marker (`META-INF/mule-build/build-info.json`) says production deployable, checked on the Exchange artifact: [build markers gate production](https://avinava.github.io/anypoint-connect/safety/#build-markers-gate-production)
+- `scan_logs_for_credentials`: [check logs for leaked credentials](https://avinava.github.io/anypoint-connect/recipes/#check-logs-for-leaked-credentials)
+- `get_audit_log` actor classes: [find who changed an app](https://avinava.github.io/anypoint-connect/recipes/#find-who-changed-an-app)
+- Alert management: `list_alerts`, `get_alert`, `create_alert`, `update_alert`, `set_alert_enabled`, `delete_alert` and `anc alerts`: [alerts](https://avinava.github.io/anypoint-connect/alerts/)
+- `set_production_preapproval`, stored per organization and environment outside the repository: [production pre-approval](https://avinava.github.io/anypoint-connect/safety/#production-pre-approval)
 
 New in 0.16, each with a recipe:
 
@@ -97,7 +106,7 @@ OAuth tokens; it sends tool calls to the local server that owns the session.
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.16.3", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
     }
   }
 }
@@ -119,7 +128,9 @@ Preview a deployment of target/sample-orders-api-1.3.0-mule-application.jar to S
 ## Safety
 
 Every MCP write tool returns a preview first and changes nothing until it is called again with
-`confirm: true`; in production it also needs `confirmProduction: true`. `anc deploy --dry-run` and
+`confirm: true`; in production it also needs `confirmProduction: true`, unless you pre-approved that tool
+for that organization and environment in your user-level settings. Production deploys made through these
+tools check the artifact's build marker and refuse a jar not marked production deployable. `anc deploy --dry-run` and
 `anc apps update --dry-run` print the same plan.
 Publishing binds the JAR's SHA-256. A change to an existing app is one update that carries only what you
 asked to change, with the runtime checked against the target first. Secret values come from project files

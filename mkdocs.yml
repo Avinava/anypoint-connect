@@ -1,5 +1,5 @@
 site_name: anypoint-connect
-site_description: CLI and MCP toolkit for Anypoint Platform — deploy, tail logs, pull metrics, manage API specs, with production safety nets.
+site_description: CLI and MCP toolkit for Anypoint Platform that deploys, tails logs, pulls metrics, and manages API specs, with production safety nets.
 site_url: https://avinava.github.io/anypoint-connect/
 site_author: Avi
 copyright: MIT licensed
@@ -92,6 +92,7 @@ nav:
           - Common recipes: recipes.md
           - MCP server: mcp.md
           - Monitoring: monitoring.md
+          - Alerts: alerts.md
           - Troubleshooting: troubleshooting.md
     - Reference:
           - CLI reference: cli-reference.md

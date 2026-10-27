@@ -9,7 +9,7 @@ import type { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import { log } from '../utils/logger.js';
-import { confirmProductionDeploy } from '../safety/guards.js';
+import { confirmProductionWrite } from '../safety/guards.js';
 import type { SecretSource } from '../safety/secret-sources.js';
 import type { RuntimeSpec } from '../safety/runtime.js';
 import type { AppChangePlan, ChangeMode, SettingsChangeInput, UpdateStrategy } from '../workflows/app-change.js';
@@ -165,6 +165,22 @@ export function printAppChange(plan: AppChangePlan): boolean {
         for (const k of s.movedToSecure) log.kv('  > secure', k);
     }
     if (!preview.runtimeCheck.checked) log.dim(`  Runtime not validated: ${preview.runtimeCheck.reason}`);
+    const verification = preview.artifactVerification;
+    if (verification && verification.checked !== 'none') {
+        log.kv(
+            'Artifact check',
+            `${verification.checked}${verification.exchangeSha256 ? ` (SHA-256 ${verification.exchangeSha256})` : ''}`,
+        );
+    }
+    const provenance = verification?.buildProvenance;
+    if (provenance?.status === 'recorded') {
+        log.kv(
+            'Build',
+            `${provenance.tool} ${provenance.toolVersion}, stripped: ${provenance.stripped}, productionDeployable: ${provenance.productionDeployable}`,
+        );
+    } else if (provenance?.status === 'unknown') {
+        log.dim(`  ${provenance.note ?? 'build provenance unknown'}`);
+    }
     for (const step of preview.steps) log.dim(`  step: ${step}`);
     for (const warning of preview.warnings ?? []) log.warn(warning);
     for (const blocker of preview.blockers ?? []) log.error(blocker);
@@ -172,10 +188,13 @@ export function printAppChange(plan: AppChangePlan): boolean {
     return !preview.blockers?.length;
 }
 
-/** Ask for confirmation in production unless forced. Returns false when declined. */
-export async function confirmIfProduction(plan: AppChangePlan, force: boolean): Promise<boolean> {
-    if (!plan.production || force) return true;
-    return confirmProductionDeploy(plan.request.env.name, true);
+/**
+ * Ask for confirmation in production unless forced or pre-approved for `tool` (the matching MCP
+ * tool name). Returns false when declined.
+ */
+export async function confirmIfProduction(plan: AppChangePlan, force: boolean, tool: string): Promise<boolean> {
+    if (!plan.production) return true;
+    return confirmProductionWrite({ ...plan.request.env, isProduction: true }, plan.request.orgId, tool, force);
 }
 
 /** A spinner that follows a rollout. */

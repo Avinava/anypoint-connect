@@ -18,7 +18,7 @@ import {
 } from '../../workflows/app-change.js';
 import type { RuntimeSpec } from '../../safety/runtime.js';
 import { errorMessage } from '../../utils/errors.js';
-import { guardWrite, mcpText, resolveEnvironment } from './shared.js';
+import { guardWrite, mcpText, productionFields, resolveEnvironment } from './shared.js';
 
 export const settingsInputs = {
     properties: z
@@ -67,6 +67,13 @@ export const waitInputs = {
     wait: z.boolean().optional().describe('Wait until every replica runs the new spec, or the change fails'),
     waitTimeoutSeconds: z.number().min(10).max(1800).optional().describe('Wait limit in seconds (default 300)'),
 };
+
+export const provenanceJarInput = z
+    .string()
+    .optional()
+    .describe(
+        'Local .jar the new version was built and published from. In any environment the Exchange artifact is then downloaded and its SHA-256 must match this jar; a mismatch, a failed download or an MD5 mismatch refuses the change. Production changes always download the Exchange artifact and check its build marker, with or without jarPath',
+    );
 
 export const modeInput = z
     .enum(['inPlace', 'stopStart'])
@@ -125,10 +132,13 @@ export interface AppChangeToolArgs {
 export async function runAppChangeTool(
     client: AnypointClient,
     args: AppChangeToolArgs,
-    change: Omit<AppChangeRequest, 'orgId' | 'env' | 'appName' | 'secretValues' | 'settings'> & {
+    change: Omit<
+        AppChangeRequest,
+        'orgId' | 'env' | 'appName' | 'secretValues' | 'settings' | 'artifactVerifiedLocally'
+    > & {
         settings?: SettingsChangeInput;
     },
-    labels: { done: string },
+    labels: { done: string; /** MCP tool name, for production pre-approval. */ tool: string },
 ) {
     let secretValues: string[] = [];
     try {
@@ -152,7 +162,14 @@ export async function runAppChangeTool(
                 isError: true as const,
             };
         }
-        const gate = guardWrite({ env, confirm: args.confirm, confirmProduction: args.confirmProduction, preview });
+        const gate = guardWrite({
+            orgId,
+            env,
+            tool: labels.tool,
+            confirm: args.confirm,
+            confirmProduction: args.confirmProduction,
+            preview,
+        });
         if (gate) return gate;
 
         const result = await executeAppChange(client, plan, {
@@ -162,6 +179,7 @@ export async function runAppChangeTool(
         const response = {
             message: `${labels.done} "${plan.existing.name}" in ${env.name}`,
             deploymentId: result.deployment.id,
+            ...productionFields(orgId, env, labels.tool),
             performed: result.performed,
             changes: plan.changes,
             ...(plan.settings ? { settings: plan.settings.diff } : {}),

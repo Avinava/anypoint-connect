@@ -1,5 +1,7 @@
 <div class="anc-hero" markdown="1">
 
+<p class="anc-banner"><img src="assets/logo.svg" alt="Anypoint Connect: CLI and MCP toolkit for Anypoint Platform, with production safeguards" width="560"></p>
+
 <span class="anc-eyebrow">CLI · MCP server · JavaScript library</span>
 
 # Operate Anypoint Platform with safer defaults
@@ -60,11 +62,12 @@ administrator for and how to rotate a secret safely.
 | Area | Typical work |
 | --- | --- |
 | Runtime Manager | List, inspect, compare across environments, publish and deploy a JAR, redeploy, roll back, restart, scale, stop, start, and delete applications |
-| Logs | Tail and download logs, cluster errors with context, find recurring patterns, summarize log health |
+| Logs | Tail and download logs, cluster errors with context, find recurring patterns, summarize log health, count lines that leak session or bearer credentials without returning them |
 | Monitoring | Traffic, failures, and p50–p99 latency per app, worker, or route; heap, old-generation pressure, GC, CPU, and RAM per worker; incident time series; freeform AMQL. See [Monitoring](monitoring.md) |
 | Exchange and Design Center | Search assets, download specifications, preview and sync spec files, publish API and application assets |
 | API Manager and Governance | Instances, policies, SLA tiers, alerts, governance rulesets and conformance |
-| Platform services | Environments, entitlements, audit log, Anypoint MQ, and Object Store v2 |
+| Alerts | Anypoint Monitoring metric alerts on apps and API instances: list, create, change, enable, disable, delete; Runtime Manager event alerts read only. See [Alerts](alerts.md) |
+| Platform services | Environments, entitlements, audit log with platform and user actor classes, Anypoint MQ, and Object Store v2 |
 
 Every MCP tool is listed in the [tool catalog](tools.md); every command is in the
 [CLI reference](cli-reference.md).
@@ -74,8 +77,9 @@ Every MCP tool is listed in the [tool catalog](tools.md); every command is in th
 Every application change previews by default. Publishing binds the exact JAR bytes, a change to an
 existing app carries only what was asked for and checks the runtime first, secret values never pass
 through the conversation, deletion is bound to the deployment ID that was inspected, Design Center writes
-need a single-use preview token, and production needs an additional acknowledgement. Read the
-[safety model](safety.md) before automating a change.
+need a single-use preview token, and production needs an additional acknowledgement or a user-level
+pre-approval bound to the organization and environment. Production takes only jars whose build marker
+says production deployable, checked on the artifact actually deployed. Read the [safety model](safety.md) before automating a change.
 
 <div class="anc-note" markdown="1">
 

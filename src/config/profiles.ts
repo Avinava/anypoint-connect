@@ -114,40 +114,67 @@ export interface ProjectConfig {
     };
 }
 
-/**
- * Walk up from startDir to find .anypoint-connect.json.
- * Returns the parsed content or null if not found.
- */
-export function discoverProjectConfig(startDir?: string): ProjectConfig | null {
+/** Walk up from startDir to the nearest .anypoint-connect.json, or null. */
+export function findProjectConfigFile(startDir?: string): string | null {
     let dir = path.resolve(startDir || process.cwd());
     const root = path.parse(dir).root;
 
     while (dir !== root) {
         const candidate = path.join(dir, PROJECT_CONFIG_FILE);
-        if (fs.existsSync(candidate)) {
-            try {
-                const content = fs.readFileSync(candidate, 'utf8');
-                return JSON.parse(content) as ProjectConfig;
-            } catch {
-                return null;
-            }
-        }
+        if (fs.existsSync(candidate)) return candidate;
         dir = path.dirname(dir);
     }
-
     return null;
 }
 
 /**
- * Write a .anypoint-connect.json file in the given directory
- * to bind it to a profile.
+ * Walk up from startDir to find .anypoint-connect.json.
+ * Returns the parsed content or null if not found.
+ */
+export function discoverProjectConfig(startDir?: string): ProjectConfig | null {
+    const file = findProjectConfigFile(startDir);
+    if (!file) return null;
+    try {
+        return JSON.parse(fs.readFileSync(file, 'utf8')) as ProjectConfig;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Merge fields into a .anypoint-connect.json. With `dir`, the file in that directory; otherwise the
+ * file the working directory already resolves to (walking up), so a nested directory does not get a
+ * second file that shadows it; created in the working directory when there is none. Fields set to
+ * undefined are removed; every other field already in the file is kept.
+ */
+export function updateProjectConfig(updates: Partial<ProjectConfig>, dir?: string): string {
+    const filePath = dir
+        ? path.join(dir, PROJECT_CONFIG_FILE)
+        : (findProjectConfigFile() ?? path.join(process.cwd(), PROJECT_CONFIG_FILE));
+    let current: Record<string, unknown> = {};
+    if (fs.existsSync(filePath)) {
+        try {
+            const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+                current = parsed as Record<string, unknown>;
+        } catch {
+            throw new Error(`${filePath} is not valid JSON; fix or remove it first`);
+        }
+    }
+    const next: Record<string, unknown> = { ...current };
+    for (const [key, value] of Object.entries(updates)) {
+        if (value === undefined) delete next[key];
+        else next[key] = value;
+    }
+    fs.writeFileSync(filePath, JSON.stringify(next, null, 2) + '\n');
+    return filePath;
+}
+
+/**
+ * Bind a directory to a profile in .anypoint-connect.json, keeping its other fields (conventions).
  */
 export function writeProjectConfig(profile: string, dir?: string): string {
-    const targetDir = dir || process.cwd();
-    const filePath = path.join(targetDir, PROJECT_CONFIG_FILE);
-    const content: ProjectConfig = { profile };
-    fs.writeFileSync(filePath, JSON.stringify(content, null, 2) + '\n');
-    return filePath;
+    return updateProjectConfig({ profile }, dir);
 }
 
 // ── Profile Resolution ──────────────────────────────

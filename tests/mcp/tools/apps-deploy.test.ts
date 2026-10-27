@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
+import { strToU8, zipSync } from 'fflate';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,6 +63,7 @@ describe('application deploy MCP tools', () => {
         getDefaultOrgId: vi.fn(),
         accessManagement: { resolveEnvironment: vi.fn() },
         runtimes: { getTarget: vi.fn() },
+        exchange: { downloadAppJar: vi.fn() },
         cloudHub2: {
             findDetailByName: vi.fn(),
             patchDeployment: vi.fn(),
@@ -167,6 +170,25 @@ describe('application deploy MCP tools', () => {
 
         it('requires confirmProduction in production', async () => {
             client.accessManagement.resolveEnvironment.mockResolvedValue(production);
+            const released = Buffer.from(
+                zipSync({
+                    'META-INF/mule-build/build-info.json': strToU8(
+                        JSON.stringify({
+                            schemaVersion: 1,
+                            tool: 'mule-build',
+                            toolVersion: '3.2.0',
+                            stripped: false,
+                            productionDeployable: true,
+                        }),
+                    ),
+                }),
+            );
+            client.exchange.downloadAppJar.mockResolvedValue({
+                buffer: released,
+                sha256: createHash('sha256').update(released).digest('hex'),
+                md5Matches: true,
+                fileName: 'orders-sapi.jar',
+            });
             const handler = handlers.get('update_app')!;
 
             const preview = parse(await handler({ ...args, environment: 'Production' }));

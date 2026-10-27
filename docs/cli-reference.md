@@ -18,8 +18,9 @@ timestamp (`2026-02-01T00:00:00Z`).
 | `anc apps list \| status \| update \| settings get\|set \| restart \| stop \| start \| scale \| compare \| delete` | CloudHub 2.0 applications |
 | `anc deploy <jar>` | Publish a JAR to Exchange and deploy it |
 | `anc runtimes list` | Mule runtime versions a target accepts |
-| `anc logs tail \| search \| download` | Application logs |
+| `anc logs tail \| search \| download \| credentials` | Application logs |
 | `anc monitor summary \| runtime \| trend \| query \| download` | Anypoint Monitoring metrics |
+| `anc alerts list \| get \| create \| update \| enable \| disable \| delete` | Anypoint Monitoring alerts; see [Alerts](alerts.md) |
 | `anc exchange search \| info \| download-spec` | Exchange assets |
 | `anc api list \| policies \| sla-tiers \| alerts \| contracts \| client-app \| smoke` | API Manager |
 | `anc design-center` (alias `anc dc`) `list \| files \| pull \| push \| publish` | Design Center |
@@ -60,14 +61,14 @@ Enter the Client Secret through `anc config init`, not `anc config set`, so it s
 | --- | --- |
 | `anc apps list` | `-e, --env <name>` (required) |
 | `anc apps status <appName>` | `-e, --env <name>` (required), `--wait` polls until the app settles or fails, `--timeout <seconds>` |
-| `anc apps update <appName>` | `-e, --env <name>` (required), `--version`, `--artifact-id`, `--group-id`, runtime flags, settings flags, rollout flags, `--dry-run`, `--force` |
+| `anc apps update <appName>` | `-e, --env <name>` (required), `--version`, `--artifact-id`, `--group-id`, `--jar <path>` (the change is refused unless this jar's SHA-256 equals the Exchange artifact being deployed; production changes always check the Exchange artifact's build marker), runtime flags, settings flags, rollout flags, `--dry-run`, `--force` |
 | `anc apps settings get <appName>` | `-e, --env <name>` (required), `--reveal` shows secret-looking plain values |
 | `anc apps settings set <appName>` | `-e, --env <name>` (required), settings flags, `--stop-start`, `--no-wait`, `--timeout`, `--dry-run`, `--force` |
 | `anc apps restart <appName>` | `-e, --env <name>` (required); stops, waits, starts. `--no-wait`, `--timeout`, `--dry-run`, `--force` |
 | `anc apps stop <appName>` / `anc apps start <appName>` | `-e, --env <name>` (required), `--wait`, `--timeout`, `--force` |
 | `anc apps scale <appName>` | `-e, --env <name>` (required), `--replicas <n>` (required), `--force` |
 | `anc apps compare <appName>` | `-e, --env <name>` (required), `--repo <path>` with `--ref <ref>` (default `HEAD`) and `--working-tree`, or `--jar <path>`. Exits 1 when they differ |
-| `anc apps delete <appName>` | `-e, --env <name>` (required), `--confirm <deploymentId>`, `--allow-production` |
+| `anc apps delete <appName>` | `-e, --env <name>` (required), `--confirm <deploymentId>`, `--allow-production` (not needed when a [pre-approval](safety.md#production-pre-approval) names `delete_app`) |
 
 Shared flags:
 
@@ -165,6 +166,7 @@ for the rollout and exits non-zero when it fails or times out. See the
 | `anc logs tail <appName>` | `-e, --env <name>` (required), `-l, --level <level>` (ERROR, WARN, INFO, DEBUG), `-s, --search <text>`, `--regex`, `--logger <name>` |
 | `anc logs search <appName>` | `-e, --env <name>` (required), `-g, --grep <text>`, `--regex`, `--logger <name>`, `-l, --level <level>`, `--since <1h\|ISO>`, `--until <date>`, `-n, --limit <n>` (default 100, max 1000), `--previous-specs <n>` (max 10), `--json` |
 | `anc logs download <appName>` | `-e, --env <name>` (required), `--from <date>` (required), `--to <date>`, `-l, --level <level>`, `-g, --grep <text>`, `--regex`, `--logger <name>`, `--summary`, `--bucket 5m\|15m\|1h`, `-o, --output <path>`, `--previous-specs <n>` (max 10) |
+| `anc logs credentials <appName>` | `-e, --env <name>` (required), `--since <1h\|ISO>`, `--until <date>`, `--previous-specs <n>` (max 10), `--json`. Counts lines with session or bearer credential markers per marker, spec and replica; never prints lines or values. Exit code 2 when any marker is found |
 
 Search covers the message, logger, thread, event ID, stack trace and logged payload. Multi-line entries
 (error reports, banners, stack traces) stay together with their timestamp and level.
@@ -206,6 +208,19 @@ anc monitor download --env Sandbox --from 7d --format csv --output metrics.csv
 `anc monitor query` prints the rows as JSON. How to read every number, and the AMQL rules, are in
 [Monitoring](monitoring.md).
 
+## alerts
+
+| Command | Arguments and options |
+| --- | --- |
+| `anc alerts list` | `-e, --env <name>` (needed for Runtime Manager alerts), `--app <name>`, `--api-instance <id>`, `--name <text>`, `--status PENDING\|ACTIVE` (deleted alerts never appear), `--source monitoring\|runtime-manager\|all` (default `all`), `--reveal`, `--json` |
+| `anc alerts get <id>` | `--reveal`, `--json` |
+| `anc alerts create` | `-e, --env <name>`, `--name`, `--app <name>` or `--api-instance <id>`, `--metric`, `--operator`, `--threshold`, `--duration <minutes>`, `--severity 0-3\|LOW\|MEDIUM\|HIGH\|CRITICAL`, `--email <address>` (repeatable) with `--subject`, or `--slack-channel <id>` (`--slack-carrier <id>`), `--message`, `--response-codes`, `--policies`, `--enabled`, `--allow-duplicate`, `--dry-run`, `--force` |
+| `anc alerts update <id>` | `--name`, `--severity`, `--operator`, `--threshold`, `--duration`; `--email` (repeatable) with `--subject`, or `--slack-channel` (`--slack-carrier`), with `--message`, replace every notification; `--dry-run`, `--force` |
+| `anc alerts enable <id>` / `anc alerts disable <id>` | `--dry-run`, `--force` |
+| `anc alerts delete <id>` | `--confirm <name>` (dry run without it), `--allow-production` (not needed when a pre-approval names `delete_alert`) |
+
+The API behind these commands is undocumented; see [Alerts](alerts.md).
+
 ## exchange
 
 | Command | Arguments and options |
@@ -233,7 +248,7 @@ an unknown API is reported as an error.
 | `anc api alerts <apiName>` | Alerts configured for the API |
 | `anc api contracts <apiName>` | Contracts: client application, tier and status |
 | `anc api client-app <id>` | A client application, secret masked. `--write-credentials <file>` writes `CLIENT_ID`/`CLIENT_SECRET` to a mode-0600 file inside the project; `--overwrite` |
-| `anc api smoke <apiName>` | Call the API with its client credentials: `--path` or `--url`, `-X, --method`, `--client-app <id>`, `-H, --header`, `-d, --data`, `--expect <status>`, `--timeout <ms>`. Methods other than GET ask unless `-y, --yes`; production needs `--allow-production`. Exits 1 when the status does not match |
+| `anc api smoke <apiName>` | Call the API with its client credentials: `--path` or `--url`, `-X, --method`, `--client-app <id>`, `-H, --header`, `-d, --data`, `--expect <status>`, `--timeout <ms>`. Methods other than GET ask unless `-y, --yes`; production needs `--allow-production` unless a pre-approval covers `smoke_test_api`. Exits 1 when the status does not match |
 
 ```bash
 anc api list --env Sandbox

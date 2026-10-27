@@ -6,11 +6,17 @@
  * existing app go through the application change workflow (one PATCH, runtime check, modes).
  */
 
-import { readFile } from 'node:fs/promises';
 import type { AnypointClient } from '../client/AnypointClient.js';
 import type { ArtifactRef, CH2Deployment } from '../api/CloudHub2Api.js';
 import type { Environment } from '../api/AccessManagementApi.js';
-import { inspectArtifact, verifyArtifactDigest } from '../safety/artifact.js';
+import {
+    checkBuildProvenance,
+    inspectArtifact,
+    readBuildProvenance,
+    verifyArtifactDigest,
+    type BuildProvenance,
+    type ProvenanceCheck,
+} from '../safety/artifact.js';
 import {
     DEFAULT_REGION,
     DEFAULT_RUNTIME,
@@ -18,7 +24,9 @@ import {
     buildCreatePayload,
     isEmptySettingsChange,
 } from '../safety/deployment.js';
-import { validateJarFile } from '../safety/guards.js';
+import { isProductionEnv } from '../safety/guards.js';
+import { checkUnmarkedAllowance } from '../safety/preapproval.js';
+import { readJarBytes } from './artifact-verification.js';
 import type { RuntimeSpec } from '../safety/runtime.js';
 import { redactText } from '../safety/secrets.js';
 import { discoverProjectConfig } from '../config/profiles.js';
@@ -70,6 +78,10 @@ export interface JarDeploymentPlan {
     change?: AppChangePlan;
     /** Settings resolved for a new app. */
     createSettings?: { properties?: Record<string, string>; secureProperties?: Record<string, string> };
+    /** The jar's build marker checked against the target environment. */
+    provenance: ProvenanceCheck;
+    /** Problems that stop the deployment before anything is published (provenance, then the change's own). */
+    blockers: string[];
     secretValues: string[];
 }
 
@@ -104,13 +116,12 @@ export async function resolveJarArtifact(request: JarArtifactRequest): Promise<{
     artifact: ArtifactInspection;
     ref: JarDeploymentPlan['ref'];
     naming: AssetSuggestion;
+    provenance: BuildProvenance;
 }> {
-    const check = validateJarFile(request.jarPath);
-    if (!check.valid) throw new Error(check.error);
-
-    const bytes = await readFile(request.jarPath);
+    const bytes = await readJarBytes(request.jarPath);
     const artifact = inspectArtifact(bytes, undefined, Boolean(request.assetId && request.assetVersion));
     verifyArtifactDigest(bytes, request.expectedSha256);
+    const provenance = readBuildProvenance(bytes);
 
     const convention =
         request.convention === undefined ? discoverProjectConfig()?.conventions : (request.convention ?? undefined);
@@ -127,8 +138,27 @@ export async function resolveJarArtifact(request: JarArtifactRequest): Promise<{
     return {
         artifact,
         naming,
+        provenance,
         ref: { groupId: naming.groupId, artifactId: naming.assetId, version: naming.version, packaging: 'jar' },
     };
+}
+
+/**
+ * Check a jar's build marker against an environment (or no environment, when only publishing). A
+ * production target also consults the unmarked-artifact allowance for the org and environment.
+ */
+export function checkJarForEnvironment(
+    provenance: BuildProvenance,
+    orgId: string,
+    env: Pick<Environment, 'id' | 'name' | 'isProduction'> | undefined,
+): ProvenanceCheck {
+    if (!env) return checkBuildProvenance(provenance, undefined);
+    const production = isProductionEnv(env.name, env.isProduction);
+    return checkBuildProvenance(
+        provenance,
+        production,
+        production ? checkUnmarkedAllowance({ orgId, env }) : undefined,
+    );
 }
 
 /** Inspect the JAR and the target environment; nothing is published or deployed. */
@@ -137,14 +167,24 @@ export async function planJarDeployment(
     request: JarDeploymentRequest,
 ): Promise<JarDeploymentPlan> {
     const existing = await client.cloudHub2.findDetailByName(request.orgId, request.env.id, request.appName);
-    const { artifact, ref, naming } = await resolveJarArtifact({
+    const { artifact, ref, naming, provenance } = await resolveJarArtifact({
         ...request,
         existingRef: existing?.application?.ref,
     });
     const { change: settings, secretValues } = resolveSettingsInput(request.settings);
+    const provenanceCheck = checkJarForEnvironment(provenance, request.orgId, request.env);
+    const provenanceBlockers = provenanceCheck.blocker ? [provenanceCheck.blocker] : [];
 
     const createOnly: Array<keyof CreateOnlySettings> = ['region', 'vcores', 'replicas', 'jvmArgs'];
-    const base = { request, artifact, existing: existing ?? null, ref, naming, secretValues };
+    const base = {
+        request,
+        artifact,
+        existing: existing ?? null,
+        ref,
+        naming,
+        provenance: provenanceCheck,
+        secretValues,
+    };
 
     if (!existing) {
         if (settings?.removeProperties || settings?.removeSecureProperties || settings?.moveToSecure) {
@@ -154,12 +194,13 @@ export async function planJarDeployment(
             ...base,
             mode: 'create',
             rejectedSettings: [],
+            blockers: provenanceBlockers,
             createSettings: { properties: settings?.properties, secureProperties: settings?.secureProperties },
         };
     }
 
     const rejectedSettings = createOnly.filter((key) => request[key] !== undefined);
-    if (rejectedSettings.length) return { ...base, mode: 'update', rejectedSettings };
+    if (rejectedSettings.length) return { ...base, mode: 'update', rejectedSettings, blockers: provenanceBlockers };
 
     const change = await planAppChange(client, {
         orgId: request.orgId,
@@ -172,11 +213,14 @@ export async function planJarDeployment(
         updateStrategy: request.updateStrategy,
         mode: request.mode,
         secretValues,
+        // These exact bytes are checked above and published, bound to their SHA-256, before the change.
+        artifactVerifiedLocally: true,
     });
     return {
         ...base,
         mode: 'update',
         rejectedSettings: [],
+        blockers: [...provenanceBlockers, ...change.blockers],
         change,
     };
 }
@@ -190,6 +234,10 @@ export function describeJarDeployment(plan: JarDeploymentPlan) {
         environment: request.env.name,
         artifact,
         expectedSha256: artifact.sha256,
+        buildProvenance: plan.provenance.buildProvenance,
+        ...(plan.provenance.provenancePolicy ? { provenancePolicy: plan.provenance.provenancePolicy } : {}),
+        ...(plan.provenance.warnings.length ? { provenanceWarnings: plan.provenance.warnings } : {}),
+        ...(plan.provenance.blocker ? { blockers: [plan.provenance.blocker] } : {}),
         publish: {
             groupId: ref.groupId,
             assetId: ref.artifactId,
@@ -232,7 +280,7 @@ export async function executeJarDeployment(
                 `Remove: ${plan.rejectedSettings.join(', ')}`,
         );
     }
-    if (plan.change?.blockers.length) throw new Error(plan.change.blockers.join('\n'));
+    if (plan.blockers.length) throw new Error(plan.blockers.join('\n'));
     const { request, existing, ref, artifact } = plan;
 
     const published = await client.exchange.publishAppAsset(

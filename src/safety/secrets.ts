@@ -94,3 +94,24 @@ export function redactText(text: string, knownSecrets: Iterable<string>): string
     for (const value of values) result = result.split(value).join(MASKED);
     return result;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Sanitize free text a platform echoed back (an error message), when its secrets are not known in
+ * advance: email addresses keep only their domain, and credential-looking values are masked (JWTs,
+ * bearer tokens, Salesforce session IDs, `secret=value` pairs, and long opaque strings). UUIDs, which
+ * identify resources, are kept.
+ */
+export function sanitizePlatformText(text: string): string {
+    return text
+        .replace(/[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g, '***@$1')
+        .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, MASKED)
+        .replace(/\b(bearer)\s+[A-Za-z0-9._~+/=-]+/gi, `$1 ${MASKED}`)
+        .replace(/\b00D[A-Za-z0-9]{12,15}![A-Za-z0-9._]+/g, MASKED)
+        .replace(
+            /\b((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|credential)s?["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi,
+            `$1${MASKED}`,
+        )
+        .replace(/[A-Za-z0-9+/_=-]{32,}/g, (match) => (UUID.test(match) ? match : MASKED));
+}

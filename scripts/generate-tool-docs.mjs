@@ -12,7 +12,11 @@ const registrars = await import(pathToFileURL(join(repositoryRoot, 'dist/mcp/too
 /** Catalog sections in reading order: [registrar export, heading, intro]. */
 const SECTIONS = [
     ['registerIdentityTools', 'Identity and organization', 'Start here to confirm access and discover environments.'],
-    ['registerProfileTools', 'Project profile', 'Bind a workspace to a named credential profile.'],
+    [
+        'registerProfileTools',
+        'Project profile and production policy',
+        'Bind a workspace to a named credential profile, and manage user-level production pre-approvals and unmarked-artifact allowances.',
+    ],
     [
         'registerAppReadTools',
         'Applications — read',
@@ -39,6 +43,11 @@ const SECTIONS = [
         'registerMonitoringTools',
         'Monitoring',
         'Traffic, failures, latency, JVM and host metrics. See [Monitoring](monitoring.md) for how to read them.',
+    ],
+    [
+        'registerAlertTools',
+        'Alerts',
+        'Anypoint Monitoring metric alerts on apps and API instances, and Runtime Manager event alerts (read only). Uses an undocumented API; see [Alerts](alerts.md).',
     ],
     ['registerExchangeTools', 'Exchange', 'Search assets, read specs and publish application JARs.'],
     [

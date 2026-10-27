@@ -157,6 +157,27 @@ describe('apps delete CLI', () => {
         ]);
         expect(client.cloudHub2.deleteDeployment).toHaveBeenCalledWith('org-1', 'env-prod', 'dep-1');
     });
+
+    it('accepts a user-level pre-approval that names delete_app in place of --allow-production', async () => {
+        const { savePreapproval } = await import('../../src/safety/preapproval.js');
+        client.accessManagement.resolveEnvironment.mockResolvedValue({
+            id: 'env-prod',
+            name: 'Production',
+            isProduction: true,
+        });
+        const args = ['node', 'apps', 'delete', 'sample-app', '--env', 'Production', '--confirm', 'dep-1'];
+        const scope = { orgId: 'org-1', environmentId: 'env-prod' };
+
+        savePreapproval(scope, { ...scope, tools: 'all-mutating' });
+        await createAppsCommand().parseAsync(args);
+        expect(client.cloudHub2.deleteDeployment).not.toHaveBeenCalled();
+
+        savePreapproval(scope, { ...scope, tools: ['delete_app'] });
+        process.exitCode = undefined;
+        await createAppsCommand().parseAsync(args);
+        expect(client.cloudHub2.deleteDeployment).toHaveBeenCalledWith('org-1', 'env-prod', 'dep-1');
+        savePreapproval(scope, null);
+    });
 });
 
 describe('apps change CLI', () => {

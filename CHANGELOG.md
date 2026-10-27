@@ -1,5 +1,91 @@
 # Changelog
 
+## 0.17.0 - 2026-10-27
+
+### Behavior change: production takes only marked, production-deployable builds
+
+- mule-build 3.2.0 writes `META-INF/mule-build/build-info.json` into every jar. For a production
+  environment, only a marker with `schemaVersion` 1, `tool` `mule-build`, `stripped: false` and
+  `productionDeployable: true` passes. A stripped jar, a marker of another schema or tool, an inconsistent
+  marker (`productionDeployable` not equal to `!stripped`), or an unreadable one is refused in the preview
+  and on confirm, with no override. Outside production these are warnings.
+- **A jar without a marker is refused for production** as "build provenance unknown". To deploy
+  artifacts built by another pipeline, opt in per organization and environment with
+  `set_unmarked_artifact_allowance` (stored as `unmarkedArtifactAllowances` in
+  `~/.anypoint-connect/production-approvals.json`, optional `expires` and `projectPath`). Production
+  previews show `provenancePolicy` (`unmarkedAllowed`, `source`, `expires`).
+- Where it is checked: `deploy_jar` and `anc deploy` check the local jar they publish. `deploy_app`,
+  `update_app`, `update_app_artifact`, `rollback_app` and `anc apps update` download the artifact the
+  change selects from Exchange and check its own marker for every production change, with or without a
+  local jar; a failed download or an MD5 mismatch refuses the change. Their new `jarPath` input (CLI:
+  `--jar`) binds the change to a local jar in any environment: the Exchange artifact is downloaded and
+  its SHA-256 must equal the jar's, and a mismatch, a failed download or an MD5 mismatch refuses the
+  change. `publish_app_jar` takes an optional `environment` for the same check before publishing.
+  Previews report `buildProvenance` and `artifactVerification`.
+
+### Added
+- `scan_logs_for_credentials` (CLI: `anc logs credentials`) counts log lines that carry session or bearer
+  credentials (`Authorization: Bearer`, bearer tokens, `sessionId`, `Sforce-Session`, Salesforce session
+  IDs, `access_token` / `refresh_token` / `id_token`, JWTs) per marker, per spec and per replica, over the
+  same window as `get_logs`, `previousSpecs` included. It never returns the lines or the values. A
+  separate read-only tool keeps `get_logs` and `download_logs` returning lines and this one never.
+- `get_audit_log` classifies each entry with `actorClass` (`platform-patch`, `platform-replica`,
+  `platform-infrastructure`, `user-or-pipeline`) and the `actorRule` that matched, adds
+  `summary.byClass`, `returned`, and a `notice` when the result was cut. Every platform class requires a
+  recognized platform identity (staff or service user name, or the patcher's client name); connected apps
+  and pipelines with no user stay `user-or-pipeline`. Replica verbs match whole words. The rules live in
+  one table (`src/analysis/audit-actors.ts`).
+- Production pre-approval: `set_production_preapproval` stores `productionPreapprovals` entries
+  (`orgId`, `environmentId`, `environmentName` for display, `tools` or `"all-mutating"`, optional
+  `expires` and `projectPath`) in the user-level `~/.anypoint-connect/production-approvals.json`, never
+  in the repository. A covered organization, environment and tool skips `confirmProduction` and the
+  CLI's typed phrase, and `--allow-production` for `anc apps delete` (only when `delete_app` is named) and
+  `anc api smoke`. Entries are scoped to the organization ID and environment ID, not to a profile or
+  credential: they apply to every profile that resolves to that organization and environment and stay in
+  force across profile switches within it. Names are never matched, and another organization never
+  matches, so approvals do not carry across organizations.
+  `confirm: true`, `expectedSha256`, `expectedDeploymentId` and every refusal still apply. Production
+  previews and results carry `production`, `productionPreapproved`, `preapprovalSource` and
+  `preapprovalWarning` (a project file that tried to grant approval, which is ignored).
+  `get_project_profile` and `whoami` show `productionPolicy`.
+- Alert management through the undocumented observability API behind the Monitoring UI
+  (`AlertsApi`, `client.alerts`):
+  - `list_alerts` (`environment?`, `entityType?`, `app?`, `apiInstanceId?`, `name?`, `status?`,
+    `source` `monitoring|runtime-manager|all`, `revealRecipients?`) returns alerts normalized to `id`,
+    `source`, `name`, `enabled`, `severity` (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL` for every family),
+    `status`, `state`, `entity`, `condition` and a recipient count; domains and recipients only with
+    `revealRecipients`. Runtime Manager event alerts are read only, from their `condition` (event type and
+    resources) and `actions` (user IDs and addresses). Deleted alerts never appear. `get_alert` returns
+    one.
+  - `create_alert` resolves the target from CloudHub 2.0 or API Manager, converts percent thresholds to
+    fractions, validates ranges, takes explicit notifications only (written as `notifications`, read back
+    as `notificationTemplates`), creates disabled by default, warns about recipients outside your email
+    domain, and refuses a duplicate name on the same target unless `allowDuplicate`. Severity is 0-3 or a
+    label. For an API target the preview shows only the instance ID passed.
+  - `update_alert` and `set_alert_enabled` read the alert, merge the change and send the full body,
+    keeping every writable field; notification changes are detected on the full bodies. A `PENDING`
+    alert is refused with a retry-later message.
+  - `delete_alert` is bound to `expectedName`, reads the alert from the list first (refusing a `PENDING`
+    one), and verifies the deletion from the list, since a read of one alert can lag. It reports
+    `accepted` and `status`, and says deleted only once a complete list no longer shows the alert
+    (`UNVERIFIED` when the listing was cut off). Updates likewise report `accepted`, `verified` and the
+    observed status, and say updated only when the list shows the new values.
+  - Platform error text is sanitized: email addresses keep only their domain, token-like values are
+    masked.
+  - Writes preview by default and use the production guard of the alert's own environment. The new write
+    tools are pre-approvable; `"all-mutating"` covers all but `delete_alert`, which must be named.
+  - A family that answers 404 or 403 is reported as unsupported. `get_api_alerts` also returns the
+    Monitoring alerts on the API instance as `monitoringAlerts`.
+  - CLI: `anc alerts list|get|create|update|enable|disable|delete`.
+- `LogsApi.getLogParts` returns each spec's log text separately.
+- Tests run with `HOME` pointed at an empty directory, so they never read the real user settings.
+
+### Changed
+
+- `set_project_profile` and `anc config use` update the nearest `.anypoint-connect.json` (walking up)
+  and keep its other fields (`conventions`) instead of writing a new file with only `profile`, and a
+  binding to a profile that has no credentials yet is now actually written, as its warning says.
+
 ## 0.16.3 - 2026-10-26
 
 ### Fixed

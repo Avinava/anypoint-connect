@@ -2,7 +2,7 @@
     "mcpServers": {
         "anypoint-connect": {
             "command": "npx",
-            "args": ["-y", "@sfdxy/anypoint-connect@0.16.3", "mcp"]
+            "args": ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
         }
     }
 }

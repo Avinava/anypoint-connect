@@ -61,6 +61,155 @@ export function inspectArtifact(
     return { sha256, coordinates: candidates[0] };
 }
 
+/** Where mule-build (3.2.0 and later) records how a jar was built. */
+export const BUILD_INFO_PATH = 'META-INF/mule-build/build-info.json';
+
+const BUILD_INFO_MAX_BYTES = 65536;
+
+/** What a jar says about its own build, read from {@link BUILD_INFO_PATH}. */
+export type BuildProvenance =
+    | { status: 'unknown' }
+    | { status: 'invalid'; reason: string }
+    | {
+          status: 'recorded';
+          schemaVersion: number;
+          tool: string;
+          toolVersion: string;
+          stripped: boolean;
+          productionDeployable: boolean;
+      };
+
+/** Read the build-info marker without extracting anything else. A jar without one has unknown provenance. */
+export function readBuildProvenance(bytes: Uint8Array): BuildProvenance {
+    let seen = 0;
+    let oversized = false;
+    const entries = unzipSync(bytes, {
+        filter(entry) {
+            if (entry.name !== BUILD_INFO_PATH) return false;
+            seen++;
+            if (entry.originalSize > BUILD_INFO_MAX_BYTES) {
+                oversized = true;
+                return false;
+            }
+            return true;
+        },
+    });
+    if (seen === 0) return { status: 'unknown' };
+    if (seen > 1) return { status: 'invalid', reason: `the jar has ${seen} ${BUILD_INFO_PATH} entries` };
+    if (oversized) return { status: 'invalid', reason: `${BUILD_INFO_PATH} exceeds ${BUILD_INFO_MAX_BYTES} bytes` };
+
+    let info: Record<string, unknown>;
+    try {
+        const parsed: unknown = JSON.parse(strFromU8(entries[BUILD_INFO_PATH]));
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
+        info = parsed as Record<string, unknown>;
+    } catch {
+        return { status: 'invalid', reason: `${BUILD_INFO_PATH} is not a JSON object` };
+    }
+    const { schemaVersion, tool, toolVersion, stripped, productionDeployable } = info;
+    if (
+        typeof schemaVersion !== 'number' ||
+        !Number.isInteger(schemaVersion) ||
+        schemaVersion < 1 ||
+        typeof tool !== 'string' ||
+        typeof toolVersion !== 'string' ||
+        typeof stripped !== 'boolean' ||
+        typeof productionDeployable !== 'boolean'
+    ) {
+        return {
+            status: 'invalid',
+            reason: `${BUILD_INFO_PATH} lacks schemaVersion, tool, toolVersion, stripped or productionDeployable`,
+        };
+    }
+    // Only the contract this tool understands counts; anything else cannot vouch for the build.
+    if (schemaVersion !== BUILD_INFO_SCHEMA_VERSION) {
+        return { status: 'invalid', reason: `unsupported schemaVersion ${schemaVersion} (expected 1)` };
+    }
+    if (tool !== BUILD_INFO_TOOL) return { status: 'invalid', reason: `unknown build tool "${tool}"` };
+    if (productionDeployable === stripped) {
+        return {
+            status: 'invalid',
+            reason: `inconsistent marker: stripped ${stripped} with productionDeployable ${productionDeployable}`,
+        };
+    }
+    return { status: 'recorded', schemaVersion, tool, toolVersion, stripped, productionDeployable };
+}
+
+const BUILD_INFO_SCHEMA_VERSION = 1;
+const BUILD_INFO_TOOL = 'mule-build';
+
+/** Whether unmarked jars may go to the target; see src/safety/preapproval.ts. */
+export interface UnmarkedPolicy {
+    unmarkedAllowed: boolean;
+    source?: string;
+    expires?: string;
+}
+
+/** The outcome of checking a jar's build provenance against where it is going. */
+export interface ProvenanceCheck {
+    /** Serializable summary for previews. */
+    buildProvenance: BuildProvenance & { note?: string };
+    /** Present for a production target: whether unmarked jars are allowed there, and by what. */
+    provenancePolicy?: UnmarkedPolicy;
+    warnings: string[];
+    /** Set when the jar must not go to the target. */
+    blocker?: string;
+}
+
+const UNKNOWN_NOTE = `build provenance unknown: the jar has no ${BUILD_INFO_PATH} (built before mule-build 3.2.0 or by another tool)`;
+
+/**
+ * Decide whether a jar may go to an environment. For production, only a marker with schemaVersion 1,
+ * tool "mule-build", stripped false and productionDeployable true passes. A jar marked not production
+ * deployable, or with an unreadable or inconsistent marker, is refused with no override. A jar
+ * without a marker is refused unless an unmarked-artifact allowance covers the org and environment.
+ * Outside production every case passes, with a warning or a note. `production` is undefined when the
+ * target is not known yet (publishing only).
+ */
+export function checkBuildProvenance(
+    provenance: BuildProvenance,
+    production: boolean | undefined,
+    unmarked: UnmarkedPolicy = { unmarkedAllowed: false },
+): ProvenanceCheck {
+    const policy = production ? { provenancePolicy: unmarked } : {};
+    if (provenance.status === 'unknown') {
+        const buildProvenance = { ...provenance, note: UNKNOWN_NOTE };
+        if (production && !unmarked.unmarkedAllowed) {
+            return {
+                buildProvenance,
+                ...policy,
+                warnings: [],
+                blocker:
+                    'Refused: build provenance unknown. Production takes only jars whose mule-build marker says productionDeployable. ' +
+                    'For artifacts built by another pipeline, add an unmarked-artifact allowance for this organization and environment (set_unmarked_artifact_allowance).',
+            };
+        }
+        return { buildProvenance, ...policy, warnings: [] };
+    }
+    if (provenance.status === 'recorded' && provenance.productionDeployable) {
+        return { buildProvenance: provenance, ...policy, warnings: [] };
+    }
+
+    const problem =
+        provenance.status === 'invalid'
+            ? `its build marker is not valid (${provenance.reason})`
+            : `its build marks it not production deployable (${provenance.tool} ${provenance.toolVersion}, stripped: ${provenance.stripped})`;
+    if (production) {
+        return {
+            buildProvenance: provenance,
+            ...policy,
+            warnings: [],
+            blocker: `Refused: this jar cannot go to a production environment because ${problem}. Build a production-deployable jar (secure properties not stripped) and preview again.`,
+        };
+    }
+    return {
+        buildProvenance: provenance,
+        warnings: [
+            `This jar is not production deployable: ${problem}. Deploying it to a production environment is refused.`,
+        ],
+    };
+}
+
 /** Compare the exact bytes that will be uploaded with the reviewed build or preview digest. */
 export function verifyArtifactDigest(bytes: Uint8Array, expectedSha256?: string): string {
     const sha256 = createHash('sha256').update(bytes).digest('hex');
