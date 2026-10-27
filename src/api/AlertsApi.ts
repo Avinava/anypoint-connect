@@ -169,6 +169,17 @@ export class AlertsApi {
 
     /** Every Monitoring alert of the organization, optionally narrowed by environment ID and exact name. */
     async list(orgId: string, filter: { environmentId?: string; name?: string } = {}): Promise<MonitoringAlert[]> {
+        return (await this.listAll(orgId, filter)).alerts;
+    }
+
+    /**
+     * Like {@link list}, and says whether the listing is complete. It is not when the page cap was
+     * reached with more pages left; callers must not infer that an alert is absent from such a listing.
+     */
+    async listAll(
+        orgId: string,
+        filter: { environmentId?: string; name?: string } = {},
+    ): Promise<{ alerts: MonitoringAlert[]; complete: boolean }> {
         const alerts: MonitoringAlert[] = [];
         for (let page = 0; page < MAX_PAGES; page++) {
             const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) });
@@ -184,9 +195,9 @@ export class AlertsApi {
             }
             const batch = response.data ?? [];
             alerts.push(...batch);
-            if (batch.length < PAGE_SIZE || !response.metadata?.pagination?.next) break;
+            if (batch.length < PAGE_SIZE || !response.metadata?.pagination?.next) return { alerts, complete: true };
         }
-        return alerts;
+        return { alerts, complete: false };
     }
 
     /** One alert, or null when it does not exist (any more). */

@@ -13,6 +13,7 @@ import {
     appAlert,
     deployment,
     httpError,
+    runtimeManagerAlert,
 } from '../../fixtures/alerts.js';
 
 const BASE = `/observability/api/v1/organizations/${ORG}/alerts`;
@@ -105,6 +106,34 @@ describe('alert MCP tools', () => {
             const revealed = parse(await handlers.get('get_alert')!({ id: 'alert-1', revealRecipients: true }));
             expect(revealed.notifications[0].recipients).toContain('ops@example.com');
             expect(revealed.recipientDomains).toEqual(['example.com', 'example.org']);
+        });
+
+        it('regression: a Runtime Manager alert on several apps matches app by membership', async () => {
+            const listMonitoring = http.get.getMockImplementation()!;
+            http.get.mockImplementation(async (url: string) =>
+                url === '/armui/api/v1/alerts'
+                    ? {
+                          data: [
+                              runtimeManagerAlert({
+                                  condition: {
+                                      type: 'deployment-failed',
+                                      resourceType: 'mc-application',
+                                      resources: ['billing-sapi', 'orders-sapi'],
+                                  },
+                              }),
+                          ],
+                      }
+                    : listMonitoring(url),
+            );
+            const body = parse(
+                await handlers.get('list_alerts')!({
+                    environment: 'Sandbox',
+                    source: 'runtime-manager',
+                    app: 'orders-sapi',
+                }),
+            );
+            expect(body.alerts).toHaveLength(1);
+            expect(body.alerts[0].entity.resources).toEqual(['billing-sapi', 'orders-sapi']);
         });
 
         it('reports an unsupported family cleanly', async () => {
@@ -292,6 +321,39 @@ describe('alert MCP tools', () => {
             });
         });
 
+        describe('regression: an update is reported as accepted until verified', () => {
+            it('says updated only when the listed alert is ACTIVE with the new values', async () => {
+                http.patch.mockImplementation(async (_url: string, body: any) => {
+                    stored['alert-1'] = { ...stored['alert-1'], enabled: body.enabled, alertStatus: 'ACTIVE' };
+                });
+                const result = parse(
+                    await handlers.get('set_alert_enabled')!({ id: 'alert-1', enabled: false, confirm: true }),
+                );
+                expect(result).toMatchObject({ accepted: true, verified: true, status: 'ACTIVE' });
+                expect(result.message).toMatch(/^Updated/);
+            });
+
+            it('reports PENDING with a retry hint, not "Updated"', async () => {
+                http.patch.mockImplementation(async () => {
+                    stored['alert-1'] = { ...stored['alert-1'], alertStatus: 'PENDING' };
+                });
+                const result = parse(
+                    await handlers.get('set_alert_enabled')!({ id: 'alert-1', enabled: false, confirm: true }),
+                );
+                expect(result).toMatchObject({ accepted: true, verified: false, status: 'PENDING' });
+                expect(result.message).not.toMatch(/^Updated/);
+                expect(result.message).toContain('check again');
+            });
+
+            it('does not claim the update when the listed values are still the old ones', async () => {
+                const result = parse(
+                    await handlers.get('set_alert_enabled')!({ id: 'alert-1', enabled: false, confirm: true }),
+                );
+                expect(result).toMatchObject({ accepted: true, verified: false, status: 'ACTIVE' });
+                expect(result.message).not.toMatch(/^Updated/);
+            });
+        });
+
         it('masks existing recipients in the preview', async () => {
             const preview = parse(await handlers.get('set_alert_enabled')!({ id: 'alert-1', enabled: false }));
             expect(preview).toMatchObject({ dryRun: true, action: 'disable alert' });
@@ -436,6 +498,24 @@ describe('alert MCP tools', () => {
             );
             const result = parse(await handlers.get('delete_alert')!(confirmed));
             expect(result).toMatchObject({ accepted: true, status: 'GONE', verifiedAbsent: true });
+        });
+
+        it('regression: never infers absence from a truncated list', async () => {
+            const original = appAlert();
+            http.delete.mockResolvedValue(undefined);
+            http.get.mockImplementation(async (url: string) => {
+                if (!url.startsWith(`${BASE}?`)) return { data: original };
+                const params = new URL(`https://x${url}`).searchParams;
+                // The name-filtered listing still shows the alert before deletion; afterwards every page is full.
+                if (http.delete.mock.calls.length === 0) return { data: [original], metadata: { pagination: {} } };
+                return {
+                    data: Array.from({ length: 100 }, (_, i) => appAlert({ id: `other-${params.get('offset')}-${i}` })),
+                    metadata: { pagination: { next: 'more' } },
+                };
+            });
+            const result = parse(await handlers.get('delete_alert')!(confirmed));
+            expect(result).toMatchObject({ accepted: true, status: 'UNVERIFIED', verifiedAbsent: false });
+            expect(result.message).toContain('could not be verified');
         });
 
         it('treats a 404 on DELETE with the alert absent from the list as gone', async () => {

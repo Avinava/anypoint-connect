@@ -67,7 +67,9 @@
     alert is refused with a retry-later message.
   - `delete_alert` is bound to `expectedName`, reads the alert from the list first (refusing a `PENDING`
     one), and verifies the deletion from the list, since a read of one alert can lag. It reports
-    `accepted` and `status`, and says deleted only once the list no longer shows the alert.
+    `accepted` and `status`, and says deleted only once a complete list no longer shows the alert
+    (`UNVERIFIED` when the listing was cut off). Updates likewise report `accepted`, `verified` and the
+    observed status, and say updated only when the list shows the new values.
   - Platform error text is sanitized: email addresses keep only their domain, token-like values are
     masked.
   - Writes preview by default and use the production guard of the alert's own environment. The new write

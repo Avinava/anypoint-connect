@@ -95,6 +95,10 @@ create_alert({
 - Platform error text is sanitized before it is returned or printed: email addresses keep only their
   domain, and token-like values are masked.
 - `set_alert_enabled({ id, enabled })` switches an alert on or off.
+- The platform accepts a change (HTTP 202) and applies it asynchronously. After sending it, the tools
+  read the alert from the list once and report `accepted`, `verified` and `status`: "Updated" only when
+  the list shows the alert `ACTIVE` with the new values; otherwise `PENDING` or `UNVERIFIED` with a
+  hint to check again.
 - A `PENDING` alert cannot be changed; the tool refuses with a retry-later message.
 - `delete_alert({ id, expectedName })` is bound like `delete_app`: preview first, then `confirm: true` with
   the name from the preview. The alert is read from the list first: a `PENDING` alert (a change in
@@ -102,7 +106,9 @@ create_alert({
   alert while still listing it, so a 404 alone never counts as deleted. After the delete, the result
   is verified from the list, because a read of the single alert can keep answering `ACTIVE`: `GONE`
   with `verifiedAbsent: true` once the list no longer shows it (also when DELETE answers 404 and the
-  list agrees), otherwise `accepted` with `PENDING` or `ACTIVE`, never "deleted".
+  list agrees), otherwise `accepted` with `PENDING` or `ACTIVE`, never "deleted". The list is read
+  narrowed by environment and name; if it is still longer than the tools read (2,000 alerts), absence
+  proves nothing and the result is `UNVERIFIED`.
 - Severity is given as 0-3 or as `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`.
 - For an API target, the create preview names only the instance ID you passed; the API name and
   endpoint resolved from API Manager are sent but not printed.

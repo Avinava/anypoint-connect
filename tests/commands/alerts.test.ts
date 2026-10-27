@@ -23,6 +23,7 @@ describe('anc alerts', () => {
         update: vi.fn(),
         delete: vi.fn(),
         listRuntimeManager: vi.fn(),
+        listAll: vi.fn(),
     };
     const client = {
         getDefaultOrgId: vi.fn(),
@@ -43,6 +44,10 @@ describe('anc alerts', () => {
         client.accessManagement.resolveEnvironment.mockResolvedValue(SANDBOX);
         client.cloudHub2.findDetailByName.mockResolvedValue(deployment);
         alerts.list.mockResolvedValue([appAlert()]);
+        alerts.listAll.mockImplementation(async (...args: unknown[]) => ({
+            alerts: await alerts.list(...args),
+            complete: true,
+        }));
         alerts.get.mockResolvedValue(appAlert());
         alerts.create.mockResolvedValue({ id: 'alert-new' });
     });

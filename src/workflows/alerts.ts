@@ -220,6 +220,11 @@ export function normalizeAlert(alert: MonitoringAlert, options: { reveal?: boole
 
 const RM_RESOURCE_TYPES: Record<string, string> = { 'mc-application': 'application' };
 
+/** Whether a Runtime Manager alert targets an app: membership in its resources, case-insensitive. */
+export function targetsApp(resources: readonly string[] | undefined, app: string): boolean {
+    return (resources ?? []).some((r) => r.toLowerCase() === app.toLowerCase());
+}
+
 /**
  * View of a Runtime Manager event alert (deployment failed and similar). Observed shape:
  * condition{type, resourceType, resources[]}, actions[]{type, userIds[], emails[], subject, content},
@@ -246,7 +251,8 @@ export function normalizeRuntimeManagerAlert(alert: RuntimeManagerAlert, options
         entity: {
             type: (resourceType && RM_RESOURCE_TYPES[String(resourceType)]) ?? resourceType,
             name: resources.length ? resources.join(', ') : undefined,
-            ...(resources.length > 1 ? { count: resources.length } : {}),
+            /** Every target, for filtering by membership. */
+            resources,
         },
         condition: { event: text(condition.type) },
         ...(text(alert.conditionType) !== undefined ? { conditionType: text(alert.conditionType) } : {}),
@@ -611,10 +617,93 @@ export async function planUpdateAlert(client: AnypointClient, id: string, patch:
 
 // ── Delete ────────────────────────────────────────────
 
+/**
+ * Find an alert in the list, narrowed by environment and name so the listing stays small. `complete`
+ * is false when the listing hit its page cap; absence from an incomplete listing proves nothing.
+ */
+export async function findListedAlert(
+    client: AnypointClient,
+    orgId: string,
+    alert: { id: string; name?: string; environmentId?: string },
+): Promise<{ alert?: MonitoringAlert; complete: boolean }> {
+    const { alerts, complete } = await client.alerts.listAll(orgId, {
+        ...(alert.environmentId ? { environmentId: alert.environmentId } : {}),
+        ...(alert.name ? { name: alert.name } : {}),
+    });
+    return { alert: alerts.find((a) => a.id === alert.id && a.alertStatus !== 'DELETED'), complete };
+}
+
+// ── Update result ─────────────────────────────────────
+
+export interface UpdateAlertResult {
+    accepted: true;
+    /** True only when the listed alert is ACTIVE and carries the new values. */
+    verified: boolean;
+    status: 'ACTIVE' | 'PENDING' | 'UNVERIFIED';
+    message: string;
+}
+
+function applied(listed: MonitoringAlert, body: AlertWriteBody): boolean {
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    return (
+        listed.name === body.name &&
+        listed.enabled === body.enabled &&
+        listed.severity === body.severity &&
+        same(listed.settings?.threshold, body.settings.threshold) &&
+        same(listed.settings?.evaluationOperator, body.settings.evaluationOperator) &&
+        same(listed.settings?.evaluationInterval, body.settings.evaluationInterval)
+    );
+}
+
+/**
+ * Send the full replacement, then re-read the alert from the list once. The platform answers 202 and
+ * applies the change asynchronously, so "updated" is claimed only when the list shows it applied.
+ */
+export async function executeUpdateAlert(
+    client: AnypointClient,
+    plan: Pick<UpdateAlertPlan, 'orgId' | 'existing' | 'body'>,
+): Promise<UpdateAlertResult> {
+    const id = plan.existing.id;
+    await client.alerts.update(plan.orgId, id, plan.body);
+    const { alert: listed } = await findListedAlert(client, plan.orgId, {
+        id,
+        name: plan.body.name,
+        environmentId: plan.existing.entity.environmentId,
+    });
+    const retry = 'The platform applies changes asynchronously; check again with get_alert or list_alerts in a minute.';
+    if (!listed) {
+        return {
+            accepted: true,
+            verified: false,
+            status: 'UNVERIFIED',
+            message: `Change accepted; the alert was not found in the list yet. ${retry}`,
+        };
+    }
+    if (listed.alertStatus === 'PENDING') {
+        return {
+            accepted: true,
+            verified: false,
+            status: 'PENDING',
+            message: `Change accepted; the alert is PENDING while the platform applies it. ${retry}`,
+        };
+    }
+    if (!applied(listed, plan.body)) {
+        return {
+            accepted: true,
+            verified: false,
+            status: 'ACTIVE',
+            message: `Change accepted, but the list still shows the previous values. ${retry}`,
+        };
+    }
+    return { accepted: true, verified: true, status: 'ACTIVE', message: `Updated alert "${plan.body.name}".` };
+}
+
+// ── Delete ────────────────────────────────────────────
+
 export interface DeleteAlertResult {
     accepted: boolean;
-    /** PENDING while the platform deletes it; DELETED or GONE once it is. */
-    status: 'PENDING' | 'ACTIVE' | 'DELETED' | 'GONE';
+    /** PENDING while the platform deletes it; GONE once the complete list no longer shows it. */
+    status: 'PENDING' | 'ACTIVE' | 'DELETED' | 'GONE' | 'UNVERIFIED';
     verifiedAbsent: boolean;
     message: string;
 }
@@ -632,26 +721,39 @@ export async function readAlertForDelete(
     id: string,
 ): Promise<MonitoringAlert | null> {
     const got = await client.alerts.get(orgId, id);
-    const listed = (await client.alerts.list(orgId, got ? { environmentId: got.entity.environmentId } : {})).find(
-        (a) => a.id === id,
-    );
+    const { alert: listed } = await findListedAlert(client, orgId, {
+        id,
+        ...(got ? { name: got.name, environmentId: got.entity.environmentId } : {}),
+    });
     if (listed) return listed;
     return got && got.alertStatus !== 'DELETED' ? got : null;
 }
 
 /**
  * Request deletion, then verify it from the list. Never claims deleted while the list still shows the
- * alert. A 404 on DELETE with the alert absent from the list means it is already gone.
+ * alert, or when the listing was cut off. A 404 on DELETE with the alert absent from a complete
+ * listing means it is already gone.
  */
 export async function executeDeleteAlert(
     client: AnypointClient,
     orgId: string,
-    alert: Pick<MonitoringAlert, 'id' | 'entity'>,
+    alert: Pick<MonitoringAlert, 'id' | 'name' | 'entity'>,
 ): Promise<DeleteAlertResult> {
     const outcome = await client.alerts.delete(orgId, alert.id);
-    const still = (await client.alerts.list(orgId, { environmentId: alert.entity.environmentId })).find(
-        (a) => a.id === alert.id && a.alertStatus !== 'DELETED',
-    );
+    const { alert: still, complete } = await findListedAlert(client, orgId, {
+        id: alert.id,
+        name: alert.name,
+        environmentId: alert.entity.environmentId,
+    });
+    if (!still && !complete) {
+        return {
+            accepted: outcome === 'accepted',
+            status: 'UNVERIFIED',
+            verifiedAbsent: false,
+            message:
+                'Deletion accepted, but it could not be verified: the alert list is longer than this tool reads. Check again with get_alert or list_alerts.',
+        };
+    }
     if (!still) {
         return {
             accepted: outcome === 'accepted',

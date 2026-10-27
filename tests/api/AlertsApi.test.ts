@@ -24,6 +24,19 @@ describe('AlertsApi', () => {
         expect(http.get.mock.calls[1][0]).toContain('offset=100');
     });
 
+    it('reports whether the listing is complete', async () => {
+        http.get.mockResolvedValueOnce({ data: [appAlert()], metadata: { pagination: {} } });
+        expect((await api.listAll(ORG)).complete).toBe(true);
+        http.get.mockReset();
+        http.get.mockResolvedValue({
+            data: Array.from({ length: 100 }, () => appAlert()),
+            metadata: { pagination: { next: 'more' } },
+        });
+        const truncated = await api.listAll(ORG);
+        expect(truncated.complete).toBe(false);
+        expect(truncated.alerts).toHaveLength(2000);
+    });
+
     it('stops when a full page has no next link', async () => {
         http.get.mockResolvedValueOnce({
             data: Array.from({ length: 100 }, () => appAlert()),

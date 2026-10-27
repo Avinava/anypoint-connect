@@ -114,7 +114,7 @@ describe('normalizeRuntimeManagerAlert', () => {
             severity: 'LOW',
             status: undefined,
             state: undefined,
-            entity: { type: 'application', name: 'orders-sapi' },
+            entity: { type: 'application', name: 'orders-sapi', resources: ['orders-sapi'] },
             condition: { event: 'deployment-failed' },
             conditionType: 'event',
             isSystem: false,

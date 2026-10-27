@@ -24,6 +24,7 @@ import {
     alertEnvironment,
     describeNotifications,
     executeDeleteAlert,
+    executeUpdateAlert,
     normalizeAlert,
     normalizeRuntimeManagerAlert,
     planCreateAlert,
@@ -31,6 +32,7 @@ import {
     previewPayload,
     readAlertForDelete,
     summarizeRecipients,
+    targetsApp,
     type AlertPatch,
 } from '../../workflows/alerts.js';
 import { errorMessage } from '../../utils/errors.js';
@@ -161,11 +163,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                                             .toLowerCase()
                                             .includes(needle),
                                 )
-                                .filter(
-                                    (a) =>
-                                        !input.app ||
-                                        String(a.entity.name ?? '').toLowerCase() === input.app.toLowerCase(),
-                                );
+                                .filter((a) => !input.app || targetsApp(a.entity.resources, input.app));
                             alerts.push(...found);
                             sources['runtime-manager'] = { supported: true, count: found.length, readOnly: true };
                         } catch (error) {
@@ -326,10 +324,10 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
             preview,
         });
         if (gate) return gate;
-        await client.alerts.update(plan.orgId, id, plan.body);
+        const result = await executeUpdateAlert(client, plan);
         return mcpText({
-            message: `Updated alert "${plan.body.name}"`,
             id,
+            ...result,
             changes: plan.changes,
             ...productionFields(plan.orgId, plan.env, tool),
         });

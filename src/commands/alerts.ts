@@ -23,12 +23,14 @@ import {
     CHANGE_IN_PROGRESS,
     alertEnvironment,
     executeDeleteAlert,
+    executeUpdateAlert,
     normalizeAlert,
     normalizeRuntimeManagerAlert,
     planCreateAlert,
     planUpdateAlert,
     previewPayload,
     readAlertForDelete,
+    targetsApp,
     type AlertPatch,
     type NotificationInput,
 } from '../workflows/alerts.js';
@@ -165,10 +167,7 @@ export function createAlertsCommand(): Command {
                                         .toLowerCase()
                                         .includes(needle),
                             )
-                            .filter(
-                                (a) =>
-                                    !opts.app || String(a.entity.name ?? '').toLowerCase() === opts.app.toLowerCase(),
-                            ),
+                            .filter((a) => !opts.app || targetsApp(a.entity.resources, opts.app)),
                     );
                 }
                 if (opts.json) {
@@ -309,8 +308,12 @@ export function createAlertsCommand(): Command {
                 log.warn('Cancelled');
                 return;
             }
-            await client.alerts.update(plan.orgId, id, plan.body);
-            log.success(`Updated alert "${plan.body.name}"`);
+            const result = await executeUpdateAlert(client, plan);
+            if (result.verified) log.success(result.message);
+            else
+                log.warn(
+                    `${result.message.replace('get_alert or list_alerts', `anc alerts get ${id}`)} Status: ${result.status}`,
+                );
         } catch (error) {
             log.error(`Updating the alert failed: ${errorMessage(error)}`);
             process.exitCode = 1;
