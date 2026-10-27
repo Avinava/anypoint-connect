@@ -54,6 +54,48 @@ describe('anc alerts', () => {
         expect(JSON.stringify(rows)).not.toContain('ops@example.com');
     });
 
+    it('regression: applies --app and --name to Runtime Manager rows too', async () => {
+        alerts.listRuntimeManager.mockResolvedValue([
+            { id: 'rm-1', name: 'deploy failed', resourceName: 'orders-sapi' },
+            { id: 'rm-2', name: 'deploy failed', resourceName: 'billing-sapi' },
+            { id: 'rm-3', name: 'cpu', resourceName: 'orders-sapi' },
+        ]);
+        await run(
+            'list',
+            '--env',
+            'Sandbox',
+            '--source',
+            'runtime-manager',
+            '--app',
+            'orders-sapi',
+            '--name',
+            'deploy',
+        );
+        expect(mocks.printTable.mock.calls[0][1].map((row: string[]) => row[0])).toEqual(['rm-1']);
+    });
+
+    it('regression: update can replace notifications', async () => {
+        await run(
+            'update',
+            'alert-1',
+            '--email',
+            'oncall@example.com',
+            '--subject',
+            'Memory high',
+            '--message',
+            'Memory is high',
+        );
+        expect(alerts.update).toHaveBeenCalledTimes(1);
+        expect(alerts.update.mock.calls[0][2].notifications).toEqual([
+            {
+                type: 'EMAIL',
+                recipients: ['oncall@example.com'],
+                subject: 'Memory high',
+                messageTemplate: 'Memory is high',
+            },
+        ]);
+    });
+
     const create = [
         'create',
         '-e',

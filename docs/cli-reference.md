@@ -215,7 +215,7 @@ anc monitor download --env Sandbox --from 7d --format csv --output metrics.csv
 | `anc alerts list` | `-e, --env <name>` (needed for Runtime Manager alerts), `--app <name>`, `--api-instance <id>`, `--name <text>`, `--status PENDING\|ACTIVE\|DELETED`, `--source monitoring\|runtime-manager\|all` (default `all`), `--reveal`, `--json` |
 | `anc alerts get <id>` | `--reveal`, `--json` |
 | `anc alerts create` | `-e, --env <name>`, `--name`, `--app <name>` or `--api-instance <id>`, `--metric`, `--operator`, `--threshold`, `--duration <minutes>`, `--severity 0\|1\|2`, `--email <address>` (repeatable) with `--subject`, or `--slack-channel <id>` (`--slack-carrier <id>`), `--message`, `--response-codes`, `--policies`, `--enabled`, `--allow-duplicate`, `--dry-run`, `--force` |
-| `anc alerts update <id>` | `--name`, `--severity`, `--operator`, `--threshold`, `--duration`, `--dry-run`, `--force` |
+| `anc alerts update <id>` | `--name`, `--severity`, `--operator`, `--threshold`, `--duration`; `--email` (repeatable) with `--subject`, or `--slack-channel` (`--slack-carrier`), with `--message`, replace every notification; `--dry-run`, `--force` |
 | `anc alerts enable <id>` / `anc alerts disable <id>` | `--dry-run`, `--force` |
 | `anc alerts delete <id>` | `--confirm <name>` (dry run without it), `--allow-production` (not needed when a pre-approval names `delete_alert`) |
 

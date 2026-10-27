@@ -68,16 +68,44 @@ export function summarizeRecipients(notifications: AlertNotification[] = []): Re
     };
 }
 
-/** Notifications as written back: the read side (`notificationTemplates`) mapped to the write shape. */
+/**
+ * Notifications as written back: the read side (`notificationTemplates`) under the write name, with
+ * every field the platform returned kept, including ones this tool does not know.
+ */
 export function notificationsOf(alert: MonitoringAlert): AlertNotification[] {
     return (alert.notificationTemplates ?? alert.notifications ?? []).map((n) => ({
-        type: n.type,
+        ...n,
         ...(n.recipients ? { recipients: [...n.recipients] } : {}),
-        ...(n.subject !== undefined ? { subject: n.subject } : {}),
-        ...(n.messageTemplate !== undefined ? { messageTemplate: n.messageTemplate } : {}),
-        ...(n.channelId !== undefined ? { channelId: n.channelId } : {}),
-        ...(n.carrierId !== undefined ? { carrierId: n.carrierId } : {}),
     }));
+}
+
+/** The fields a caller sets on a notification, in a fixed order, for comparison. */
+function settableNotification(n: AlertNotification) {
+    return {
+        type: n.type,
+        recipients: n.recipients ?? [],
+        subject: n.subject ?? null,
+        messageTemplate: n.messageTemplate ?? null,
+        channelId: n.channelId ?? null,
+        carrierId: n.carrierId ?? null,
+    };
+}
+
+/** Which aspects of the notifications differ, by name only, so a masked diff still says what changed. */
+export function notificationDifferences(before: AlertNotification[], after: AlertNotification[]): string[] {
+    const a = before.map(settableNotification);
+    const b = after.map(settableNotification);
+    const fields = new Set<string>();
+    if (a.length !== b.length) fields.add('count');
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const x = a[i] as Record<string, unknown> | undefined;
+        const y = b[i] as Record<string, unknown> | undefined;
+        if (!x || !y) continue;
+        for (const key of Object.keys(x)) {
+            if (JSON.stringify(x[key]) !== JSON.stringify(y[key])) fields.add(key);
+        }
+    }
+    return [...fields];
 }
 
 /** Notifications for display: masked unless `reveal`. */
@@ -390,7 +418,21 @@ export interface AlertChange {
     field: string;
     from: unknown;
     to: unknown;
+    /** For notifications: which parts differ (recipients, subject, messageTemplate, channelId, ...). */
+    differs?: string[];
 }
+
+/** Fields the platform returns but does not take back; everything else on the alert is resent. */
+const READ_ONLY_ALERT_FIELDS = [
+    'alertStatus',
+    'state',
+    'notificationTemplates',
+    'createdAt',
+    'updatedAt',
+    'createdDate',
+    'updatedDate',
+    'lastModifiedDate',
+] as const;
 
 export interface UpdateAlertPlan {
     orgId: string;
@@ -428,7 +470,10 @@ export async function planUpdateAlert(client: AnypointClient, id: string, patch:
     }
     if (patch.durationMinutes !== undefined) settings.evaluationInterval = evaluationInterval(patch.durationMinutes);
 
+    const writable: Record<string, unknown> = { ...existing };
+    for (const field of READ_ONLY_ALERT_FIELDS) delete writable[field];
     const body: AlertWriteBody = {
+        ...writable,
         id: existing.id,
         name: patch.name?.trim() || existing.name,
         severity: patch.severity !== undefined ? checkSeverity(patch.severity) : existing.severity,
@@ -457,7 +502,16 @@ export async function planUpdateAlert(client: AnypointClient, id: string, patch:
         windowMinutes(settings.evaluationInterval),
     );
     if (patch.notifications) {
-        push('notifications', summarizeRecipients(notificationsOf(existing)), summarizeRecipients(body.notifications));
+        // Compare the full bodies; show only the masked summary and which parts differ.
+        const differs = notificationDifferences(notificationsOf(existing), body.notifications);
+        if (differs.length) {
+            changes.push({
+                field: 'notifications',
+                from: describeNotifications(notificationsOf(existing)),
+                to: describeNotifications(body.notifications),
+                differs,
+            });
+        }
     }
     return { orgId, env, existing, body, changes, noop: changes.length === 0 };
 }

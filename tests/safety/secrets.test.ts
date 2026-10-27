@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { MASKED, looksSecret, redactDeep, redactRecord, redactText, redactValue } from '../../src/safety/secrets.js';
+import {
+    MASKED,
+    looksSecret,
+    redactDeep,
+    redactRecord,
+    redactText,
+    redactValue,
+    sanitizePlatformText,
+} from '../../src/safety/secrets.js';
+
+describe('sanitizePlatformText', () => {
+    const jwt = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiJzYW1wbGUifQ', 'c2lnbmF0dXJl'].join('.');
+    it.each([
+        ['an email address', 'bad recipient person.name@example.net', 'bad recipient ***@example.net'],
+        ['a JWT', `token ${jwt} rejected`, `token ${MASKED} rejected`],
+        ['a bearer token', 'Authorization: Bearer abc.def-123', `Authorization: Bearer ${MASKED}`],
+        ['a secret pair', 'client_secret=topsecretvalue&x=1', `client_secret=${MASKED}&x=1`],
+        ['a long opaque value', `key ${'A1b2'.repeat(10)} end`, `key ${MASKED} end`],
+    ])('masks %s', (_name, input, expected) => {
+        expect(sanitizePlatformText(input)).toBe(expected);
+    });
+
+    it('keeps resource UUIDs and ordinary text', () => {
+        const text = 'Alert 123e4567-e89b-12d3-a456-426614174000 not present or Deleted';
+        expect(sanitizePlatformText(text)).toBe(text);
+    });
+});
 
 describe('looksSecret', () => {
     it.each(['db.password', 'clientSecret', 'API_KEY', 'private.key', 'sf.token', 'db-passwd', 'aws.access.key'])(

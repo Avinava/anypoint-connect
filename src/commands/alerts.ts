@@ -74,6 +74,44 @@ function printAlerts(alerts: AlertRow[]): void {
     );
 }
 
+/** --email/--subject, --slack-channel/--slack-carrier and --message, shared by create and update. */
+function addNotificationOptions(command: Command): Command {
+    return command
+        .option('--email <address>', 'Email recipient (repeatable)', collect)
+        .option('--subject <text>', 'Email subject')
+        .option('--slack-channel <id>', 'Slack channel ID')
+        .option('--slack-carrier <id>', 'Slack connection ID')
+        .option('--message <text>', 'Notification message');
+}
+
+/** The notifications the options describe, or undefined when none are given. */
+function notificationsFromOptions(opts: {
+    email?: string[];
+    subject?: string;
+    slackChannel?: string;
+    slackCarrier?: string;
+    message?: string;
+}): NotificationInput[] | undefined {
+    const notifications: NotificationInput[] = [];
+    if (opts.email?.length) {
+        notifications.push({
+            type: 'EMAIL',
+            recipients: opts.email,
+            subject: opts.subject ?? '',
+            message: opts.message ?? '',
+        });
+    }
+    if (opts.slackChannel) {
+        notifications.push({
+            type: 'SLACK',
+            channelId: opts.slackChannel,
+            ...(opts.slackCarrier ? { carrierId: opts.slackCarrier } : {}),
+            message: opts.message ?? '',
+        });
+    }
+    return notifications.length ? notifications : undefined;
+}
+
 function printChange(label: string, payload: unknown, warnings: string[] = []): void {
     log.header(label);
     console.log(JSON.stringify(payload, null, 2));
@@ -112,8 +150,21 @@ export function createAlertsCommand(): Command {
                     );
                 }
                 if (opts.source !== 'monitoring' && env) {
+                    const needle = opts.name?.toLowerCase();
                     rows.push(
-                        ...(await client.alerts.listRuntimeManager(orgId, env.id)).map(normalizeRuntimeManagerAlert),
+                        ...(await client.alerts.listRuntimeManager(orgId, env.id))
+                            .map(normalizeRuntimeManagerAlert)
+                            .filter(
+                                (a) =>
+                                    !needle ||
+                                    String(a.name ?? '')
+                                        .toLowerCase()
+                                        .includes(needle),
+                            )
+                            .filter(
+                                (a) =>
+                                    !opts.app || String(a.entity.name ?? '').toLowerCase() === opts.app.toLowerCase(),
+                            ),
                     );
                 }
                 if (opts.json) {
@@ -156,7 +207,7 @@ export function createAlertsCommand(): Command {
             }
         });
 
-    alerts
+    const create = alerts
         .command('create')
         .description('Create a metric alert on a CloudHub 2.0 app or an API instance (disabled unless --enabled)')
         .requiredOption('-e, --env <name>', 'Environment name or ID')
@@ -175,12 +226,8 @@ export function createAlertsCommand(): Command {
             number('--threshold'),
         )
         .requiredOption('--duration <minutes>', 'Minutes the condition must hold', number('--duration'))
-        .requiredOption('--severity <n>', 'Severity 0, 1 or 2', number('--severity'))
-        .option('--email <address>', 'Email recipient (repeatable)', collect)
-        .option('--subject <text>', 'Email subject')
-        .option('--slack-channel <id>', 'Slack channel ID')
-        .option('--slack-carrier <id>', 'Slack connection ID')
-        .requiredOption('--message <text>', 'Notification message')
+        .requiredOption('--severity <n>', 'Severity 0, 1 or 2', number('--severity'));
+    addNotificationOptions(create)
         .option('--response-codes <codes>', 'For api_response_code_count: comma-separated codes', list)
         .option('--policies <names>', 'For api_policy_violation_count: comma-separated policies', list)
         .option('--enabled', 'Enable on creation', false)
@@ -191,23 +238,7 @@ export function createAlertsCommand(): Command {
             try {
                 if (Boolean(opts.app) === Boolean(opts.apiInstance))
                     throw new Error('Pass exactly one of --app or --api-instance');
-                const notifications: NotificationInput[] = [];
-                if (opts.email?.length) {
-                    notifications.push({
-                        type: 'EMAIL',
-                        recipients: opts.email,
-                        subject: opts.subject ?? '',
-                        message: opts.message,
-                    });
-                }
-                if (opts.slackChannel) {
-                    notifications.push({
-                        type: 'SLACK',
-                        channelId: opts.slackChannel,
-                        carrierId: opts.slackCarrier,
-                        message: opts.message,
-                    });
-                }
+                const notifications = notificationsFromOptions(opts) ?? [];
                 const client = createClient();
                 const plan = await planCreateAlert(client, {
                     environment: opts.env,
@@ -258,7 +289,10 @@ export function createAlertsCommand(): Command {
             }
             log.header(`${plan.existing.name} in ${plan.env.name}`);
             for (const change of plan.changes)
-                log.kv(`  ${change.field}`, `${JSON.stringify(change.from)} -> ${JSON.stringify(change.to)}`);
+                log.kv(
+                    `  ${change.field}`,
+                    `${JSON.stringify(change.from)} -> ${JSON.stringify(change.to)}${change.differs ? ` (changed: ${change.differs.join(', ')})` : ''}`,
+                );
             if (opts.dryRun) {
                 log.info('Dry run: nothing was changed.');
                 return;
@@ -275,15 +309,18 @@ export function createAlertsCommand(): Command {
         }
     }
 
-    alerts
+    const update = alerts
         .command('update')
-        .description('Change an alert (read, merge, replace); metric and target cannot change')
+        .description(
+            'Change an alert (read, merge, replace); metric and target cannot change. Notification options replace every notification',
+        )
         .argument('<id>', 'Alert ID')
         .option('--name <name>', 'New name')
         .option('--severity <n>', 'Severity 0, 1 or 2', number('--severity'))
         .option('--operator <op>', `Operator: ${ALERT_OPERATORS.join(', ')}`, oneOf('--operator', ALERT_OPERATORS))
         .option('--threshold <n>', 'Threshold in the metric unit', number('--threshold'))
-        .option('--duration <minutes>', 'Minutes the condition must hold', number('--duration'))
+        .option('--duration <minutes>', 'Minutes the condition must hold', number('--duration'));
+    addNotificationOptions(update)
         .option('--dry-run', 'Show the change, then stop', false)
         .option('--force', 'Skip the production confirmation prompt', false)
         .action(async (id: string, opts) => {
@@ -295,6 +332,7 @@ export function createAlertsCommand(): Command {
                     operator: opts.operator,
                     threshold: opts.threshold,
                     durationMinutes: opts.duration,
+                    notifications: notificationsFromOptions(opts),
                 },
                 'update_alert',
                 opts,

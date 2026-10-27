@@ -80,7 +80,13 @@ create_alert({
 
 - `update_alert({ id, patch })` changes `name`, `severity`, `enabled`, `operator`, `threshold`,
   `durationMinutes` or `notifications` (replaced as a whole). The platform needs the full alert, so the tool
-  reads it, merges the patch and sends it whole. Metric and target cannot change; create a new alert.
+  reads it, merges the patch and sends it whole, keeping every writable field of the existing alert
+  (tags, alertOn, unknown notification fields) and dropping only read-only ones (status, state,
+  timestamps). Metric and target cannot change; create a new alert. A notification change is detected
+  on the full notification bodies; the preview shows it masked, with `differs` naming what changed
+  (recipients, subject, messageTemplate, channelId).
+- Platform error text is sanitized before it is returned or printed: email addresses keep only their
+  domain, and token-like values are masked.
 - `set_alert_enabled({ id, enabled })` switches an alert on or off.
 - A `PENDING` alert cannot be changed; the tool refuses with a retry-later message.
 - `delete_alert({ id, expectedName })` is bound like `delete_app`: preview first, then `confirm: true` with

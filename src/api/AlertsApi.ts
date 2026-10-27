@@ -10,6 +10,7 @@
 
 import { AxiosError } from 'axios';
 import type { HttpClient } from '../client/HttpClient.js';
+import { sanitizePlatformText } from '../safety/secrets.js';
 import { errorMessage } from '../utils/errors.js';
 
 export const ALERT_METRIC_IDS = [
@@ -75,6 +76,7 @@ export interface AlertEntity {
 }
 
 export interface AlertNotification {
+    [field: string]: unknown;
     type: 'EMAIL' | 'SLACK';
     recipients?: string[];
     subject?: string;
@@ -103,6 +105,8 @@ export interface MonitoringAlert {
 
 /** The body for create (no id) and update (full body with id); notifications are written as `notifications`. */
 export interface AlertWriteBody {
+    /** Writable fields of the existing alert this tool does not model (tags, alertOn, ...) are resent as is. */
+    [field: string]: unknown;
     id?: string;
     name: string;
     severity: number;
@@ -143,13 +147,17 @@ function status(error: unknown): number | undefined {
     return error instanceof AxiosError ? error.response?.status : undefined;
 }
 
-/** Map platform errors to messages that say what happened. */
+/**
+ * Map platform errors to messages that say what happened. Platform text is sanitized first: an alert
+ * error can echo recipients or tokens, and it ends up in MCP responses and CLI output.
+ */
 export function alertError(error: unknown, id?: string): Error {
     const code = status(error);
+    const detail = sanitizePlatformText(errorMessage(error));
     if (code === 404) return new Error(`${id ? `Alert ${id}` : 'Alert'} not found (it may have been deleted)`);
-    if (code === 400 && /not present or deleted/i.test(errorMessage(error)) && id) return new AlertPendingError(id);
-    if (code === 400) return new Error(`The alert was rejected (HTTP 400): ${errorMessage(error)}`);
-    return error instanceof Error ? error : new Error(errorMessage(error));
+    if (code === 400 && /not present or deleted/i.test(detail) && id) return new AlertPendingError(id);
+    if (code === 400) return new Error(`The alert was rejected (HTTP 400): ${detail}`);
+    return new Error(code ? `Alert request failed (HTTP ${code}): ${detail}` : detail);
 }
 
 export class AlertsApi {

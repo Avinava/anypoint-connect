@@ -252,6 +252,7 @@ describe('alert MCP tools', () => {
             expect(url).toBe(`${BASE}/alert-1`);
             expect(body).toEqual({
                 id: 'alert-1',
+                alertOn: 'METRICS',
                 name: 'orders memory',
                 severity: 1,
                 enabled: true,
@@ -296,6 +297,90 @@ describe('alert MCP tools', () => {
             const result = await handlers.get('update_alert')!({ id: 'alert-x', patch: { severity: 0 } });
             expect(result.isError).toBe(true);
             expect(result.content[0].text).toContain('not found');
+        });
+
+        describe('regression: notification changes with the same counts and domains', () => {
+            const same = { subject: 'Memory high', message: 'Memory is high' };
+            it.each([
+                ['a swapped recipient', { recipients: ['oncall@example.com', 'pager@example.org'], ...same }],
+                [
+                    'an edited subject',
+                    { recipients: ['ops@example.com', 'pager@example.org'], ...same, subject: 'RAM' },
+                ],
+                ['an edited message', { recipients: ['ops@example.com', 'pager@example.org'], ...same, message: 'x' }],
+            ])('%s is a change, shown masked', async (_name, email) => {
+                const notifications = [{ type: 'EMAIL', ...email }];
+                const result = parse(await handlers.get('update_alert')!({ id: 'alert-1', patch: { notifications } }));
+                expect(result.noop).toBeUndefined();
+                expect(result.changes.map((c: any) => c.field)).toEqual(['notifications']);
+                expect(JSON.stringify(result.changes)).not.toContain('@example');
+            });
+
+            it('a switched Slack channel is a change', async () => {
+                serve([apiAlert()]);
+                const result = parse(
+                    await handlers.get('update_alert')!({
+                        id: 'alert-api',
+                        patch: { notifications: [{ type: 'SLACK', channelId: 'C0OTHER', message: 'API errors' }] },
+                    }),
+                );
+                expect(result.changes.map((c: any) => c.field)).toEqual(['notifications']);
+            });
+
+            it('identical notifications are still a noop', async () => {
+                const notifications = [
+                    { type: 'EMAIL', recipients: ['ops@example.com', 'pager@example.org'], ...same },
+                ];
+                expect(
+                    parse(await handlers.get('update_alert')!({ id: 'alert-1', patch: { notifications } })).noop,
+                ).toBe(true);
+            });
+        });
+
+        it('regression: keeps every writable field of the existing alert in the full PATCH', async () => {
+            serve([
+                appAlert({
+                    tags: { product: 'sample', strategy: 'sample' },
+                    alertOn: 'METRICS',
+                    createdAt: '2026-01-01T00:00:00Z',
+                    updatedAt: '2026-01-02T00:00:00Z',
+                    notificationTemplates: [
+                        {
+                            type: 'EMAIL',
+                            recipients: ['ops@example.com'],
+                            subject: 'S',
+                            messageTemplate: 'M',
+                            locale: 'en',
+                        } as any,
+                    ],
+                    customField: 'kept',
+                } as any),
+            ]);
+            await handlers.get('set_alert_enabled')!({ id: 'alert-1', enabled: false, confirm: true });
+            const body = http.patch.mock.calls[0][1];
+            expect(body).toMatchObject({
+                id: 'alert-1',
+                enabled: false,
+                tags: { product: 'sample', strategy: 'sample' },
+                alertOn: 'METRICS',
+                customField: 'kept',
+            });
+            expect(body.notifications[0].locale).toBe('en');
+            for (const readOnly of ['alertStatus', 'state', 'createdAt', 'updatedAt', 'notificationTemplates']) {
+                expect(body).not.toHaveProperty(readOnly);
+            }
+        });
+
+        it('regression: platform error text is sanitized before it reaches the caller', async () => {
+            const token = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiJzYW1wbGUifQ', 'c2lnbmF0dXJl'].join('.');
+            http.patch.mockRejectedValue(
+                httpError(400, { message: `invalid recipient secret.person@example.net with token ${token}` }),
+            );
+            const result = await handlers.get('set_alert_enabled')!({ id: 'alert-1', enabled: false, confirm: true });
+            expect(result.isError).toBe(true);
+            expect(result.content[0].text).not.toContain('secret.person@example.net');
+            expect(result.content[0].text).not.toContain(token);
+            expect(result.content[0].text).toContain('example.net');
         });
     });
 
