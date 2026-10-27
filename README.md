@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="Anypoint Connect — CLI and MCP toolkit for Anypoint Platform" width="640" />
+  <img src="docs/assets/logo.svg" alt="Anypoint Connect: CLI and MCP toolkit for Anypoint Platform, with production safeguards" width="640" />
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Operate Anypoint Platform from a CLI, an MCP client, or JavaScript—with guarded mutations and one shared authentication layer.</strong>
+  <strong>Operate Anypoint Platform from a CLI, an MCP client, or JavaScript, with guarded mutations and one shared authentication layer.</strong>
 </p>
 
 <p align="center">
@@ -65,12 +65,12 @@ release does not support the `client_credentials` grant, and its encrypted token
 | --- | --- |
 | Applications | Status with a start-up-aware phase, deployment spec, resources, cross-environment comparison, publish and deploy a JAR, one-call `update_app` (version, runtime, settings and update strategy, in place or stop-then-start), runtime catalogs with retired-runtime refusal, asset naming conventions, rollback, restart, scale, stop, start, delete, and a check of what runs against a repo or JAR |
 | Settings | Add, change, remove and move properties; secret values read from project files or environment variables; secret-looking plain values masked and flagged |
-| Logs | Tail, search over message, logger and stack trace, download with filters, summaries and file output, error clustering with context, recurring patterns, log health statistics |
+| Logs | Tail, search over message, logger and stack trace, download with filters, summaries and file output, error clustering with context, recurring patterns, log health statistics, counts of lines that carry session or bearer credentials (never the values) |
 | Monitoring | Traffic, failures, and p50–p99 latency per app, worker, or route; heap, old-generation pressure, GC, CPU, and RAM per worker; time series from 1-minute to 1-day buckets; freeform AMQL |
 | Exchange | Search, asset details, spec download, application JAR publication |
 | API Manager and Governance | Instances, policies, SLA tiers, alerts, contracts, client applications with masked credentials, smoke tests with the client's credentials, governance rulesets and conformance |
 | Design Center | Projects, branches, file reads, preview-then-apply file sync, verified Exchange publication |
-| Platform services | Environments, entitlements, audit log, Anypoint MQ, Object Store v2 |
+| Platform services | Environments, entitlements, audit log with actor classes (platform patch, replica, infrastructure, or user and pipeline), Anypoint MQ, Object Store v2 |
 
 New in 0.17:
 

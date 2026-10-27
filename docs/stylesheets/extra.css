@@ -166,6 +166,17 @@ body {
     margin: 0.55rem 0 1rem;
 }
 
+.anc-hero .anc-banner {
+    margin: 0 0 1.5rem;
+}
+
+.anc-banner img {
+    display: block;
+    width: 100%;
+    max-width: 560px;
+    height: auto;
+}
+
 .anc-hero .anc-lead {
     max-width: 62ch;
     margin-bottom: 1.5rem;

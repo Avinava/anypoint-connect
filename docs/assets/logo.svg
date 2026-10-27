@@ -1,18 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 240" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 288" width="960" height="288" role="img" aria-labelledby="title desc">
   <title id="title">Anypoint Connect</title>
-  <desc id="description">CLI and MCP toolkit for Anypoint Platform</desc>
-  <rect width="800" height="240" rx="18" fill="#172033" />
-  <g transform="translate(58 57)">
-    <rect width="126" height="126" rx="26" fill="#202b3e" stroke="#57c7e8" stroke-width="3" />
-    <path d="M35 42 55 62 35 82" fill="none" stroke="#79d5b2" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M68 84h25" fill="none" stroke="#57c7e8" stroke-width="7" stroke-linecap="round" />
-    <circle cx="126" cy="34" r="9" fill="#57c7e8" />
-    <circle cx="126" cy="92" r="9" fill="#79d5b2" />
-    <path d="M99 63c17 0 15-29 27-29M99 63c17 0 15 29 27 29" fill="none" stroke="#929fb5" stroke-width="3" />
+  <desc id="desc">Anypoint Connect: CLI and MCP toolkit for Anypoint Platform, with production safeguards. A terminal prompt linked to two platform nodes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220" />
+      <stop offset="1" stop-color="#1e293b" />
+    </linearGradient>
+    <radialGradient id="halo" cx="150" cy="152" r="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366f1" stop-opacity="0.22" />
+      <stop offset="1" stop-color="#6366f1" stop-opacity="0" />
+    </radialGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#e2e8f0" stroke-opacity="0.04" />
+    </pattern>
+    <clipPath id="card">
+      <rect width="960" height="288" rx="28" />
+    </clipPath>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8" />
+      <stop offset="1" stop-color="#818cf8" />
+    </linearGradient>
+    <linearGradient id="node" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#60a5fa" />
+      <stop offset="1" stop-color="#8b5cf6" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#020617" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <g clip-path="url(#card)">
+    <rect width="960" height="288" fill="url(#bg)" />
+    <rect width="960" height="288" fill="url(#grid)" />
+    <rect width="960" height="288" fill="url(#halo)" />
   </g>
-  <g transform="translate(226 72)">
-    <text x="0" y="0" fill="#a9b4c7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" letter-spacing="2">ANYPOINT PLATFORM TOOLKIT</text>
-    <text x="0" y="62" fill="#f2f5fa" font-family="Inter, system-ui, sans-serif" font-size="56" font-weight="700" letter-spacing="-1.5">Anypoint Connect</text>
-    <text x="0" y="102" fill="#b3bed0" font-family="Inter, system-ui, sans-serif" font-size="20">CLI · MCP server · JavaScript library</text>
+  <rect x="0.5" y="0.5" width="959" height="287" rx="27.5" fill="none" stroke="#e2e8f0" stroke-opacity="0.08" />
+
+  <g transform="translate(44 44)">
+    <circle cx="0" cy="0" r="7" fill="#ff5f57" />
+    <circle cx="24" cy="0" r="7" fill="#febc2e" />
+    <circle cx="48" cy="0" r="7" fill="#28c840" />
   </g>
+
+  <!-- Icon: terminal linked to two platform nodes -->
+  <g transform="translate(86 94) scale(1.16)">
+    <rect width="100" height="100" rx="24" fill="#0f172a" stroke="url(#accent)" stroke-width="4" filter="url(#shadow)" />
+    <path d="M28 35 43 50 28 65" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M52 65h20" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" />
+    <path d="M78 50c15 0 15-30 22-30M78 50c15 0 15 30 22 30" fill="none" stroke="url(#accent)" stroke-width="3" opacity="0.85" />
+    <circle cx="100" cy="20" r="11" fill="url(#node)" filter="url(#shadow)" />
+    <circle cx="100" cy="80" r="11" fill="url(#node)" filter="url(#shadow)" />
+  </g>
+
+  <text x="276" y="150" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="68" font-weight="800" letter-spacing="-1.5"><tspan fill="#f8fafc">Anypoint</tspan><tspan dx="16" fill="url(#accent)">Connect</tspan></text>
+  <text x="278" y="196" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="20">CLI and MCP toolkit with production safeguards</text>
 </svg>
