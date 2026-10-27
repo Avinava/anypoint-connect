@@ -6,8 +6,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import { errorMessage } from '../../utils/errors.js';
-import { readPreapproval } from '../../safety/preapproval.js';
-import { describePreapproval } from './profile.js';
+import { readApprovalState } from '../../safety/preapproval.js';
+import { describeProductionPolicy } from './profile.js';
 import { mcpError, mcpText } from './shared.js';
 
 export function registerIdentityTools(server: McpServer, client: AnypointClient) {
@@ -16,7 +16,7 @@ export function registerIdentityTools(server: McpServer, client: AnypointClient)
         {
             title: 'Who Am I',
             description:
-                'Returns the currently authenticated Anypoint Platform user, their username, email, organization name, and org ID, plus the active production pre-approval of this project (environments, tools, expiry). Use this first to confirm authentication is working and to obtain the org context needed by other tools.',
+                'Returns the currently authenticated Anypoint Platform user, their username, email, organization name, and org ID, plus the user-level production pre-approvals and unmarked-artifact allowances for this organization. Use this first to confirm authentication is working and to obtain the org context needed by other tools.',
             annotations: { readOnlyHint: true },
         },
         async () => {
@@ -28,7 +28,7 @@ export function registerIdentityTools(server: McpServer, client: AnypointClient)
                     email: me.email,
                     organization: me.organization.name,
                     orgId: me.organization.id,
-                    productionPreapproval: describePreapproval(readPreapproval()),
+                    productionPolicy: describeProductionPolicy(readApprovalState(), me.organization.id),
                 });
             } catch (error) {
                 return {

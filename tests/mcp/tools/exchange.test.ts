@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ExchangeApi } from '../../../src/api/ExchangeApi.js';
 import { registerAppDeployTools } from '../../../src/mcp/tools/apps-deploy.js';
 import { registerExchangeTools } from '../../../src/mcp/tools/exchange.js';
+import { saveUnmarkedAllowance } from '../../../src/safety/preapproval.js';
 
 describe('artifact publication handoff', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
@@ -287,12 +288,24 @@ describe('artifact publication handoff', () => {
             expect(client.cloudHub2.createDeployment).toHaveBeenCalled();
         });
 
-        it('notes unknown provenance for a jar without a marker and does not refuse production', async () => {
+        it('refuses an unmarked jar for production unless an allowance covers the org and environment', async () => {
             writeJar(undefined);
             client.accessManagement.resolveEnvironment.mockResolvedValue(production);
-            const body = JSON.parse((await handlers.get('deploy_jar')!({ ...input, jarPath })).content[0].text);
-            expect(body.dryRun).toBe(true);
-            expect(body.buildProvenance.note).toContain('build provenance unknown');
+            const refused = JSON.parse((await handlers.get('deploy_jar')!({ ...input, jarPath })).content[0].text);
+            expect(refused.refused).toBe(true);
+            expect(refused.message).toContain('build provenance unknown');
+            expect(refused.provenancePolicy).toEqual({ unmarkedAllowed: false });
+
+            const scope = { orgId: 'sample-org', environmentId: production.id };
+            saveUnmarkedAllowance(scope, scope);
+            try {
+                const body = JSON.parse((await handlers.get('deploy_jar')!({ ...input, jarPath })).content[0].text);
+                expect(body.dryRun).toBe(true);
+                expect(body.buildProvenance.note).toContain('build provenance unknown');
+                expect(body.provenancePolicy).toMatchObject({ unmarkedAllowed: true });
+            } finally {
+                saveUnmarkedAllowance(scope, null);
+            }
         });
 
         it('lets a production-deployable jar through', async () => {

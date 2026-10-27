@@ -91,17 +91,18 @@ export function validateJarFile(jarPath: string): {
 }
 
 /**
- * Confirm a production write from the CLI. Outside production, with --force, or when a project
- * productionPreapproval covers `tool` (the matching MCP tool name) and the environment, no prompt
- * is shown; otherwise the typed phrase is required.
+ * Confirm a production write from the CLI. Outside production, with --force, or when a user-level
+ * pre-approval covers the organization, the environment and `tool` (the matching MCP tool name), no
+ * prompt is shown; otherwise the typed phrase is required.
  */
 export async function confirmProductionWrite(
-    env: { name: string; id?: string; isProduction?: boolean },
+    env: { name: string; id: string; isProduction?: boolean },
+    orgId: string,
     tool: string,
     force = false,
 ): Promise<boolean> {
     if (!isProductionEnv(env.name, env.isProduction) || force) return true;
-    const decision = checkPreapproval(env, tool);
+    const decision = checkPreapproval({ orgId, env }, tool);
     if (decision.productionPreapproved) {
         console.log(
             chalk.yellow(

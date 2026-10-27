@@ -11,6 +11,7 @@ import { confirmAction, createClient } from './shared.js';
 import type { AnypointClient } from '../client/AnypointClient.js';
 import type { Environment } from '../api/AccessManagementApi.js';
 import { isProductionEnv } from '../safety/guards.js';
+import { checkPreapproval } from '../safety/preapproval.js';
 import { redactText } from '../safety/secrets.js';
 import {
     SAFE_METHODS,
@@ -269,9 +270,13 @@ export function createApiCommand(): Command {
 
                 if (!SAFE_METHODS.has(plan.method)) {
                     if (isProductionEnv(env.name, env.isProduction) && !opts.allowProduction) {
-                        log.error(`${plan.method} refused: ${env.name} is production; pass --allow-production.`);
-                        process.exitCode = 1;
-                        return;
+                        const decision = checkPreapproval({ orgId, env }, 'smoke_test_api');
+                        if (!decision.productionPreapproved) {
+                            log.error(`${plan.method} refused: ${env.name} is production; pass --allow-production.`);
+                            process.exitCode = 1;
+                            return;
+                        }
+                        log.warn(`Production ${plan.method} pre-approved (${decision.preapprovalSource})`);
                     }
                     if (!opts.yes && !(await confirmAction(`Send ${plan.method} ${plan.url}?`))) {
                         log.info('Cancelled');

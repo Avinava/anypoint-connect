@@ -112,12 +112,6 @@ export interface ProjectConfig {
         assetVersion?: string;
         groupId?: string;
     };
-    /**
-     * Production writes the user approved ahead of time, so confirmProduction (MCP) or the typed
-     * phrase (CLI) is not asked again. Validated and matched by src/safety/preapproval.ts.
-     * One entry, or a list of entries.
-     */
-    productionPreapproval?: unknown;
 }
 
 /** Walk up from startDir to the nearest .anypoint-connect.json, or null. */
@@ -148,11 +142,15 @@ export function discoverProjectConfig(startDir?: string): ProjectConfig | null {
 }
 
 /**
- * Merge fields into .anypoint-connect.json in the given directory (created when missing). Fields set
- * to undefined are removed; every other field already in the file is kept.
+ * Merge fields into a .anypoint-connect.json. With `dir`, the file in that directory; otherwise the
+ * file the working directory already resolves to (walking up), so a nested directory does not get a
+ * second file that shadows it; created in the working directory when there is none. Fields set to
+ * undefined are removed; every other field already in the file is kept.
  */
 export function updateProjectConfig(updates: Partial<ProjectConfig>, dir?: string): string {
-    const filePath = path.join(dir || process.cwd(), PROJECT_CONFIG_FILE);
+    const filePath = dir
+        ? path.join(dir, PROJECT_CONFIG_FILE)
+        : (findProjectConfigFile() ?? path.join(process.cwd(), PROJECT_CONFIG_FILE));
     let current: Record<string, unknown> = {};
     if (fs.existsSync(filePath)) {
         try {
@@ -173,8 +171,7 @@ export function updateProjectConfig(updates: Partial<ProjectConfig>, dir?: strin
 }
 
 /**
- * Bind a directory to a profile in .anypoint-connect.json, keeping its other fields
- * (conventions, productionPreapproval).
+ * Bind a directory to a profile in .anypoint-connect.json, keeping its other fields (conventions).
  */
 export function writeProjectConfig(profile: string, dir?: string): string {
     return updateProjectConfig({ profile }, dir);

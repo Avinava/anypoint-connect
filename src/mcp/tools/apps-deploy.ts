@@ -29,6 +29,7 @@ import { errorMessage } from '../../utils/errors.js';
 import { resolveSettingsInput } from '../../workflows/app-change.js';
 import { waitForAppPhase } from '../../workflows/app-state.js';
 import { describeJarDeployment, executeJarDeployment, planJarDeployment } from '../../workflows/jar-deployment.js';
+import { describeVerification, verifySelectedArtifact } from '../../workflows/artifact-verification.js';
 
 const createOnlyInputs = {
     replicas: z.number().min(1).max(8).optional().describe('[new app only] Number of replicas (default: 1)'),
@@ -62,7 +63,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 'Publishes a locally built Mule application JAR to Exchange and deploys it to CloudHub 2.0: creates the app if it does not exist, otherwise updates it in one change (artifact plus any runtime or settings change). ' +
                 'Asset coordinates come from explicit inputs, then the project naming convention, then the pattern of the asset the app runs today, then the JAR. ' +
                 'Region, vCores, replicas and JVM arguments apply only to a new app. ' +
-                'The JAR build marker (META-INF/mule-build/build-info.json) is read: a JAR not marked productionDeployable (for example, built with secure properties stripped) is refused for a production environment with no override, and flagged elsewhere; a JAR without a marker is allowed and the preview notes that its build provenance is unknown. ' +
+                'The JAR build marker (META-INF/mule-build/build-info.json) is read. Production takes only a mule-build schemaVersion 1 marker with stripped false and productionDeployable true; a stripped, inconsistent or unreadable marker is refused with no override, and a JAR without a marker is refused unless an unmarked-artifact allowance covers the organization and environment. Elsewhere these are warnings. ' +
                 'Previews by default; pass confirm: true to publish and deploy.',
             inputSchema: {
                 jarPath: z
@@ -130,6 +131,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     };
                 }
                 const gate = guardWrite({
+                    orgId,
                     env,
                     tool: 'deploy_jar',
                     confirm: args.confirm,
@@ -149,7 +151,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                                 message: `Deployed "${args.appName}" to ${env.name} (${plan.existing ? 'updated' : 'created'})`,
                                 published: result.published,
                                 deploymentId: result.deployment.id,
-                                ...productionFields(env, 'deploy_jar'),
+                                ...productionFields(orgId, env, 'deploy_jar'),
                                 ...(plan.existing ? { previousRef: plan.existing.application?.ref } : {}),
                                 ...(result.change ? { performed: result.change.performed } : {}),
                                 ...(result.snapshot
@@ -182,13 +184,16 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
             title: 'Deploy Application',
             description:
                 'Deploys an artifact already in Exchange (groupId:artifactId:version) to CloudHub 2.0. Creates the app if it does not exist; otherwise updates it in one change, including any runtime or settings change. ' +
-                'Region, vCores, replicas and JVM arguments apply only to a new app. Previews by default; pass confirm: true to apply.',
+                'Region, vCores, replicas and JVM arguments apply only to a new app. ' +
+                'For a production environment the artifact is downloaded from Exchange and its build marker checked first; a jar not marked production deployable, or unmarked without an allowance, is refused. ' +
+                'Previews by default; pass confirm: true to apply.',
             inputSchema: {
                 appName: z.string().describe('Application name (also the public URL slug)'),
                 environment: z.string().describe('Environment name (e.g. "Sandbox") or ID'),
                 groupId: z.string().describe('Maven group ID of the artifact (usually the organization ID)'),
                 artifactId: z.string().describe('Maven artifact ID (e.g. "orders-sapi")'),
                 version: z.string().describe('Artifact version (e.g. "1.2.0")'),
+                jarPath: provenanceJarInput,
                 ...runtimeInputs,
                 ...createOnlyInputs,
                 ...settingsInputs,
@@ -228,6 +233,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                             settings: settingsFromArgs(args),
                             mode: args.mode,
                             updateStrategy: args.updateStrategy,
+                            jarPath: args.jarPath,
                         },
                         { done: 'Updated', tool: 'deploy_app' },
                     );
@@ -259,6 +265,12 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     secureProperties: resolved.change?.secureProperties,
                     jvmArgs: args.jvmArgs,
                 });
+                const verification = await verifySelectedArtifact(client, {
+                    orgId,
+                    env,
+                    ref: payload.application.ref,
+                    jarPath: args.jarPath,
+                });
                 const preview = {
                     action: 'create new deployment',
                     app: args.appName,
@@ -272,8 +284,20 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                         properties: Object.keys(resolved.change?.properties ?? {}),
                         secureProperties: Object.keys(resolved.change?.secureProperties ?? {}),
                     },
+                    ...(verification.checked !== 'none' || verification.blockers.length
+                        ? { artifactVerification: describeVerification(verification) }
+                        : {}),
+                    ...(verification.warnings.length ? { warnings: verification.warnings } : {}),
+                    ...(verification.blockers.length ? { blockers: verification.blockers } : {}),
                 };
+                if (verification.blockers.length) {
+                    return {
+                        ...mcpText({ refused: true, message: verification.blockers[0], ...preview }),
+                        isError: true as const,
+                    };
+                }
                 const gate = guardWrite({
+                    orgId,
                     env,
                     tool: 'deploy_app',
                     confirm: args.confirm,
@@ -288,7 +312,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     return mcpText({
                         message: `Created "${args.appName}" in ${env.name}`,
                         deploymentId: deployment.id,
-                        ...productionFields(env, 'deploy_app'),
+                        ...productionFields(orgId, env, 'deploy_app'),
                         ...preview.next,
                     });
                 }
@@ -299,7 +323,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 const response = mcpText({
                     message: `Created "${args.appName}" in ${env.name}`,
                     deploymentId: deployment.id,
-                    ...productionFields(env, 'deploy_app'),
+                    ...productionFields(orgId, env, 'deploy_app'),
                     phase: result.snapshot.phase,
                     settled: result.snapshot.settled,
                     ...(result.snapshot.reason ? { reason: result.snapshot.reason } : {}),
@@ -322,7 +346,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 'Changes an existing CloudHub 2.0 application in one call: artifact version, Mule runtime, properties and update strategy together, as one new spec. ' +
                 'mode stopStart stops the app, applies the change and starts it, so old and new replicas never process events together; use it for apps with streaming, subscription or polling listeners. ' +
                 'The runtime is checked against what the target offers before anything is written; a retired runtime is refused with the nearest supported versions. ' +
-                'Pass jarPath (the local jar the new version came from) to check its build marker: a jar not marked productionDeployable is refused for production. ' +
+                'In production a new artifact is downloaded from Exchange and its build marker checked before anything is written; jarPath also binds the change to a local jar by SHA-256. ' +
                 'Waits for the rollout by default. Previews by default; pass confirm: true to apply.',
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
@@ -367,7 +391,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
             title: 'Update Application Artifact',
             description:
                 'Moves an existing CloudHub 2.0 application to another artifact version, optionally with a runtime change in the same update. Target, replicas, resources and settings are preserved. ' +
-                'Use runtime when the current runtime has been retired; the preview names supported versions. For settings changes in the same call use update_app. Pass jarPath (the local jar the version was published from) to check its build marker: a jar not marked productionDeployable is refused for production. Previews by default; pass confirm: true to apply.',
+                'Use runtime when the current runtime has been retired; the preview names supported versions. For settings changes in the same call use update_app. In production the artifact is downloaded from Exchange and its build marker checked before anything is written; jarPath also binds the change to a local jar by SHA-256. Previews by default; pass confirm: true to apply.',
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
                 environment: z.string().describe('Environment name or ID'),
@@ -405,7 +429,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
         {
             title: 'Roll Back Application',
             description:
-                'Rolls an existing CloudHub 2.0 application back to a previous artifact; runtime, target, replicas and settings are preserved. By default it picks the last successful or newest distinct earlier artifact; toVersion selects one. Previews by default; pass confirm: true to apply.',
+                'Rolls an existing CloudHub 2.0 application back to a previous artifact; runtime, target, replicas and settings are preserved. By default it picks the last successful or newest distinct earlier artifact; toVersion selects one. In production the target artifact is downloaded from Exchange and its build marker checked first. Previews by default; pass confirm: true to apply.',
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
                 environment: z.string().describe('Environment name or ID'),

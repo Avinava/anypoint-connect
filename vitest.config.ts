@@ -5,6 +5,7 @@ export default defineConfig({
         globals: true,
         environment: 'node',
         include: ['tests/**/*.test.ts'],
+        setupFiles: ['tests/setup-home.ts'],
         coverage: {
             provider: 'v8',
             reporter: ['text', 'text-summary', 'lcov'],

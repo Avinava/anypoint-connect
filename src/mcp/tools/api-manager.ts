@@ -248,6 +248,7 @@ export function registerApiManagerTools(server: McpServer, client: AnypointClien
 
                 if (!SAFE_METHODS.has(plan.method)) {
                     const blocked = guardWrite({
+                        orgId,
                         env,
                         tool: 'smoke_test_api',
                         confirm: input.confirm,

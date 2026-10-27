@@ -136,12 +136,17 @@ export {
 } from './safety/artifact.js';
 export {
     PREAPPROVABLE_TOOLS,
+    approvalsFile,
     checkPreapproval,
-    readPreapproval,
+    checkUnmarkedAllowance,
+    readApprovalState,
     validatePreapproval,
+    validateUnmarkedAllowance,
     type ProductionPreapproval,
+    type UnmarkedArtifactAllowance,
     type PreapprovalDecision,
 } from './safety/preapproval.js';
+export { verifySelectedArtifact, type ArtifactVerification } from './workflows/artifact-verification.js';
 export {
     ACTOR_CLASSES,
     ACTOR_RULES,

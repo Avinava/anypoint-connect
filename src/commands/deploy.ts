@@ -131,7 +131,7 @@ export function createDeployCommand(): Command {
                     return;
                 }
 
-                if (!(await confirmProductionWrite(env, 'deploy_jar', opts.force))) {
+                if (!(await confirmProductionWrite(env, orgId, 'deploy_jar', opts.force))) {
                     log.warn('Deployment cancelled');
                     return;
                 }

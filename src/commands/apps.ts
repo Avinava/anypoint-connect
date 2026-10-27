@@ -20,7 +20,7 @@ import {
     type SettingsChangeInput,
 } from '../workflows/app-change.js';
 import { deploymentPhase, waitForAppPhase } from '../workflows/app-state.js';
-import { readJarProvenance } from '../workflows/jar-deployment.js';
+import { checkPreapproval } from '../safety/preapproval.js';
 import {
     addRolloutOptions,
     addRuntimeOptions,
@@ -37,11 +37,9 @@ import { createClient } from './shared.js';
 
 type ChangeBuilder = (rollout: ReturnType<typeof rolloutFromOptions>) => Omit<
     AppChangeRequest,
-    'orgId' | 'env' | 'appName' | 'settings' | 'secretValues' | 'buildProvenance'
+    'orgId' | 'env' | 'appName' | 'settings' | 'secretValues' | 'artifactVerifiedLocally'
 > & {
     settings?: SettingsChangeInput;
-    /** Local jar whose build marker is checked against the environment. */
-    jarPath?: string;
 };
 
 /** Plan, preview, confirm and apply an application change from the CLI. */
@@ -67,13 +65,11 @@ async function runChangeCommand(
         const orgId = await client.getDefaultOrgId();
         const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
         const rollout = rolloutFromOptions(opts);
-        const { settings, jarPath, ...change } = build(rollout);
-        const buildProvenance = jarPath ? await readJarProvenance(jarPath) : undefined;
+        const { settings, ...change } = build(rollout);
         const resolved = resolveSettingsInput(settings);
         secretValues = resolved.secretValues;
         const plan = await planAppChange(client, {
             ...change,
-            ...(buildProvenance ? { buildProvenance } : {}),
             orgId,
             env,
             appName,
@@ -276,9 +272,14 @@ export function createAppsCommand(): Command {
                 }
 
                 if (isProductionEnv(env.name, env.isProduction) && !opts.allowProduction) {
-                    log.error('Deletion refused: production requires --allow-production.');
-                    process.exitCode = 1;
-                    return;
+                    // Same rule as delete_app: only a pre-approval that names delete_app stands in.
+                    const decision = checkPreapproval({ orgId, env }, 'delete_app');
+                    if (!decision.productionPreapproved) {
+                        log.error('Deletion refused: production requires --allow-production.');
+                        process.exitCode = 1;
+                        return;
+                    }
+                    log.warn(`Production deletion pre-approved (${decision.preapprovalSource})`);
                 }
 
                 await client.cloudHub2.deleteDeployment(orgId, env.id, deployment.id);
@@ -344,7 +345,7 @@ export function createAppsCommand(): Command {
                     .option('--group-id <id>', 'New group ID')
                     .option(
                         '--jar <path>',
-                        'Local jar the new version was published from; a jar not marked production deployable is refused for production',
+                        'Local jar the new version was published from; refused unless its SHA-256 matches the Exchange artifact',
                     ),
             ),
         ),
@@ -392,7 +393,7 @@ export function createAppsCommand(): Command {
                         process.exitCode = 1;
                         return;
                     }
-                    if (!(await confirmProductionWrite(env, `${name}_app`, opts.force))) {
+                    if (!(await confirmProductionWrite(env, orgId, `${name}_app`, opts.force))) {
                         log.warn(`${name} cancelled`);
                         return;
                     }
@@ -514,7 +515,7 @@ export function createAppsCommand(): Command {
                     process.exit(1);
                 }
 
-                if (!(await confirmProductionWrite(env, 'scale_app', opts.force))) {
+                if (!(await confirmProductionWrite(env, orgId, 'scale_app', opts.force))) {
                     log.warn('Scale cancelled');
                     return;
                 }

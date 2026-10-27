@@ -158,6 +158,23 @@ describe('api CLI', () => {
         expect(process.exitCode).toBe(1);
     });
 
+    it('accepts a user-level pre-approval for smoke_test_api in place of --allow-production', async () => {
+        const { savePreapproval } = await import('../../src/safety/preapproval.js');
+        client.accessManagement.resolveEnvironment.mockResolvedValue({
+            id: 'env-1',
+            name: 'Production',
+            isProduction: true,
+        });
+        const scope = { orgId: 'org-1', environmentId: 'env-1' };
+        savePreapproval(scope, { ...scope, tools: ['smoke_test_api'] });
+        try {
+            await run('smoke', 'orders', '-e', 'Production', '-X', 'DELETE', '--yes');
+            expect(mocks.executeSmokeTest).toHaveBeenCalledTimes(1);
+        } finally {
+            savePreapproval(scope, null);
+        }
+    });
+
     it('passes --expect through and fails when the status does not match', async () => {
         mocks.executeSmokeTest.mockResolvedValue({
             api: { id: 42 },

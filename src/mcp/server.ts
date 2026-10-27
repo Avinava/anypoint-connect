@@ -69,7 +69,7 @@ export class AnypointConnectMcpServer {
         registerArtifactTools(this.server, this.client);
         registerDesignCenterTools(this.server, this.client);
         registerGovernanceTools(this.server, this.client);
-        registerProfileTools(this.server);
+        registerProfileTools(this.server, this.client);
         registerAuditTools(this.server, this.client);
         registerAnypointMQTools(this.server, this.client);
         registerObjectStoreTools(this.server, this.client);

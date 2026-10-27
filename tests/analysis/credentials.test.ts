@@ -16,7 +16,8 @@ describe('credential marker table', () => {
         ['bearer-token', `token is bearer ${FAKE_TOKEN}`],
         ['session-id', 'sessionId=abcdef0123456789'],
         ['session-id', '<urn:sessionId>abcdef0123456789</urn:sessionId>'],
-        ['sforce-session', 'header Sforce-Session: present'],
+        ['sforce-session', 'header Sforce-Session: abcdef0123456789'],
+        ['sforce-session', '{"Sforce-Session":"abcdef0123456789"}'],
         ['salesforce-session-id', `session ${FAKE_SF_SESSION}`],
         ['oauth-token-param', 'callback?access_token=abcdefgh12345&state=x'],
         ['oauth-token-param', '"refresh_token": "abcdefgh12345"'],
@@ -28,6 +29,8 @@ describe('credential marker table', () => {
     it.each([
         'Processing order 42 for customer sample',
         'sessionId field missing',
+        'docs mention the Sforce-Session header',
+        'Sforce-Session:',
         'Bearer of bad news',
         'access_token=',
         'eyJ not a token',

@@ -34,16 +34,10 @@ export function registerAuditTools(server: McpServer, client: AnypointClient) {
                         'Filter by object types, e.g. ["Application", "API", "Policy", "User"]. Omit for all types; for app changes over several days pass ["Application"].',
                     ),
                 limit: z.number().optional().describe('Maximum entries to return (default: 100)'),
-                platformClientIds: z
-                    .array(z.string())
-                    .optional()
-                    .describe(
-                        "Client IDs of the platform's automatic patcher as seen in this organization's entries; entries from them classify as platform-patch",
-                    ),
             },
             annotations: { readOnlyHint: true },
         },
-        async ({ hoursBack, actions, objectTypes, limit, platformClientIds }) => {
+        async ({ hoursBack, actions, objectTypes, limit }) => {
             try {
                 const orgId = await client.getDefaultOrgId();
 
@@ -56,7 +50,7 @@ export function registerAuditTools(server: McpServer, client: AnypointClient) {
                     objectTypes,
                     limit: limit || 100,
                 });
-                const { entries, byClass } = classifyAuditEntries(result.data, { platformClientIds });
+                const { entries, byClass } = classifyAuditEntries(result.data);
                 const truncated = result.total > entries.length;
 
                 return mcpText({

@@ -67,6 +67,7 @@ async function runStateChange(
             ...described,
         };
         const gate = guardWrite({
+            orgId,
             env,
             tool,
             confirm: args.confirm,
@@ -75,7 +76,7 @@ async function runStateChange(
         });
         if (gate) return gate;
 
-        const production = productionFields(env, tool);
+        const production = productionFields(orgId, env, tool);
         const sentAt = Date.now();
         await apply(orgId, env.id, detail);
         if (!args.wait) {
@@ -238,7 +239,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
         {
             title: 'Delete Application Deployment',
             description:
-                'Permanently deletes a CloudHub 2.0 application deployment while leaving its Exchange artifact and other Anypoint resources untouched. This is a bound two-step operation: call without confirm for a preview, then re-call with confirm:true and the exact expectedDeploymentId from that preview. Production also requires confirmProduction:true. Use stop_app instead when the deployment configuration should be preserved.',
+                'Permanently deletes a CloudHub 2.0 application deployment while leaving its Exchange artifact and other Anypoint resources untouched. This is a bound two-step operation: call without confirm for a preview, then re-call with confirm:true and the exact expectedDeploymentId from that preview. Production also requires confirmProduction:true, unless a user-level production pre-approval names delete_app for this organization and environment ("all-mutating" does not cover it); expectedDeploymentId is always required. Use stop_app instead when the deployment configuration should be preserved.',
             inputSchema: {
                 appName: z.string().describe('Application name exactly as deployed (case-insensitive match)'),
                 environment: z.string().describe('Environment name or ID'),
@@ -252,7 +253,9 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                 confirmProduction: z
                     .boolean()
                     .optional()
-                    .describe('Required in addition to confirm:true when the resolved environment is production.'),
+                    .describe(
+                        'Required in addition to confirm:true when the resolved environment is production, unless a pre-approval names delete_app.',
+                    ),
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
         },
@@ -280,7 +283,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
 
                 const preview = buildApplicationDeletionPreview(deployment, env);
                 // Only an entry that names delete_app covers it; "all-mutating" does not.
-                const production = productionFields(env, 'delete_app');
+                const production = productionFields(orgId, env, 'delete_app');
                 const needsConfirmProduction = preview.production && !production.productionPreapproved;
 
                 if (!confirm) {

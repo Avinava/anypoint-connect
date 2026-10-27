@@ -17,8 +17,8 @@ import {
     type SettingsChange,
     type SettingsPlan,
 } from '../safety/deployment.js';
-import { checkBuildProvenance, type BuildProvenance, type ProvenanceCheck } from '../safety/artifact.js';
 import { isProductionEnv } from '../safety/guards.js';
+import { describeVerification, verifySelectedArtifact, type ArtifactVerification } from './artifact-verification.js';
 import { parseRuntimeString, resolveRuntime, suggestRuntimes, type RuntimeSpec } from '../safety/runtime.js';
 import { looksSecret, redactText } from '../safety/secrets.js';
 import { resolveSecretSources, type SecretSource } from '../safety/secret-sources.js';
@@ -74,8 +74,17 @@ export interface AppChangeRequest {
     mode?: ChangeMode;
     /** Restart even when nothing else changes (stop then start). */
     restart?: boolean;
-    /** Build marker of the local jar the new artifact was published from; checked against the environment. */
-    buildProvenance?: BuildProvenance;
+    /**
+     * Local jar the new artifact was published from. Its SHA-256 must match the Exchange artifact the
+     * change selects, in any environment.
+     */
+    jarPath?: string;
+    /**
+     * The caller checked and will publish the exact bytes itself (deploy_jar), so the Exchange artifact
+     * is not downloaded. Every other change that selects an artifact is verified against Exchange in
+     * production.
+     */
+    artifactVerifiedLocally?: boolean;
     /** Values to scrub from every response and error. */
     secretValues?: string[];
 }
@@ -102,8 +111,8 @@ export interface AppChangePlan {
     /** Problems that stop the change before anything is written. */
     blockers: string[];
     production: boolean;
-    /** Present when the request carried a local jar's build marker. */
-    provenance?: ProvenanceCheck;
+    /** Present when the change selects an artifact that was verified (production, or a local jar given). */
+    artifactVerification?: ArtifactVerification;
     /** Nothing would change. */
     noop: boolean;
 }
@@ -287,10 +296,21 @@ export async function planAppChange(client: AnypointClient, request: AppChangeRe
     }
 
     const production = isProductionEnv(request.env.name, request.env.isProduction);
-    const provenance = request.buildProvenance ? checkBuildProvenance(request.buildProvenance, production) : undefined;
-    if (provenance) {
-        warnings.push(...provenance.warnings);
-        if (provenance.blocker) blockers.push(provenance.blocker);
+    let artifactVerification: ArtifactVerification | undefined;
+    if (patch.application?.ref && !request.artifactVerifiedLocally) {
+        const verification = await verifySelectedArtifact(client, {
+            orgId: request.orgId,
+            env: request.env,
+            ref: patch.application.ref,
+            jarPath: request.jarPath,
+        });
+        if (verification.checked !== 'none' || verification.blockers.length || verification.warnings.length) {
+            artifactVerification = verification;
+            warnings.push(...verification.warnings);
+            blockers.push(...verification.blockers);
+        }
+    } else if (request.jarPath && !request.artifactVerifiedLocally) {
+        warnings.push('jarPath was not checked: this change does not select a different artifact.');
     }
 
     const steps = noop
@@ -317,7 +337,7 @@ export async function planAppChange(client: AnypointClient, request: AppChangeRe
         warnings,
         blockers,
         production,
-        ...(provenance ? { provenance } : {}),
+        ...(artifactVerification ? { artifactVerification } : {}),
         noop,
     };
 }
@@ -339,7 +359,7 @@ export function describeAppChange(plan: AppChangePlan) {
         changes: plan.changes,
         ...(plan.settings ? { settings: plan.settings.diff } : {}),
         runtimeCheck: plan.runtimeCheck,
-        ...(plan.provenance ? { buildProvenance: plan.provenance.buildProvenance } : {}),
+        ...(plan.artifactVerification ? { artifactVerification: describeVerification(plan.artifactVerification) } : {}),
         steps: plan.steps,
         ...(plan.warnings.length ? { warnings: plan.warnings } : {}),
         ...(plan.blockers.length ? { blockers: plan.blockers } : {}),

@@ -165,7 +165,14 @@ export function printAppChange(plan: AppChangePlan): boolean {
         for (const k of s.movedToSecure) log.kv('  > secure', k);
     }
     if (!preview.runtimeCheck.checked) log.dim(`  Runtime not validated: ${preview.runtimeCheck.reason}`);
-    const provenance = preview.buildProvenance;
+    const verification = preview.artifactVerification;
+    if (verification && verification.checked !== 'none') {
+        log.kv(
+            'Artifact check',
+            `${verification.checked}${verification.exchangeSha256 ? ` (SHA-256 ${verification.exchangeSha256})` : ''}`,
+        );
+    }
+    const provenance = verification?.buildProvenance;
     if (provenance?.status === 'recorded') {
         log.kv(
             'Build',
@@ -187,7 +194,7 @@ export function printAppChange(plan: AppChangePlan): boolean {
  */
 export async function confirmIfProduction(plan: AppChangePlan, force: boolean, tool: string): Promise<boolean> {
     if (!plan.production) return true;
-    return confirmProductionWrite({ ...plan.request.env, isProduction: true }, tool, force);
+    return confirmProductionWrite({ ...plan.request.env, isProduction: true }, plan.request.orgId, tool, force);
 }
 
 /** A spinner that follows a rollout. */

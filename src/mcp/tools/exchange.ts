@@ -135,7 +135,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
         {
             title: 'Publish Application JAR to Exchange',
             description:
-                'Uploads a locally built Mule application JAR to Anypoint Exchange as a type "app" asset, using the Exchange v2 publication API (multipart, classifier mule-application). This is the missing first step for deploying a freshly built artifact: CloudHub 2.0 deployments reference an artifact already in Exchange, and this tool puts it there. Returns the published coordinates (groupId, assetId, version) ready to feed into deploy_app / update_app_artifact. Destructive: publishing a version that already exists may be rejected by Exchange. The preview reports the jar build marker (META-INF/mule-build/build-info.json); with environment set to a production environment, a jar not marked productionDeployable is refused (no override), and otherwise it is flagged. Pass confirm:true to upload.',
+                'Uploads a locally built Mule application JAR to Anypoint Exchange as a type "app" asset, using the Exchange v2 publication API (multipart, classifier mule-application). This is the missing first step for deploying a freshly built artifact: CloudHub 2.0 deployments reference an artifact already in Exchange, and this tool puts it there. Returns the published coordinates (groupId, assetId, version) ready to feed into deploy_app / update_app_artifact. Destructive: publishing a version that already exists may be rejected by Exchange. The preview reports the jar build marker (META-INF/mule-build/build-info.json); with environment set to a production environment, a jar that would be refused there (not production deployable, invalid marker, or unmarked without an allowance) is refused now, and otherwise it is flagged. Deploying a published artifact to production checks the Exchange copy again. Pass confirm:true to upload.',
             inputSchema: {
                 jarPath: z
                     .string()
@@ -186,7 +186,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                 const resolvedGroupId = ref.groupId;
                 const resolvedAssetId = ref.artifactId;
                 const resolvedVersion = ref.version;
-                const check = checkJarForEnvironment(provenance, env);
+                const check = checkJarForEnvironment(provenance, orgId, env);
                 const preview = {
                     action: 'publish app jar to Exchange',
                     jarPath,
@@ -194,6 +194,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                     artifact,
                     expectedSha256: artifact.sha256,
                     buildProvenance: check.buildProvenance,
+                    ...(check.provenancePolicy ? { provenancePolicy: check.provenancePolicy } : {}),
                     ...(check.warnings.length ? { warnings: check.warnings } : {}),
                     coordinates: {
                         groupId: resolvedGroupId,
@@ -230,7 +231,7 @@ export function registerExchangeTools(server: McpServer, client: AnypointClient)
                     },
                     buildProvenance: check.buildProvenance,
                     ...(check.warnings.length ? { warnings: check.warnings } : {}),
-                    tip: 'Deploy it with deploy_app (new app) or update_app_artifact (existing app); pass this jarPath to update_app_artifact so its build marker is checked.',
+                    tip: 'Deploy it with deploy_app (new app) or update_app_artifact (existing app). A production deploy downloads this artifact from Exchange and checks its build marker; pass the same jarPath to bind the deploy to this file by SHA-256.',
                 });
             } catch (error) {
                 return mcpError(error);

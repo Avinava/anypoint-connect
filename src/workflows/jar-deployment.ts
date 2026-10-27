@@ -6,7 +6,6 @@
  * existing app go through the application change workflow (one PATCH, runtime check, modes).
  */
 
-import { readFile } from 'node:fs/promises';
 import type { AnypointClient } from '../client/AnypointClient.js';
 import type { ArtifactRef, CH2Deployment } from '../api/CloudHub2Api.js';
 import type { Environment } from '../api/AccessManagementApi.js';
@@ -25,7 +24,9 @@ import {
     buildCreatePayload,
     isEmptySettingsChange,
 } from '../safety/deployment.js';
-import { isProductionEnv, validateJarFile } from '../safety/guards.js';
+import { isProductionEnv } from '../safety/guards.js';
+import { checkUnmarkedAllowance } from '../safety/preapproval.js';
+import { readJarBytes } from './artifact-verification.js';
 import type { RuntimeSpec } from '../safety/runtime.js';
 import { redactText } from '../safety/secrets.js';
 import { discoverProjectConfig } from '../config/profiles.js';
@@ -142,23 +143,22 @@ export async function resolveJarArtifact(request: JarArtifactRequest): Promise<{
     };
 }
 
-async function readJarBytes(jarPath: string): Promise<Buffer> {
-    const check = validateJarFile(jarPath);
-    if (!check.valid) throw new Error(check.error);
-    return readFile(jarPath);
-}
-
-/** Read a local jar's build marker, for changes that deploy an artifact already published from it. */
-export async function readJarProvenance(jarPath: string): Promise<BuildProvenance> {
-    return readBuildProvenance(await readJarBytes(jarPath));
-}
-
-/** Check a jar's build marker against an environment (or no environment, when only publishing). */
+/**
+ * Check a jar's build marker against an environment (or no environment, when only publishing). A
+ * production target also consults the unmarked-artifact allowance for the org and environment.
+ */
 export function checkJarForEnvironment(
     provenance: BuildProvenance,
-    env: Pick<Environment, 'name' | 'isProduction'> | undefined,
+    orgId: string,
+    env: Pick<Environment, 'id' | 'name' | 'isProduction'> | undefined,
 ): ProvenanceCheck {
-    return checkBuildProvenance(provenance, env ? isProductionEnv(env.name, env.isProduction) : undefined);
+    if (!env) return checkBuildProvenance(provenance, undefined);
+    const production = isProductionEnv(env.name, env.isProduction);
+    return checkBuildProvenance(
+        provenance,
+        production,
+        production ? checkUnmarkedAllowance({ orgId, env }) : undefined,
+    );
 }
 
 /** Inspect the JAR and the target environment; nothing is published or deployed. */
@@ -172,7 +172,7 @@ export async function planJarDeployment(
         existingRef: existing?.application?.ref,
     });
     const { change: settings, secretValues } = resolveSettingsInput(request.settings);
-    const provenanceCheck = checkJarForEnvironment(provenance, request.env);
+    const provenanceCheck = checkJarForEnvironment(provenance, request.orgId, request.env);
     const provenanceBlockers = provenanceCheck.blocker ? [provenanceCheck.blocker] : [];
 
     const createOnly: Array<keyof CreateOnlySettings> = ['region', 'vcores', 'replicas', 'jvmArgs'];
@@ -213,6 +213,8 @@ export async function planJarDeployment(
         updateStrategy: request.updateStrategy,
         mode: request.mode,
         secretValues,
+        // These exact bytes are checked above and published, bound to their SHA-256, before the change.
+        artifactVerifiedLocally: true,
     });
     return {
         ...base,
@@ -233,6 +235,7 @@ export function describeJarDeployment(plan: JarDeploymentPlan) {
         artifact,
         expectedSha256: artifact.sha256,
         buildProvenance: plan.provenance.buildProvenance,
+        ...(plan.provenance.provenancePolicy ? { provenancePolicy: plan.provenance.provenancePolicy } : {}),
         ...(plan.provenance.warnings.length ? { provenanceWarnings: plan.provenance.warnings } : {}),
         ...(plan.provenance.blocker ? { blockers: [plan.provenance.blocker] } : {}),
         publish: {

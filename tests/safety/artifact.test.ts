@@ -42,8 +42,16 @@ describe('build provenance marker', () => {
             { schemaVersion: 1, tool: 'mule-build', toolVersion: '3.2.0', stripped: true },
         ],
         ['a string flag', { ...RELEASE, productionDeployable: 'true' }],
-    ])('marks %s as invalid', (_name, info) => {
-        expect(readBuildProvenance(markedJar(info)).status).toBe('invalid');
+        ['an unknown schema version', { ...RELEASE, schemaVersion: 2 }],
+        ['another build tool', { ...RELEASE, tool: 'other-builder' }],
+        ['stripped yet production deployable', { ...RELEASE, stripped: true, productionDeployable: true }],
+        ['not stripped yet not production deployable', { ...RELEASE, stripped: false, productionDeployable: false }],
+    ])('marks %s as invalid, and refuses it for production', (_name, info) => {
+        const provenance = readBuildProvenance(markedJar(info));
+        expect(provenance.status).toBe('invalid');
+        expect(checkBuildProvenance(provenance, true, { unmarkedAllowed: true }).blocker).toContain(
+            'marker is not valid',
+        );
     });
 
     it('marks an oversized marker as invalid without reading it', () => {
@@ -65,20 +73,36 @@ describe('build provenance marker', () => {
         }
     });
 
-    it('refuses an unreadable marker for production', () => {
-        expect(checkBuildProvenance({ status: 'invalid', reason: 'x' }, true).blocker).toContain('unreadable');
+    it('refuses a jar without a marker for production by default', () => {
+        const check = checkBuildProvenance({ status: 'unknown' }, true);
+        expect(check.blocker).toContain('build provenance unknown');
+        expect(check.provenancePolicy).toEqual({ unmarkedAllowed: false });
     });
 
-    it('allows a jar without a marker, noting unknown provenance', () => {
-        const check = checkBuildProvenance({ status: 'unknown' }, true);
+    it('allows a jar without a marker for production with an allowance, and shows it', () => {
+        const allowance = { unmarkedAllowed: true, source: 'sample-store', expires: '2999-01-01T00:00:00Z' };
+        const check = checkBuildProvenance({ status: 'unknown' }, true, allowance);
         expect(check.blocker).toBeUndefined();
-        expect(check.warnings).toEqual([]);
+        expect(check.provenancePolicy).toEqual(allowance);
         expect(check.buildProvenance.note).toContain('build provenance unknown');
+    });
+
+    it('never lets an allowance admit a stripped jar', () => {
+        const check = checkBuildProvenance(readBuildProvenance(markedJar(STRIPPED)), true, { unmarkedAllowed: true });
+        expect(check.blocker).toContain('not production deployable');
+    });
+
+    it('only notes a jar without a marker outside production', () => {
+        const check = checkBuildProvenance({ status: 'unknown' }, false);
+        expect(check).toMatchObject({ warnings: [] });
+        expect(check.blocker).toBeUndefined();
+        expect(check.provenancePolicy).toBeUndefined();
     });
 
     it('passes a production-deployable jar silently', () => {
         expect(checkBuildProvenance(readBuildProvenance(markedJar(RELEASE)), true)).toEqual({
             buildProvenance: { status: 'recorded', ...RELEASE },
+            provenancePolicy: { unmarkedAllowed: false },
             warnings: [],
         });
     });

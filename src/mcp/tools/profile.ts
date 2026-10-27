@@ -1,66 +1,69 @@
 /**
- * MCP Tool Registrar — Profile management tools
- * set_project_profile, get_project_profile
+ * MCP Tool Registrar — Profile and production policy tools
+ * get_project_profile, set_project_profile, set_production_preapproval, set_unmarked_artifact_allowance
+ *
+ * Production pre-approvals and unmarked-artifact allowances live only in the user-level store
+ * (src/safety/preapproval.ts), bound to organization and environment IDs. Project files cannot
+ * grant them.
  */
 
-import * as path from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import type { AnypointClient } from '../../client/AnypointClient.js';
 import {
     resolveProfile,
     listProfiles,
-    updateProjectConfig,
+    writeProjectConfig,
     discoverProjectConfig,
     hasSavedConfig,
 } from '../../config/profiles.js';
+import { isProductionEnv } from '../../safety/guards.js';
+import { resolveProjectRoot } from '../../safety/paths.js';
 import {
     ALL_MUTATING,
     NAMED_ONLY_TOOLS,
     PREAPPROVABLE_TOOLS,
-    readPreapproval,
+    ignoredProjectApprovalWarning,
+    readApprovalState,
+    savePreapproval,
+    saveUnmarkedAllowance,
     validatePreapproval,
-    type PreapprovalState,
+    validateUnmarkedAllowance,
+    type ApprovalState,
 } from '../../safety/preapproval.js';
-import { dryRunPreview, mcpText } from './shared.js';
+import { dryRunPreview, mcpError, mcpText, resolveEnvironment } from './shared.js';
 
-/** The pre-approval as shown to the agent: names, tools and expiry only. */
-export function describePreapproval(state: PreapprovalState) {
-    const active = state.entries.filter((e) => !e.expired);
+/** The production policy as shown to the agent: IDs, display names, tools and expiry. Never secrets. */
+export function describeProductionPolicy(state: ApprovalState, orgId?: string) {
+    const inOrg = <T extends { orgId: string }>(list: T[]) => (orgId ? list.filter((e) => e.orgId === orgId) : list);
+    const warning = ignoredProjectApprovalWarning();
     return {
-        active: active.map(({ environments, tools, expires }) => ({
-            environments,
-            tools,
-            ...(expires ? { expires } : {}),
-        })),
-        ...(state.entries.length > active.length
-            ? {
-                  expired: state.entries
-                      .filter((e) => e.expired)
-                      .map(({ environments, expires }) => ({ environments, expires })),
-              }
-            : {}),
+        source: state.source,
+        productionPreapprovals: inOrg(state.productionPreapprovals),
+        unmarkedArtifactAllowances: inOrg(state.unmarkedArtifactAllowances),
         ...(state.invalid.length ? { invalid: state.invalid } : {}),
-        ...(state.source ? { source: state.source } : {}),
+        ...(warning ? { ignoredProjectApproval: warning } : {}),
     };
 }
 
-const preapprovalSchema = z.object({
-    environments: z.array(z.string()).min(1).describe('Exact production environment names or IDs (no wildcards)'),
-    tools: z
-        .union([z.literal(ALL_MUTATING), z.array(z.enum(PREAPPROVABLE_TOOLS)).min(1)])
-        .describe(
-            `Tool names, or "${ALL_MUTATING}" for every mutating tool except ${NAMED_ONLY_TOOLS.join(', ')} (which must be named)`,
-        ),
+const scopeInputs = {
+    environment: z.string().describe('Production environment name or ID; stored by its resolved ID'),
     expires: z.string().optional().describe('ISO 8601 date-time after which the entry is ignored'),
-});
+    thisProjectOnly: z
+        .boolean()
+        .optional()
+        .describe('Apply only to tools run in the current project (its root path is stored)'),
+    clear: z.boolean().optional().describe('Remove the entry for this organization, environment and project'),
+    confirm: z.boolean().optional().describe('Write the change. Without it the tool returns a preview'),
+};
 
-export function registerProfileTools(server: McpServer) {
+export function registerProfileTools(server: McpServer, client?: AnypointClient) {
     server.registerTool(
         'get_project_profile',
         {
             title: 'Get Project Profile',
             description:
-                'Returns the currently active Anypoint profile for this project, how it was resolved (flag, env, project-file, or default), lists all available profiles, and shows the production pre-approval of .anypoint-connect.json (environments, tools, expiry). Use this to understand which Anypoint org/credentials are in use and which production writes skip confirmProduction.',
+                'Returns the currently active Anypoint profile for this project, how it was resolved (flag, env, project-file, or default), lists all available profiles, and shows the user-level production policy: production pre-approvals and unmarked-artifact allowances, each bound to an organization and environment ID. Use this to understand which Anypoint org/credentials are in use and which production writes skip confirmProduction.',
             annotations: { readOnlyHint: true },
         },
         async () => {
@@ -77,7 +80,7 @@ export function registerProfileTools(server: McpServer) {
                     hasCredentials: hasSavedConfig(p),
                     isActive: p === resolved.name,
                 })),
-                productionPreapproval: describePreapproval(readPreapproval()),
+                productionPolicy: describeProductionPolicy(readApprovalState()),
             });
         },
     );
@@ -87,72 +90,27 @@ export function registerProfileTools(server: McpServer) {
         {
             title: 'Set Project Profile',
             description:
-                'Binds the current project directory to a named Anypoint profile by writing .anypoint-connect.json, and sets or clears its production pre-approval. Other fields of the file are kept. ' +
-                'A production pre-approval lets the named tools write to the named production environments without confirmProduction (CLI: without the typed phrase) until it expires; confirm: true, bound IDs, digests and refusals still apply. ' +
-                'Changing the pre-approval is a guarded config change: it previews by default and is written only with confirm: true. Binding a profile alone is written directly.',
+                'Binds the current project directory to a named Anypoint profile by writing .anypoint-connect.json (the nearest one, walking up, unless directory is given). Other fields of the file are kept. Production approvals are not stored here; see set_production_preapproval.',
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
             inputSchema: {
-                profile: z.string().optional().describe('The profile name to bind to this project directory'),
+                profile: z.string().describe('The profile name to bind to this project directory'),
                 directory: z
                     .string()
                     .optional()
-                    .describe('Directory to write .anypoint-connect.json in (defaults to cwd)'),
-                productionPreapproval: preapprovalSchema
-                    .optional()
-                    .describe('Replace the production pre-approval with this entry'),
-                clearProductionPreapproval: z.boolean().optional().describe('Remove the production pre-approval'),
-                confirm: z
-                    .boolean()
-                    .optional()
-                    .describe('Write a pre-approval change. Without it the tool returns a preview and writes nothing'),
+                    .describe(
+                        'Directory to write .anypoint-connect.json in (default: the nearest existing one, else cwd)',
+                    ),
             },
         },
-        async ({ profile, directory, productionPreapproval, clearProductionPreapproval, confirm }) => {
+        async ({ profile, directory }) => {
             try {
-                if (!profile && !productionPreapproval && !clearProductionPreapproval) {
-                    throw new Error('Pass profile, productionPreapproval or clearProductionPreapproval');
-                }
-                if (productionPreapproval && clearProductionPreapproval) {
-                    throw new Error('Pass productionPreapproval or clearProductionPreapproval, not both');
-                }
-
-                const preapprovalChange = productionPreapproval || clearProductionPreapproval;
-                if (preapprovalChange) {
-                    const entry = productionPreapproval ? validatePreapproval(productionPreapproval) : undefined;
-                    const targetDir = directory || process.cwd();
-                    const file = path.join(targetDir, '.anypoint-connect.json');
-                    const before = describePreapproval(readPreapproval({ startDir: targetDir }));
-                    const preview = {
-                        action: entry ? 'set production pre-approval' : 'clear production pre-approval',
-                        file,
-                        ...(profile ? { profile } : {}),
-                        current: before.active,
-                        next: entry ? [entry] : [],
-                    };
-                    if (!confirm) return dryRunPreview(preview);
-                    updateProjectConfig(
-                        {
-                            ...(profile ? { profile } : {}),
-                            productionPreapproval: entry,
-                        },
-                        directory,
-                    );
-                    return mcpText({
-                        message: entry ? 'Production pre-approval set.' : 'Production pre-approval cleared.',
-                        ...preview,
-                        productionPreapproval: describePreapproval(readPreapproval({ startDir: targetDir })),
-                    });
-                }
-
-                // Validate profile exists
                 const profiles = listProfiles();
-                const filePath = updateProjectConfig({ profile }, directory);
-                if (profiles.length > 0 && !profiles.includes(profile!)) {
+                const filePath = writeProjectConfig(profile, directory);
+                if (profiles.length > 0 && !profiles.includes(profile)) {
                     return mcpText(
-                        `Warning: Profile "${profile}" does not exist yet. Available profiles: ${profiles.join(', ')}. The binding was created but you'll need to run "anc config init --profile ${profile}" to set up credentials.`,
+                        `Warning: Profile "${profile}" does not exist yet. Available profiles: ${profiles.join(', ')}. The binding was written to ${filePath}, but you'll need to run "anc config init --profile ${profile}" to set up credentials.`,
                     );
                 }
-
                 return mcpText(
                     `Project bound to profile "${profile}". Config written to: ${filePath}\n\nAll CLI commands and MCP tools in this directory will now use the "${profile}" profile.`,
                 );
@@ -166,6 +124,96 @@ export function registerProfileTools(server: McpServer) {
                     ],
                     isError: true,
                 };
+            }
+        },
+    );
+
+    /** Resolve the scope of an entry: org and environment IDs, display name, optional project root. */
+    async function resolveScope(environment: string, thisProjectOnly?: boolean) {
+        if (!client) throw new Error('No Anypoint client');
+        const { orgId, env } = await resolveEnvironment(client, environment);
+        if (!isProductionEnv(env.name, env.isProduction)) {
+            throw new Error(`${env.name} is not a production environment; production policy applies only there`);
+        }
+        return {
+            env,
+            scope: {
+                orgId,
+                environmentId: env.id,
+                environmentName: env.name,
+                ...(thisProjectOnly ? { projectPath: resolveProjectRoot() } : {}),
+            },
+        };
+    }
+
+    server.registerTool(
+        'set_production_preapproval',
+        {
+            title: 'Set Production Pre-approval',
+            description:
+                'Pre-approves production writes for one organization and environment (stored by ID in the user-level ~/.anypoint-connect/production-approvals.json, never in the repository), so the named tools do not need confirmProduction (CLI: the typed phrase) until it expires. confirm: true, expectedSha256, expectedDeploymentId and every refusal still apply. ' +
+                `tools is a list or "${ALL_MUTATING}" (all of ${PREAPPROVABLE_TOOLS.join(', ')} except ${NAMED_ONLY_TOOLS.join(', ')}, which must be named). Previews by default; pass confirm: true to write, clear: true to remove.`,
+            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+            inputSchema: {
+                ...scopeInputs,
+                tools: z
+                    .union([z.literal(ALL_MUTATING), z.array(z.enum(PREAPPROVABLE_TOOLS)).min(1)])
+                    .optional()
+                    .describe(`Tool names, or "${ALL_MUTATING}". Required unless clear is true`),
+            },
+        },
+        async ({ environment, tools, expires, thisProjectOnly, clear, confirm }) => {
+            try {
+                const { scope } = await resolveScope(environment, thisProjectOnly);
+                if (!clear && !tools) throw new Error('Pass tools, or clear: true');
+                const entry = clear ? null : validatePreapproval({ ...scope, tools, ...(expires ? { expires } : {}) });
+                const preview = {
+                    action: clear ? 'clear production pre-approval' : 'set production pre-approval',
+                    scope,
+                    ...(entry ? { entry } : {}),
+                    current: readApprovalState().productionPreapprovals.filter((e) => e.orgId === scope.orgId),
+                };
+                if (!confirm) return dryRunPreview(preview);
+                const file = savePreapproval(scope, entry);
+                return mcpText({
+                    message: clear ? 'Production pre-approval cleared.' : 'Production pre-approval set.',
+                    file,
+                    productionPolicy: describeProductionPolicy(readApprovalState(), scope.orgId),
+                });
+            } catch (error) {
+                return mcpError(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        'set_unmarked_artifact_allowance',
+        {
+            title: 'Allow Unmarked Artifacts in Production',
+            description:
+                'Allows jars without a mule-build build marker (built by another pipeline) to be deployed to one production organization and environment, stored by ID in the user-level ~/.anypoint-connect/production-approvals.json. Without it such jars are refused for production as "build provenance unknown". It never admits a jar whose marker says it is not production deployable, or an invalid marker. Previews by default; pass confirm: true to write, clear: true to remove.',
+            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+            inputSchema: scopeInputs,
+        },
+        async ({ environment, expires, thisProjectOnly, clear, confirm }) => {
+            try {
+                const { scope } = await resolveScope(environment, thisProjectOnly);
+                const entry = clear ? null : validateUnmarkedAllowance({ ...scope, ...(expires ? { expires } : {}) });
+                const preview = {
+                    action: clear ? 'clear unmarked-artifact allowance' : 'allow unmarked artifacts',
+                    scope,
+                    ...(entry ? { entry } : {}),
+                    current: readApprovalState().unmarkedArtifactAllowances.filter((e) => e.orgId === scope.orgId),
+                };
+                if (!confirm) return dryRunPreview(preview);
+                const file = saveUnmarkedAllowance(scope, entry);
+                return mcpText({
+                    message: clear ? 'Unmarked-artifact allowance cleared.' : 'Unmarked artifacts allowed.',
+                    file,
+                    productionPolicy: describeProductionPolicy(readApprovalState(), scope.orgId),
+                });
+            } catch (error) {
+                return mcpError(error);
             }
         },
     );

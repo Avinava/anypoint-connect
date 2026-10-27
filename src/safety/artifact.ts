@@ -121,46 +121,83 @@ export function readBuildProvenance(bytes: Uint8Array): BuildProvenance {
             reason: `${BUILD_INFO_PATH} lacks schemaVersion, tool, toolVersion, stripped or productionDeployable`,
         };
     }
+    // Only the contract this tool understands counts; anything else cannot vouch for the build.
+    if (schemaVersion !== BUILD_INFO_SCHEMA_VERSION) {
+        return { status: 'invalid', reason: `unsupported schemaVersion ${schemaVersion} (expected 1)` };
+    }
+    if (tool !== BUILD_INFO_TOOL) return { status: 'invalid', reason: `unknown build tool "${tool}"` };
+    if (productionDeployable === stripped) {
+        return {
+            status: 'invalid',
+            reason: `inconsistent marker: stripped ${stripped} with productionDeployable ${productionDeployable}`,
+        };
+    }
     return { status: 'recorded', schemaVersion, tool, toolVersion, stripped, productionDeployable };
+}
+
+const BUILD_INFO_SCHEMA_VERSION = 1;
+const BUILD_INFO_TOOL = 'mule-build';
+
+/** Whether unmarked jars may go to the target; see src/safety/preapproval.ts. */
+export interface UnmarkedPolicy {
+    unmarkedAllowed: boolean;
+    source?: string;
+    expires?: string;
 }
 
 /** The outcome of checking a jar's build provenance against where it is going. */
 export interface ProvenanceCheck {
     /** Serializable summary for previews. */
     buildProvenance: BuildProvenance & { note?: string };
+    /** Present for a production target: whether unmarked jars are allowed there, and by what. */
+    provenancePolicy?: UnmarkedPolicy;
     warnings: string[];
-    /** Set when the jar must not go to the target. There is no override. */
+    /** Set when the jar must not go to the target. */
     blocker?: string;
 }
 
+const UNKNOWN_NOTE = `build provenance unknown: the jar has no ${BUILD_INFO_PATH} (built before mule-build 3.2.0 or by another tool)`;
+
 /**
- * Decide whether a jar may go to an environment. A jar whose build marks it not production
- * deployable (for example, built with secure properties stripped) is refused for production and
- * flagged elsewhere. A jar without a marker is allowed (older builds) and noted. A marker that
- * cannot be read is treated like a non-deployable one, since it cannot vouch for the build.
- * `production` is undefined when the target is not known yet (publishing only).
+ * Decide whether a jar may go to an environment. For production, only a marker with schemaVersion 1,
+ * tool "mule-build", stripped false and productionDeployable true passes. A jar marked not production
+ * deployable, or with an unreadable or inconsistent marker, is refused with no override. A jar
+ * without a marker is refused unless an unmarked-artifact allowance covers the org and environment.
+ * Outside production every case passes, with a warning or a note. `production` is undefined when the
+ * target is not known yet (publishing only).
  */
-export function checkBuildProvenance(provenance: BuildProvenance, production: boolean | undefined): ProvenanceCheck {
+export function checkBuildProvenance(
+    provenance: BuildProvenance,
+    production: boolean | undefined,
+    unmarked: UnmarkedPolicy = { unmarkedAllowed: false },
+): ProvenanceCheck {
+    const policy = production ? { provenancePolicy: unmarked } : {};
     if (provenance.status === 'unknown') {
-        return {
-            buildProvenance: {
-                ...provenance,
-                note: `build provenance unknown: the jar has no ${BUILD_INFO_PATH} (built before mule-build 3.2.0 or by another tool)`,
-            },
-            warnings: [],
-        };
+        const buildProvenance = { ...provenance, note: UNKNOWN_NOTE };
+        if (production && !unmarked.unmarkedAllowed) {
+            return {
+                buildProvenance,
+                ...policy,
+                warnings: [],
+                blocker:
+                    'Refused: build provenance unknown. Production takes only jars whose mule-build marker says productionDeployable. ' +
+                    'For artifacts built by another pipeline, add an unmarked-artifact allowance for this organization and environment (set_unmarked_artifact_allowance).',
+            };
+        }
+        return { buildProvenance, ...policy, warnings: [] };
     }
     if (provenance.status === 'recorded' && provenance.productionDeployable) {
-        return { buildProvenance: provenance, warnings: [] };
+        return { buildProvenance: provenance, ...policy, warnings: [] };
     }
 
     const problem =
         provenance.status === 'invalid'
-            ? `its build marker is unreadable (${provenance.reason})`
+            ? `its build marker is not valid (${provenance.reason})`
             : `its build marks it not production deployable (${provenance.tool} ${provenance.toolVersion}, stripped: ${provenance.stripped})`;
     if (production) {
         return {
             buildProvenance: provenance,
+            ...policy,
             warnings: [],
             blocker: `Refused: this jar cannot go to a production environment because ${problem}. Build a production-deployable jar (secure properties not stripped) and preview again.`,
         };

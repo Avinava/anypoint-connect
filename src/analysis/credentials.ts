@@ -33,8 +33,8 @@ export const CREDENTIAL_MARKERS: readonly CredentialMarker[] = [
     },
     {
         id: 'sforce-session',
-        description: 'Sforce-Session header',
-        pattern: /\bsforce-session\b/i,
+        description: 'Sforce-Session header with a value',
+        pattern: /\bsforce-session["']?\s*[:=]\s*["']?[A-Za-z0-9!._-]{8,}/i,
     },
     {
         id: 'salesforce-session-id',
