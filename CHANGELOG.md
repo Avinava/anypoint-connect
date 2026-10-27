@@ -48,6 +48,25 @@
   previews and results carry `production`, `productionPreapproved`, `preapprovalSource` and
   `preapprovalWarning` (a project file that tried to grant approval, which is ignored).
   `get_project_profile` and `whoami` show `productionPolicy`.
+- Alert management through the undocumented observability API behind the Monitoring UI
+  (`AlertsApi`, `client.alerts`):
+  - `list_alerts` (`environment?`, `entityType?`, `app?`, `apiInstanceId?`, `name?`, `status?`,
+    `source` `monitoring|runtime-manager|all`, `revealRecipients?`) returns alerts normalized to `id`,
+    `source`, `name`, `enabled`, `severity`, `status`, `state`, `entity`, `condition` and a recipient count
+    and domains; Runtime Manager event alerts are read only. `get_alert` returns one.
+  - `create_alert` resolves the target from CloudHub 2.0 or API Manager, converts percent thresholds to
+    fractions, validates ranges, takes explicit notifications only (written as `notifications`, read back
+    as `notificationTemplates`), creates disabled by default, warns about recipients outside your email
+    domain, and refuses a duplicate name on the same target unless `allowDuplicate`.
+  - `update_alert` and `set_alert_enabled` read the alert, merge the change and send the full body;
+    a `PENDING` alert is refused with a retry-later message.
+  - `delete_alert` is bound to `expectedName` and reports `accepted` and `status`, never "deleted" while
+    the alert is `PENDING`.
+  - Writes preview by default and use the production guard of the alert's own environment. The new write
+    tools are pre-approvable; `"all-mutating"` covers all but `delete_alert`, which must be named.
+  - A family that answers 404 or 403 is reported as unsupported. `get_api_alerts` also returns the
+    Monitoring alerts on the API instance as `monitoringAlerts`.
+  - CLI: `anc alerts list|get|create|update|enable|disable|delete`.
 - `LogsApi.getLogParts` returns each spec's log text separately.
 - Tests run with `HOME` pointed at an empty directory, so they never read the real user settings.
 

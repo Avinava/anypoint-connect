@@ -67,6 +67,7 @@ release does not support the `client_credentials` grant, and its encrypted token
 | Settings | Add, change, remove and move properties; secret values read from project files or environment variables; secret-looking plain values masked and flagged |
 | Logs | Tail, search over message, logger and stack trace, download with filters, summaries and file output, error clustering with context, recurring patterns, log health statistics, counts of lines that carry session or bearer credentials (never the values) |
 | Monitoring | Traffic, failures, and p50–p99 latency per app, worker, or route; heap, old-generation pressure, GC, CPU, and RAM per worker; time series from 1-minute to 1-day buckets; freeform AMQL |
+| Alerts | List, create, change, enable, disable and delete Anypoint Monitoring metric alerts on apps and API instances, recipients masked by default; read Runtime Manager event alerts (undocumented API, see [Alerts](https://avinava.github.io/anypoint-connect/alerts/)) |
 | Exchange | Search, asset details, spec download, application JAR publication |
 | API Manager and Governance | Instances, policies, SLA tiers, alerts, contracts, client applications with masked credentials, smoke tests with the client's credentials, governance rulesets and conformance |
 | Design Center | Projects, branches, file reads, preview-then-apply file sync, verified Exchange publication |
@@ -77,6 +78,7 @@ New in 0.17:
 - Production deploys through these tools take only jars whose mule-build marker (`META-INF/mule-build/build-info.json`) says production deployable, checked on the Exchange artifact: [build markers gate production](https://avinava.github.io/anypoint-connect/safety/#build-markers-gate-production)
 - `scan_logs_for_credentials`: [check logs for leaked credentials](https://avinava.github.io/anypoint-connect/recipes/#check-logs-for-leaked-credentials)
 - `get_audit_log` actor classes: [find who changed an app](https://avinava.github.io/anypoint-connect/recipes/#find-who-changed-an-app)
+- Alert management: `list_alerts`, `get_alert`, `create_alert`, `update_alert`, `set_alert_enabled`, `delete_alert` and `anc alerts`: [alerts](https://avinava.github.io/anypoint-connect/alerts/)
 - `set_production_preapproval`, stored per organization and environment outside the repository: [production pre-approval](https://avinava.github.io/anypoint-connect/safety/#production-pre-approval)
 
 New in 0.16, each with a recipe:

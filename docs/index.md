@@ -66,6 +66,7 @@ administrator for and how to rotate a secret safely.
 | Monitoring | Traffic, failures, and p50–p99 latency per app, worker, or route; heap, old-generation pressure, GC, CPU, and RAM per worker; incident time series; freeform AMQL. See [Monitoring](monitoring.md) |
 | Exchange and Design Center | Search assets, download specifications, preview and sync spec files, publish API and application assets |
 | API Manager and Governance | Instances, policies, SLA tiers, alerts, governance rulesets and conformance |
+| Alerts | Anypoint Monitoring metric alerts on apps and API instances: list, create, change, enable, disable, delete; Runtime Manager event alerts read only. See [Alerts](alerts.md) |
 | Platform services | Environments, entitlements, audit log with platform and user actor classes, Anypoint MQ, and Object Store v2 |
 
 Every MCP tool is listed in the [tool catalog](tools.md); every command is in the

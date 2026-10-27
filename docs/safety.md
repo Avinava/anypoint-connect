@@ -12,6 +12,7 @@ the same rules. Direct library calls do not pass through them; see the [library 
 | Kind of change | MCP | CLI |
 | --- | --- | --- |
 | Publish a JAR; create, update, redeploy or roll back an app; change runtime, settings or update strategy; restart, scale, stop, start | Preview unless `confirm: true`; production also needs `confirmProduction: true` (`publish_app_jar`, `deploy_jar`, `deploy_app`, `update_app`, `update_app_artifact`, `rollback_app`, `update_app_settings`, `restart_app`, `scale_app`, `stop_app`, `start_app`) | `anc deploy`, `anc apps update`, `anc apps settings set` and `anc apps restart` print the plan; `--dry-run` stops there; production asks for a typed phrase unless `--force` |
+| Create, change, enable, disable or delete a Monitoring alert | Preview unless `confirm: true`; production (the alert's own environment) also needs `confirmProduction: true` or a pre-approval (`create_alert`, `update_alert`, `set_alert_enabled`); `delete_alert` also needs the exact `expectedName` | `anc alerts create`, `update`, `enable`, `disable` print the change, `--dry-run` stops there, production asks for a typed phrase unless `--force`; `anc alerts delete` is a dry run until `--confirm <name>`, production also needs `--allow-production` |
 | Delete a deployment | Preview, then `confirm: true` plus the exact `expectedDeploymentId`; production also needs `confirmProduction: true` (`delete_app`) | `anc apps delete` is a dry run until `--confirm <deployment-id>`; production also needs `--allow-production` |
 | Design Center project creation, file sync, Exchange publication | A `preview_*` tool returns a single-use token; the paired write tool consumes it | `anc dc push` and `anc dc publish` preview, then ask; `--yes` skips the question |
 | API smoke test with a method other than GET, HEAD or OPTIONS | Preview unless `confirm: true`; production also needs `confirmProduction: true` (`smoke_test_api`) | `anc api smoke` asks unless `--yes`; production needs `--allow-production` |
@@ -310,8 +311,9 @@ plant or widen one. Each entry is bound to a resolved organization ID and enviro
 - **`environmentName`**: display only; never matched.
 - **`tools`**: MCP tool names, or `"all-mutating"`. Pre-approvable: `deploy_jar`, `deploy_app`,
   `update_app`, `update_app_artifact`, `rollback_app`, `update_app_settings`, `restart_app`, `scale_app`,
-  `stop_app`, `start_app`, `smoke_test_api`, `delete_app`. `"all-mutating"` covers all of them except
-  `delete_app`, which is covered only when named.
+  `stop_app`, `start_app`, `smoke_test_api`, `delete_app`, `create_alert`, `update_alert`,
+  `set_alert_enabled`, `delete_alert`. `"all-mutating"` covers all of them except `delete_app` and
+  `delete_alert`, which are covered only when named.
 - **`expires`**: optional ISO 8601 date-time. From then on the entry is ignored.
 - **`projectPath`**: optional project root; the entry then applies only to tools run in that project.
 

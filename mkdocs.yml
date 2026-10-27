@@ -92,6 +92,7 @@ nav:
           - Common recipes: recipes.md
           - MCP server: mcp.md
           - Monitoring: monitoring.md
+          - Alerts: alerts.md
           - Troubleshooting: troubleshooting.md
     - Reference:
           - CLI reference: cli-reference.md
