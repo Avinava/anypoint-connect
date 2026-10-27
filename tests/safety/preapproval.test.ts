@@ -371,7 +371,7 @@ describe('MCP production writes', () => {
             client.exchange.downloadAppJar.mockRejectedValue(new Error('403 Forbidden'));
             const body = parse(await handlers.get('update_app_artifact')!(args));
             expect(body.refused).toBe(true);
-            expect(body.blockers[0]).toContain('Could not download');
+            expect(body.blockers[0]).toContain('could not download');
         });
 
         it('binds jarPath to the deployed artifact by SHA-256, in any environment', async () => {
@@ -396,6 +396,27 @@ describe('MCP production writes', () => {
             });
             expect(ok.isError).toBeUndefined();
             expect(client.cloudHub2.patchDeployment).toHaveBeenCalledTimes(1);
+        });
+
+        it('regression: with jarPath, a failed download or MD5 mismatch refuses the change outside production too', async () => {
+            const jarPath = path.join(dir, 'orders-sapi.jar');
+            fs.writeFileSync(jarPath, jarBytes(marker(true)));
+            client.accessManagement.resolveEnvironment.mockResolvedValue(sandbox);
+            const input = { ...args, environment: 'Sandbox', jarPath, confirm: true };
+
+            client.exchange.downloadAppJar.mockRejectedValue(new Error('403 Forbidden'));
+            const failed = parse(await handlers.get('update_app_artifact')!(input));
+            expect(failed.refused).toBe(true);
+            expect(failed.blockers[0]).toContain('could not download');
+
+            client.exchange.downloadAppJar.mockResolvedValue({
+                ...exchangeJar(fs.readFileSync(jarPath)),
+                md5Matches: false,
+            });
+            const corrupt = parse(await handlers.get('update_app_artifact')!(input));
+            expect(corrupt.refused).toBe(true);
+            expect(corrupt.blockers[0]).toContain('MD5');
+            expect(writes()).toBe(0);
         });
 
         it('does not download outside production without jarPath', async () => {

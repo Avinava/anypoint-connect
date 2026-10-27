@@ -72,7 +72,7 @@ export const provenanceJarInput = z
     .string()
     .optional()
     .describe(
-        'Local .jar the new version was built and published from. Its SHA-256 must match the Exchange artifact being deployed, or the change is refused. Production changes always download the Exchange artifact and check its build marker, with or without jarPath',
+        'Local .jar the new version was built and published from. In any environment the Exchange artifact is then downloaded and its SHA-256 must match this jar; a mismatch, a failed download or an MD5 mismatch refuses the change. Production changes always download the Exchange artifact and check its build marker, with or without jarPath',
     );
 
 export const modeInput = z

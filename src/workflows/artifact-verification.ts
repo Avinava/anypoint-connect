@@ -4,7 +4,8 @@
  * deploy_app, update_app, update_app_artifact and rollback_app point an app at Exchange coordinates,
  * so a check of a local jar alone proves nothing about what will run. For a production target the
  * artifact is downloaded from Exchange and its own build marker is checked. When a local jar is given,
- * its SHA-256 must equal the Exchange artifact's, in any environment, so the reviewed file is the one
+ * the Exchange artifact is downloaded in any environment and its SHA-256 must equal the jar's; a failed
+ * download or an MD5 mismatch refuses the change too, so the reviewed file is the one
  * deployed.
  */
 
@@ -28,7 +29,7 @@ export async function readJarBytes(jarPath: string): Promise<Buffer> {
 
 export interface ArtifactVerification {
     /** Where the checked bytes came from. */
-    checked: 'exchange' | 'local' | 'none';
+    checked: 'exchange' | 'none';
     ref: Pick<ArtifactRef, 'groupId' | 'artifactId' | 'version'>;
     /** SHA-256 of the Exchange artifact, when downloaded. */
     exchangeSha256?: string;
@@ -68,6 +69,8 @@ export async function verifySelectedArtifact(
     }
     if (!production && !local) return result;
 
+    // From here on the Exchange artifact must be verified: production always, and any environment when
+    // a local jar asks for SHA-256 binding. A binding that cannot be checked is a refusal, not a warning.
     let exchange: { buffer: Buffer; sha256: string; md5Matches: boolean } | undefined;
     try {
         exchange = await client.exchange.downloadAppJar(
@@ -77,29 +80,27 @@ export async function verifySelectedArtifact(
             request.ref.version,
         );
     } catch (error) {
-        const message = `Could not download ${coordinates(request.ref)} from Exchange to verify it: ${errorMessage(error)}`;
-        if (production) result.blockers.push(`Refused: ${message}`);
-        else result.warnings.push(message);
+        result.blockers.push(
+            `Refused: could not download ${coordinates(request.ref)} from Exchange to verify it: ${errorMessage(error)}`,
+        );
     }
 
     if (exchange) {
         result.checked = 'exchange';
         result.exchangeSha256 = exchange.sha256;
         if (!exchange.md5Matches) {
-            const message = `The jar downloaded for ${coordinates(request.ref)} does not match its Exchange MD5`;
-            if (production) result.blockers.push(`Refused: ${message}`);
-            else result.warnings.push(message);
+            result.blockers.push(
+                `Refused: the jar downloaded for ${coordinates(request.ref)} does not match its Exchange MD5`,
+            );
         }
         if (local && local.sha256 !== exchange.sha256) {
             result.blockers.push(
                 `Refused: ${path.basename(request.jarPath!)} (SHA-256 ${local.sha256}) is not the artifact being deployed, ${coordinates(request.ref)} (SHA-256 ${exchange.sha256}). Pass the jar that was published, or omit jarPath.`,
             );
         }
-    } else if (local && !production) {
-        result.checked = 'local';
     }
 
-    const bytes = exchange?.buffer ?? (result.checked === 'local' ? local?.bytes : undefined);
+    const bytes = exchange?.buffer;
     if (bytes) {
         const unmarked = production
             ? checkUnmarkedAllowance({ orgId: request.orgId, env: request.env })

@@ -18,8 +18,9 @@
   `update_app`, `update_app_artifact`, `rollback_app` and `anc apps update` download the artifact the
   change selects from Exchange and check its own marker for every production change, with or without a
   local jar; a failed download or an MD5 mismatch refuses the change. Their new `jarPath` input (CLI:
-  `--jar`) binds the change to a local jar: its SHA-256 must equal the Exchange artifact's, in any
-  environment. `publish_app_jar` takes an optional `environment` for the same check before publishing.
+  `--jar`) binds the change to a local jar in any environment: the Exchange artifact is downloaded and
+  its SHA-256 must equal the jar's, and a mismatch, a failed download or an MD5 mismatch refuses the
+  change. `publish_app_jar` takes an optional `environment` for the same check before publishing.
   Previews report `buildProvenance` and `artifactVerification`.
 
 ### Added
@@ -39,7 +40,10 @@
   `expires` and `projectPath`) in the user-level `~/.anypoint-connect/production-approvals.json`, never
   in the repository. A covered organization, environment and tool skips `confirmProduction` and the
   CLI's typed phrase, and `--allow-production` for `anc apps delete` (only when `delete_app` is named) and
-  `anc api smoke`. Names are never matched, so approvals do not carry across organizations.
+  `anc api smoke`. Entries are scoped to the organization ID and environment ID, not to a profile or
+  credential: they apply to every profile that resolves to that organization and environment and stay in
+  force across profile switches within it. Names are never matched, and another organization never
+  matches, so approvals do not carry across organizations.
   `confirm: true`, `expectedSha256`, `expectedDeploymentId` and every refusal still apply. Production
   previews and results carry `production`, `productionPreapproved`, `preapprovalSource` and
   `preapprovalWarning` (a project file that tried to grant approval, which is ignored).

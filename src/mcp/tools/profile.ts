@@ -151,7 +151,7 @@ export function registerProfileTools(server: McpServer, client?: AnypointClient)
         {
             title: 'Set Production Pre-approval',
             description:
-                'Pre-approves production writes for one organization and environment (stored by ID in the user-level ~/.anypoint-connect/production-approvals.json, never in the repository), so the named tools do not need confirmProduction (CLI: the typed phrase) until it expires. confirm: true, expectedSha256, expectedDeploymentId and every refusal still apply. ' +
+                'Pre-approves production writes for one organization and environment (stored by ID in the user-level ~/.anypoint-connect/production-approvals.json, never in the repository), so the named tools do not need confirmProduction (CLI: the typed phrase) until it expires. The entry is scoped to the organization ID and environment ID, not to a profile or credential: it applies to every profile on this machine that resolves to that organization and environment, survives profile switches within the organization, and never matches another organization. confirm: true, expectedSha256, expectedDeploymentId and every refusal still apply. ' +
                 `tools is a list or "${ALL_MUTATING}" (all of ${PREAPPROVABLE_TOOLS.join(', ')} except ${NAMED_ONLY_TOOLS.join(', ')}, which must be named). Previews by default; pass confirm: true to write, clear: true to remove.`,
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
             inputSchema: {
@@ -191,7 +191,7 @@ export function registerProfileTools(server: McpServer, client?: AnypointClient)
         {
             title: 'Allow Unmarked Artifacts in Production',
             description:
-                'Allows jars without a mule-build build marker (built by another pipeline) to be deployed to one production organization and environment, stored by ID in the user-level ~/.anypoint-connect/production-approvals.json. Without it such jars are refused for production as "build provenance unknown". It never admits a jar whose marker says it is not production deployable, or an invalid marker. Previews by default; pass confirm: true to write, clear: true to remove.',
+                'Allows jars without a mule-build build marker (built by another pipeline) to be deployed to one production organization and environment, stored by ID in the user-level ~/.anypoint-connect/production-approvals.json. Like a pre-approval it is scoped to the organization ID and environment ID, not to a profile or credential. Without it such jars are refused for production as "build provenance unknown". It never admits a jar whose marker says it is not production deployable, or an invalid marker. Previews by default; pass confirm: true to write, clear: true to remove.',
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
             inputSchema: scopeInputs,
         },

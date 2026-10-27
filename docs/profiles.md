@@ -70,6 +70,9 @@ bound to organization and environment IDs, and are written with `set_production_
 `set_unmarked_artifact_allowance`. A `productionPreapproval` left in a project file is ignored and
 reported by `get_project_profile`. See the [safety model](safety.md#production-pre-approval).
 
+These entries belong to the organization and environment, not to a profile: switching between two profiles
+of the same organization keeps them in force, and a profile for another organization never matches them.
+
 `set_project_profile` and `anc config use` update the nearest `.anypoint-connect.json` (walking up from
 the working directory) and keep its other fields, so a nested directory does not get a second file that
 shadows the first.

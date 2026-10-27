@@ -158,8 +158,10 @@ Which bytes are checked:
   production target, the artifact the change selects is downloaded from Exchange and its own marker is
   checked, whether or not a local jar is given. A download failure or an Exchange MD5 mismatch refuses
   the change.
-- **`jarPath`** (CLI: `--jar`) on those tools binds the change to a local jar: its SHA-256 must equal the
-  Exchange artifact's, in any environment, or the change is refused.
+- **`jarPath`** (CLI: `--jar`) on those tools binds the change to a local jar, in any environment: the
+  Exchange artifact is downloaded and its SHA-256 must equal the jar's. A hash mismatch, a failed
+  download, or an Exchange MD5 mismatch refuses the change; a binding that cannot be checked is never
+  downgraded to a warning.
 - **`publish_app_jar`**: the local jar, against `environment` when given; without it, only warnings.
 
 Previews report `buildProvenance`, `artifactVerification` (`checked`, `ref`, `exchangeSha256`,
@@ -299,8 +301,12 @@ plant or widen one. Each entry is bound to a resolved organization ID and enviro
 }
 ```
 
-- **`orgId`, `environmentId`**: matched exactly. Wildcards are refused. Another organization (other
-  credentials or profile) never matches, so approvals do not carry across organizations.
+- **`orgId`, `environmentId`**: matched exactly. Wildcards are refused. An entry is scoped to the
+  organization and environment, not to a profile or credential: it applies to every profile and
+  credential on this machine that resolves to the same organization ID and environment ID, and it stays
+  in force across profile switches within that organization. A profile or credential for another
+  organization never matches, so approvals do not carry across organizations. Use `projectPath` or
+  `expires` to narrow an entry further.
 - **`environmentName`**: display only; never matched.
 - **`tools`**: MCP tool names, or `"all-mutating"`. Pre-approvable: `deploy_jar`, `deploy_app`,
   `update_app`, `update_app_artifact`, `rollback_app`, `update_app_settings`, `restart_app`, `scale_app`,
