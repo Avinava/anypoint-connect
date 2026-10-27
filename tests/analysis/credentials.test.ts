@@ -4,7 +4,8 @@ import { CREDENTIAL_MARKERS, markersIn, scanForCredentials, UNKNOWN_REPLICA } fr
 const b64 = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const FAKE_JWT = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: 'sample-user', iat: 1 })}.c2FtcGxlLXNpZ25hdHVyZQ`;
 const FAKE_TOKEN = 'sampleTokenValue0123456789abcdef';
-const FAKE_SF_SESSION = `00D000000000001!${'A'.repeat(24)}`;
+const FAKE_SF_SESSION = `${['00D', '0'.repeat(11), '1'].join('')}!${'A'.repeat(24)}`;
+const FAKE_PARAM = ['abcdefgh', '12345'].join('');
 
 const at = (minute: number, replica: string, message: string) =>
     `2026-01-01T10:${String(minute).padStart(2, '0')}:00.000Z INFO [${replica}] sample.Logger event:e1 [thread] - ${message}`;
@@ -19,7 +20,7 @@ describe('credential marker table', () => {
         ['sforce-session', 'header Sforce-Session: abcdef0123456789'],
         ['sforce-session', '{"Sforce-Session":"abcdef0123456789"}'],
         ['salesforce-session-id', `session ${FAKE_SF_SESSION}`],
-        ['oauth-token-param', 'callback?access_token=abcdefgh12345&state=x'],
+        ['oauth-token-param', `callback?access_token=${FAKE_PARAM}&state=x`],
         ['oauth-token-param', '"refresh_token": "abcdefgh12345"'],
         ['jwt', `token ${FAKE_JWT}`],
     ])('%s matches %s', (id, line) => {
@@ -46,7 +47,7 @@ describe('credential marker table', () => {
 
 describe('scanForCredentials', () => {
     const spec1 = [
-        'orphan line before any header with access_token=abcdefgh12345',
+        `orphan line before any header with access_token=${FAKE_PARAM}`,
         at(0, 'r-old', 'starting'),
         at(1, 'r-old', `outbound call Authorization: Bearer ${FAKE_TOKEN}`),
     ].join('\n');
