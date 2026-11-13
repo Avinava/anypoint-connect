@@ -4,6 +4,7 @@
  * Uses the AMC log file download endpoint with spec ID resolution
  */
 
+import { setTimeout as delay } from 'node:timers/promises';
 import type { HttpClient } from '../client/HttpClient.js';
 import type { CloudHub2Api } from './CloudHub2Api.js';
 import type { EnrichedLogEntry } from '../analysis/types.js';
@@ -33,6 +34,8 @@ export interface LogReadOptions {
      * replaced by an update stays visible. Default 0: the desired spec, or the last successful one.
      */
     previousSpecs?: number;
+    /** Cancels the request in flight. */
+    signal?: AbortSignal;
 }
 
 /** Where a log file came from. */
@@ -70,6 +73,93 @@ export interface LogSearchResponse {
     /** Newest first */
     entries: EnrichedLogEntry[];
     source: LogSource;
+}
+
+/** What a followed log reports. */
+export type TailEvent =
+    /** New records, oldest first, that pass the filters. */
+    | { type: 'records'; entries: EnrichedLogEntry[]; specId: string }
+    /** The spec being followed: first announced, then whenever it changes. */
+    | { type: 'specChange'; from: string | null; to: string; fallbackFromSpecId?: string }
+    /** Records may have been missed: more arrived between reads than one read covers. */
+    | { type: 'gap'; message: string }
+    /** A read failed; following continues. */
+    | { type: 'error'; message: string }
+    /** How the log is read: `incremental` asks only for records after the last one seen; `file` downloads the whole file each time (the incremental endpoint was unavailable). */
+    | { type: 'transport'; mode: 'incremental' | 'file'; reason?: string };
+
+/** A record from the structured log endpoint. */
+interface StructuredRecord {
+    docId: string | number;
+    timestamp: number;
+    message?: string | null;
+    replicaId?: string;
+    logLevel?: string;
+    context?: { logger?: string; class?: string; event?: string };
+}
+
+interface TailItem {
+    entry: EnrichedLogEntry;
+    /** Identity at its own millisecond: the platform's docId, or the line's content for a file read. */
+    key: string;
+}
+
+interface TailRead {
+    mode: 'incremental' | 'file';
+    specId: string;
+    fallbackFromSpecId?: string;
+    items: TailItem[];
+    /** More records are waiting than one read fetched. */
+    backlog: boolean;
+    gap?: string;
+    /** Set when a whole page shared this millisecond, so the gap is certain; otherwise a gap is reported only when the read does not reach back to the last record seen. */
+    tiedAt?: number;
+}
+
+/** The incremental endpoint cannot serve this read; the full file is read instead. */
+class IncrementalUnavailableError extends Error {}
+
+function structuredEntry(row: StructuredRecord): EnrichedLogEntry {
+    return {
+        timestamp: row.timestamp,
+        message: row.message ?? '',
+        priority: row.logLevel ?? 'INFO',
+        ...(row.replicaId ? { instanceId: row.replicaId } : {}),
+        ...(row.context?.logger || row.context?.class ? { loggerName: row.context.logger ?? row.context.class } : {}),
+        ...(row.context?.event ? { eventId: row.context.event } : {}),
+    };
+}
+
+/** The endpoint returns 10 records per request whatever `limit` says. */
+const INCREMENTAL_PAGE_SIZE = 10;
+/** Requests per read; a larger backlog is read again at once rather than in one long call. */
+const MAX_INCREMENTAL_PAGES = 50;
+/** Added to now for the range end, so a clock slightly behind the platform's does not hide the newest records. */
+const INCREMENTAL_END_SKEW_MS = 5 * 60_000;
+/** How far behind the log the tail may fall while draining a backlog before it skips ahead. */
+const MAX_TAIL_LAG_MS = 120_000;
+
+export interface TailOptions extends Pick<LogFilter, 'level' | 'search' | 'regex' | 'logger'> {
+    /** Milliseconds between reads (default 5000). */
+    intervalMs?: number;
+    /** Follow exactly this spec instead of the current one. */
+    specId?: string;
+    /** Stops following, including the wait and the request in flight. */
+    signal?: AbortSignal;
+}
+
+/** Characters of the log file one read looks at, from the end. Larger files are read in full but only this tail is parsed. */
+const TAIL_WINDOW_CHARS = 500_000;
+
+/** A record's identity at its own millisecond: everything that distinguishes two lines the platform wrote. */
+function tailKey(entry: LogEntry): string {
+    return [entry.priority, entry.instanceId ?? '', entry.threadName ?? '', entry.loggerName ?? '', entry.message].join(
+        '\u0000',
+    );
+}
+
+function bump(counts: Map<string, number>, key: string): void {
+    counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
 const AMC_BASE = '/amc/application-manager/api/v2';
@@ -110,7 +200,13 @@ export class LogsApi {
      * Download the full log file for a CH2 deployment.
      * Returns raw log text.
      */
-    async downloadLogFile(orgId: string, envId: string, deploymentId: string, specId: string): Promise<Buffer> {
+    async downloadLogFile(
+        orgId: string,
+        envId: string,
+        deploymentId: string,
+        specId: string,
+        signal?: AbortSignal,
+    ): Promise<Buffer> {
         return this.http.download(
             `${AMC_BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/specs/${specId}/logs/file`,
             {
@@ -118,6 +214,7 @@ export class LogsApi {
                     'X-ANYPNT-ORG-ID': orgId,
                     'X-ANYPNT-ENV-ID': envId,
                 },
+                ...(signal ? { signal } : {}),
             },
         );
     }
@@ -179,7 +276,7 @@ export class LogsApi {
 
         let text = '';
         try {
-            text = (await this.downloadLogFile(orgId, envId, deploymentId, desired)).toString('utf-8');
+            text = (await this.downloadLogFile(orgId, envId, deploymentId, desired, read.signal)).toString('utf-8');
         } catch (error) {
             if (!previous || httpStatus(error) !== 404) throw error;
         }
@@ -187,7 +284,9 @@ export class LogsApi {
             return { deploymentId, specId: desired, parts: [{ specId: desired, text }] };
         }
 
-        const fallback = (await this.downloadLogFile(orgId, envId, deploymentId, previous)).toString('utf-8');
+        const fallback = (await this.downloadLogFile(orgId, envId, deploymentId, previous, read.signal)).toString(
+            'utf-8',
+        );
         return {
             deploymentId,
             specId: previous,
@@ -273,21 +372,24 @@ export class LogsApi {
     }
 
     /**
-     * Tail logs: a generator that yields new log entries.
-     * Polls the log file and re-resolves the spec each time, so a restart is followed.
+     * Follow an app's log as typed events. Polls the log file; each poll yields only records not
+     * yielded before. Records that share a millisecond are all kept (and identical lines counted),
+     * the position advances past every record read before any filter hides some, and `signal`
+     * stops the wait and the request in flight.
+     *
+     * Without `specId` it follows the current spec (the desired one, or the last successful one
+     * with a notice) and says when that changes. With `specId` it follows exactly that spec: one
+     * that is not this app's is an error, never replaced by another; so is one with no log file when the
+     * log is read from the file. On the incremental endpoint a spec without records yet is simply
+     * followed until it has some.
      */
-    async *tailLogs(
+    async *tailEvents(
         orgId: string,
         envId: string,
         appName: string,
-        options: {
-            level?: string;
-            intervalMs?: number;
-            search?: string;
-            regex?: boolean;
-            logger?: string;
-        } = {},
-    ): AsyncGenerator<LogEntry[], void, unknown> {
+        options: TailOptions = {},
+    ): AsyncGenerator<TailEvent, void, undefined> {
+        const { signal, specId: pinnedSpec } = options;
         const intervalMs = options.intervalMs || 5000;
         const keep = buildFilter({
             level: options.level,
@@ -295,28 +397,331 @@ export class LogsApi {
             regex: options.regex,
             logger: options.logger,
         });
+        const pinned = pinnedSpec ? await this.resolvePinnedSpec(orgId, envId, appName, pinnedSpec) : undefined;
 
-        let lastTimestamp = Date.now() - 30000; // start from 30 seconds ago
+        let followed: string | null = null;
+        let lastTs = Date.now() - 30_000; // start from 30 seconds ago
+        let atLast = new Map<string, number>(); // records already yielded at exactly lastTs
+        let polled = false;
+        let mode: 'incremental' | 'file' | null = null;
+        let incrementalUnsupported = false;
+        let reportedTieAt: number | undefined;
 
-        while (true) {
+        while (!signal?.aborted) {
+            let drainNext = false; // a backlog is waiting: read again without sleeping
             try {
-                const { text } = await this.getLogFile(orgId, envId, appName);
-                // Only parse the last portion for performance (last 100KB)
-                const tail = text.length > 100000 ? text.substring(text.length - 100000) : text;
-
-                const newEntries = parseRawLogs(tail).filter((e) => e.timestamp > lastTimestamp && keep(e));
-
-                if (newEntries.length > 0) {
-                    newEntries.sort((a, b) => a.timestamp - b.timestamp);
-                    lastTimestamp = newEntries[newEntries.length - 1].timestamp;
-                    yield newEntries;
+                let read: TailRead | undefined;
+                if (!incrementalUnsupported) {
+                    try {
+                        read = pinned
+                            ? await this.readStructured(
+                                  orgId,
+                                  envId,
+                                  pinned.deploymentId,
+                                  pinned.specId,
+                                  lastTs,
+                                  signal,
+                              )
+                            : await this.readStructuredCurrent(orgId, envId, appName, followed, lastTs, signal);
+                    } catch (error) {
+                        if (!(error instanceof IncrementalUnavailableError)) throw error;
+                        incrementalUnsupported = true;
+                        yield { type: 'transport', mode: 'file', reason: error.message };
+                        mode = 'file';
+                    }
                 }
-            } catch (err) {
-                console.error(`Log poll error: ${errorMessage(err)}`);
+                if (!read) read = await this.readFileWindow(orgId, envId, appName, pinned, signal);
+                if (read.mode === 'incremental' && mode !== 'incremental') {
+                    yield { type: 'transport', mode: 'incremental' };
+                    mode = 'incremental';
+                }
+
+                if (read.specId !== followed) {
+                    yield {
+                        type: 'specChange',
+                        from: followed,
+                        to: read.specId,
+                        ...(read.fallbackFromSpecId ? { fallbackFromSpecId: read.fallbackFromSpecId } : {}),
+                    };
+                    if (followed !== null) atLast = new Map(); // a new file: nothing of it was seen
+                    followed = read.specId;
+                }
+                if (read.gap) {
+                    if (read.tiedAt !== undefined) {
+                        // Certain, and the same tie shows up on every later read: say it once per millisecond.
+                        if (read.tiedAt !== reportedTieAt) {
+                            reportedTieAt = read.tiedAt;
+                            yield { type: 'gap', message: read.gap };
+                        }
+                    } else if (polled && read.items.length > 0 && read.items[0].entry.timestamp > lastTs) {
+                        yield { type: 'gap', message: read.gap };
+                    }
+                }
+                polled = true;
+                drainNext = false;
+
+                const fresh: TailItem[] = [];
+                const seenNow = new Map<string, number>();
+                for (const item of read.items) {
+                    if (item.entry.timestamp < lastTs) continue;
+                    if (item.entry.timestamp === lastTs) {
+                        const n = (seenNow.get(item.key) ?? 0) + 1;
+                        seenNow.set(item.key, n);
+                        if (n <= (atLast.get(item.key) ?? 0)) continue;
+                    }
+                    fresh.push(item);
+                }
+                // Read again at once only while reads keep producing something new; an empty read waits like any other.
+                drainNext = read.backlog && fresh.length > 0;
+                if (fresh.length > 0) {
+                    const newest = fresh[fresh.length - 1].entry.timestamp;
+                    if (newest === lastTs) {
+                        for (const item of fresh) bump(atLast, item.key);
+                    } else {
+                        lastTs = newest;
+                        atLast = new Map();
+                        for (const item of fresh) if (item.entry.timestamp === newest) bump(atLast, item.key);
+                    }
+                    const shown = fresh.map((i) => i.entry).filter(keep);
+                    if (shown.length > 0) yield { type: 'records', entries: shown, specId: read.specId };
+                }
+                if (drainNext && lastTs < Date.now() - MAX_TAIL_LAG_MS) {
+                    // The app writes faster than the endpoint can be read: say so and catch up instead of falling further behind.
+                    yield {
+                        type: 'gap',
+                        message: `The tail fell more than ${MAX_TAIL_LAG_MS / 1000} seconds behind the log and skipped ahead to the last 30 seconds; the lines in between were not shown. Read them with \`anc logs search\`.`,
+                    };
+                    lastTs = Date.now() - 30_000;
+                    atLast = new Map();
+                }
+            } catch (error) {
+                if (signal?.aborted) return;
+                // A pinned spec must be readable at least once; after that a failed read is reported and retried.
+                if (pinned && !polled) throw error;
+                yield { type: 'error', message: errorMessage(error) };
             }
 
-            await new Promise((resolve) => setTimeout(resolve, intervalMs));
+            if (drainNext) continue;
+            try {
+                await delay(intervalMs, undefined, { signal });
+            } catch {
+                return; // cancelled
+            }
         }
+    }
+
+    /**
+     * Tail logs: a generator that yields new log entries. A view of {@link tailEvents} for callers
+     * that want only the records; read errors go to stderr and following continues.
+     */
+    async *tailLogs(
+        orgId: string,
+        envId: string,
+        appName: string,
+        options: Omit<TailOptions, 'signal' | 'specId'> = {},
+    ): AsyncGenerator<LogEntry[], void, unknown> {
+        for await (const event of this.tailEvents(orgId, envId, appName, options)) {
+            if (event.type === 'records') yield event.entries;
+            else if (event.type === 'error') console.error(`Log poll error: ${event.message}`);
+        }
+    }
+
+    /**
+     * The incremental read: records of one spec from `since` on, through the structured log endpoint.
+     * It returns 10 records per request, oldest first, with `startTime` inclusive, so the read walks
+     * forward by the last record's time and drops repeats by `docId`. At most MAX_INCREMENTAL_PAGES
+     * requests per read; when more remain the read says so and the caller reads again at once.
+     */
+    private async readStructured(
+        orgId: string,
+        envId: string,
+        deploymentId: string,
+        specId: string,
+        since: number,
+        signal?: AbortSignal,
+    ): Promise<TailRead> {
+        const items: TailItem[] = [];
+        const seen = new Set<string>();
+        let start = since;
+        let backlog = false;
+        let tiedAt: number | undefined;
+        for (let page = 0; ; page++) {
+            const rows = await this.fetchStructuredPage(
+                orgId,
+                envId,
+                deploymentId,
+                specId,
+                start,
+                Date.now() + INCREMENTAL_END_SKEW_MS,
+                signal,
+            );
+            for (const row of rows) {
+                const key = String(row.docId);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                items.push({ entry: structuredEntry(row), key });
+            }
+            if (rows.length < INCREMENTAL_PAGE_SIZE) break; // the last page
+            const lastTs = rows[rows.length - 1].timestamp;
+            if (lastTs === start) {
+                // A whole page at one millisecond: the endpoint cannot page inside it, so step past it.
+                tiedAt = lastTs;
+                start = lastTs + 1;
+            } else {
+                start = lastTs;
+            }
+            if (page + 1 >= MAX_INCREMENTAL_PAGES) {
+                backlog = true;
+                break;
+            }
+        }
+        return {
+            mode: 'incremental',
+            specId,
+            items,
+            backlog,
+            ...(tiedAt !== undefined
+                ? {
+                      gap: `More than ${INCREMENTAL_PAGE_SIZE} records share one millisecond and the platform cannot page inside it, so some may be missing.`,
+                      tiedAt,
+                  }
+                : {}),
+        };
+    }
+
+    /** The incremental read of the current spec: the desired one, or the last successful one while the desired has no records. */
+    private async readStructuredCurrent(
+        orgId: string,
+        envId: string,
+        appName: string,
+        followed: string | null,
+        since: number,
+        signal?: AbortSignal,
+    ): Promise<TailRead> {
+        const { deploymentId, specIds } = await this.resolveDeployment(orgId, envId, appName);
+        const [desired, previous] = specIds;
+        const read = await this.readStructured(orgId, envId, deploymentId, desired, since, signal);
+        if (read.items.length > 0 || !previous || followed === desired) return read;
+        const fallback = await this.readStructured(orgId, envId, deploymentId, previous, since, signal);
+        // Keep following the fallback while the desired spec is still silent; the first poll settles on desired if both are.
+        if (fallback.items.length > 0 || followed === previous) return { ...fallback, fallbackFromSpecId: desired };
+        return read;
+    }
+
+    private async fetchStructuredPage(
+        orgId: string,
+        envId: string,
+        deploymentId: string,
+        specId: string,
+        startTime: number,
+        endTime: number,
+        signal?: AbortSignal,
+    ): Promise<StructuredRecord[]> {
+        let data: unknown;
+        try {
+            data = await this.http.get<unknown>(
+                `${AMC_BASE}/organizations/${orgId}/environments/${envId}/deployments/${deploymentId}/specs/${specId}/logs`,
+                {
+                    headers: { 'X-ANYPNT-ORG-ID': orgId, 'X-ANYPNT-ENV-ID': envId },
+                    // Epoch milliseconds: ISO timestamps are rejected.
+                    params: { startTime, endTime, descending: false },
+                    ...(signal ? { signal } : {}),
+                },
+            );
+        } catch (error) {
+            const status = httpStatus(error);
+            // A spec without logs can answer 404 (as its log file does): that is no records, not a missing endpoint.
+            if (status === 404) return [];
+            // The endpoint rejects the request or does not exist for this API: use the file instead.
+            if (status === 400 || status === 405 || status === 501) {
+                throw new IncrementalUnavailableError(`the incremental log endpoint answered HTTP ${status}`);
+            }
+            throw error;
+        }
+        const valid =
+            Array.isArray(data) &&
+            data.every(
+                (r) =>
+                    r &&
+                    typeof r === 'object' &&
+                    (typeof r.docId === 'string' || typeof r.docId === 'number') &&
+                    typeof r.timestamp === 'number',
+            );
+        if (!valid) throw new IncrementalUnavailableError('the incremental log endpoint returned an unexpected shape');
+        return data as StructuredRecord[];
+    }
+
+    /** The full-file read: download the log file and parse its newest window. */
+    private async readFileWindow(
+        orgId: string,
+        envId: string,
+        appName: string,
+        pinned: { deploymentId: string; specId: string } | undefined,
+        signal?: AbortSignal,
+    ): Promise<TailRead> {
+        const read = pinned
+            ? await this.readPinnedSpec(orgId, envId, pinned.deploymentId, pinned.specId, signal)
+            : await this.readCurrentSpec(orgId, envId, appName, signal);
+        const cut = read.text.length > TAIL_WINDOW_CHARS;
+        const window = cut
+            ? read.text.slice(read.text.indexOf('\n', read.text.length - TAIL_WINDOW_CHARS) + 1)
+            : read.text;
+        // Stable sort: records that share a timestamp keep their file order.
+        const entries = parseRawLogs(window).sort((a, b) => a.timestamp - b.timestamp);
+        return {
+            mode: 'file',
+            specId: read.specId,
+            ...(read.fallbackFromSpecId ? { fallbackFromSpecId: read.fallbackFromSpecId } : {}),
+            items: entries.map((entry) => ({ entry, key: tailKey(entry) })),
+            backlog: false,
+            ...(cut
+                ? {
+                      gap: 'Some log lines were missed: more arrived between reads than one read covers. Read the full log with `anc logs search` to see them.',
+                  }
+                : {}),
+        };
+    }
+
+    /** The deployment of `appName` and `specId`, once the spec is known to belong to it. */
+    private async resolvePinnedSpec(
+        orgId: string,
+        envId: string,
+        appName: string,
+        specId: string,
+    ): Promise<{ deploymentId: string; specId: string }> {
+        const { deploymentId } = await this.resolveDeployment(orgId, envId, appName);
+        const known = (await this.ch2!.getDeploymentSpecs(orgId, envId, deploymentId)).map((s) => s.version);
+        if (!known.includes(specId)) {
+            throw new Error(
+                `Spec "${specId}" does not belong to "${appName}". Its specs, newest first: ${known.slice(0, MAX_PREVIOUS_SPECS + 1).join(', ') || 'none'}`,
+            );
+        }
+        return { deploymentId, specId };
+    }
+
+    private async readPinnedSpec(
+        orgId: string,
+        envId: string,
+        deploymentId: string,
+        specId: string,
+        signal?: AbortSignal,
+    ) {
+        try {
+            const text = (await this.downloadLogFile(orgId, envId, deploymentId, specId, signal)).toString('utf-8');
+            return { specId, text, fallbackFromSpecId: undefined };
+        } catch (error) {
+            if (httpStatus(error) === 404) {
+                throw new Error(
+                    `Spec "${specId}" has no log file (it never started, or the log expired). No other spec was read.`,
+                );
+            }
+            throw error;
+        }
+    }
+
+    private async readCurrentSpec(orgId: string, envId: string, appName: string, signal?: AbortSignal) {
+        const { specId, fallbackFromSpecId, parts } = await this.getLogParts(orgId, envId, appName, { signal });
+        return { specId, fallbackFromSpecId, text: parts[0]?.text ?? '' };
     }
 
     /**

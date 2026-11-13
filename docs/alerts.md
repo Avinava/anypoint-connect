@@ -128,10 +128,18 @@ anc alerts get <id> --reveal
 anc alerts create -e Sandbox --name "orders cpu" --app orders-sapi --metric cpu_utilization \
   --operator GREATER_THAN --threshold 90 --duration 10 --severity 1 \
   --email ops@example.com --subject "CPU high" --message "CPU is high" --dry-run
-anc alerts update <id> --threshold 95
+anc alerts update <id> --threshold 95 --wait 120
 anc alerts disable <id>
-anc alerts delete <id> --confirm "orders cpu"
+anc alerts delete <id> --confirm "orders cpu" --wait 120
 ```
+
+The platform applies changes asynchronously. Without `--wait` (MCP: `waitSeconds`), the result reads the
+list once and says what it saw: `verified` only when the listed alert is `ACTIVE` and carries every
+requested value, including the notifications (a notification-only change is not verified from unchanged
+name, threshold or window). With `--wait <seconds>` (at most 300) the list is read again every five
+seconds until the change shows or the time is up; the write is never sent twice. Ctrl+C stops the wait
+and reports what was last seen. A deletion is `GONE` only when a complete listing no longer shows the
+alert; a listing cut off at its page limit is `UNVERIFIED`, never a proof of absence.
 
 Production writes ask for the typed phrase unless `--force` or a pre-approval covers them;
 `anc alerts delete` in production needs `--allow-production` or a pre-approval that names `delete_alert`.

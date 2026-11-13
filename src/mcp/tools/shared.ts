@@ -45,6 +45,15 @@ export function mcpText(payload: unknown) {
 }
 
 /**
+ * A result for a tool that declares an `outputSchema`: the JSON as text for people and hosts that
+ * read text, and the same data as `structuredContent` for programs. `text` defaults to the
+ * structured payload; pass it when the established text form differs (for example a bare array).
+ */
+export function mcpStructured<T extends Record<string, unknown>>(structured: T, text: unknown = structured) {
+    return { ...mcpText(text), structuredContent: structured };
+}
+
+/**
  * Build the dry-run preview response returned by a mutating deploy tool when the caller
  * has not passed `confirm: true`. Over stdio there is no interactive prompt, so the
  * safety model is: preview by default, mutate only on explicit confirm.

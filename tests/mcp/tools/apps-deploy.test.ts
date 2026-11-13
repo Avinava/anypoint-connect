@@ -1,3 +1,4 @@
+import { withReview } from '../review-harness.js';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { strToU8, zipSync } from 'fflate';
@@ -56,7 +57,7 @@ describe('application deploy MCP tools', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
     const server = {
         registerTool: vi.fn((name: string, _definition: unknown, handler: (input: any) => Promise<any>) => {
-            handlers.set(name, handler);
+            handlers.set(name, withReview(name, handler));
         }),
     };
     const client = {
@@ -378,7 +379,7 @@ describe('transcript safety for secret sources', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
     const server = {
         registerTool: vi.fn((name: string, _definition: unknown, handler: (input: any) => Promise<any>) => {
-            handlers.set(name, handler);
+            handlers.set(name, withReview(name, handler));
         }),
     };
     const client = {

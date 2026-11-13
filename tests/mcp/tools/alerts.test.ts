@@ -22,7 +22,10 @@ const USER_EMAIL = 'someone@example.com';
 describe('alert MCP tools', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
     const server = {
-        registerTool: vi.fn((name: string, _d: unknown, h: (input: any) => Promise<any>) => handlers.set(name, h)),
+        // The SDK passes request context as a second argument; handlers read its abort signal.
+        registerTool: vi.fn((name: string, _d: unknown, h: (input: any, extra: unknown) => Promise<any>) =>
+            handlers.set(name, (input) => h(input, {})),
+        ),
     };
     const http = { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() };
     const client = {

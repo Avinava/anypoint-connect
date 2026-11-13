@@ -19,9 +19,11 @@ import {
 } from '../../api/AlertsApi.js';
 import {
     CHANGE_IN_PROGRESS,
+    MAX_ALERT_WAIT_SECONDS,
     MAX_DURATION_MINUTES,
     SEVERITY_LABELS,
     alertEnvironment,
+    alertWait,
     describeNotifications,
     executeDeleteAlert,
     executeUpdateAlert,
@@ -36,7 +38,16 @@ import {
     type AlertPatch,
 } from '../../workflows/alerts.js';
 import { errorMessage } from '../../utils/errors.js';
-import { dryRunPreview, guardWrite, mcpError, mcpText, productionFields, writeInputs } from './shared.js';
+import {
+    dryRunPreview,
+    guardWrite,
+    mcpError,
+    mcpStructured,
+    mcpText,
+    productionFields,
+    writeInputs,
+} from './shared.js';
+import { alertListOutput, alertOutput } from './output-schemas.js';
 
 const notificationSchema = z.discriminatedUnion('type', [
     z.object({
@@ -52,6 +63,17 @@ const notificationSchema = z.discriminatedUnion('type', [
         message: z.string().describe('Message template'),
     }),
 ]);
+
+const waitInput = {
+    waitSeconds: z
+        .number()
+        .min(0)
+        .max(MAX_ALERT_WAIT_SECONDS)
+        .optional()
+        .describe(
+            `After the platform accepts the change, keep checking the alert list this many seconds (max ${MAX_ALERT_WAIT_SECONDS}) for it to apply. The write is never resent`,
+        ),
+};
 
 const conditionInputs = {
     operator: z.enum(ALERT_OPERATORS).describe('Comparison with the threshold'),
@@ -117,6 +139,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                     .describe('Alert family (default all)'),
                 revealRecipients: z.boolean().optional().describe('Include full notification recipients'),
             },
+            outputSchema: alertListOutput,
             annotations: { readOnlyHint: true },
         },
         async (input) => {
@@ -172,7 +195,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                         }
                     }
                 }
-                return mcpText({
+                return mcpStructured({
                     ...(env ? { environment: env.name } : {}),
                     total: alerts.length,
                     sources,
@@ -194,6 +217,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                 id: z.string().describe('Alert ID from list_alerts'),
                 revealRecipients: z.boolean().optional().describe('Include full notification recipients'),
             },
+            outputSchema: alertOutput,
             annotations: { readOnlyHint: true },
         },
         async ({ id, revealRecipients }) => {
@@ -202,7 +226,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                 const alert = await client.alerts.get(orgId, id);
                 if (!alert)
                     return { ...mcpText({ found: false, message: `Alert ${id} not found` }), isError: true as const };
-                return mcpText({
+                return mcpStructured({
                     ...normalizeAlert(alert, { reveal: revealRecipients }),
                     settings: alert.settings,
                     entityDetail: alert.entity,
@@ -303,7 +327,8 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
         tool: 'update_alert' | 'set_alert_enabled',
         id: string,
         patch: AlertPatch,
-        args: { confirm?: boolean; confirmProduction?: boolean },
+        args: { confirm?: boolean; confirmProduction?: boolean; waitSeconds?: number },
+        signal?: AbortSignal,
     ) {
         const plan = await planUpdateAlert(client, id, patch);
         const preview = {
@@ -324,7 +349,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
             preview,
         });
         if (gate) return gate;
-        const result = await executeUpdateAlert(client, plan);
+        const result = await executeUpdateAlert(client, plan, alertWait(args.waitSeconds, signal));
         return mcpText({
             id,
             ...result,
@@ -353,12 +378,19 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                     })
                     .describe('Fields to change'),
                 ...writeInputs,
+                ...waitInput,
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
         },
-        async ({ id, patch, confirm, confirmProduction }) => {
+        async ({ id, patch, confirm, confirmProduction, waitSeconds }, extra) => {
             try {
-                return await runUpdate('update_alert', id, patch, { confirm, confirmProduction });
+                return await runUpdate(
+                    'update_alert',
+                    id,
+                    patch,
+                    { confirm, confirmProduction, waitSeconds },
+                    extra.signal,
+                );
             } catch (error) {
                 return failure(error);
             }
@@ -375,12 +407,19 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                 id: z.string().describe('Alert ID'),
                 enabled: z.boolean().describe('true to enable, false to disable'),
                 ...writeInputs,
+                ...waitInput,
             },
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
         },
-        async ({ id, enabled, confirm, confirmProduction }) => {
+        async ({ id, enabled, confirm, confirmProduction, waitSeconds }, extra) => {
             try {
-                return await runUpdate('set_alert_enabled', id, { enabled }, { confirm, confirmProduction });
+                return await runUpdate(
+                    'set_alert_enabled',
+                    id,
+                    { enabled },
+                    { confirm, confirmProduction, waitSeconds },
+                    extra.signal,
+                );
             } catch (error) {
                 return failure(error);
             }
@@ -397,10 +436,11 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                 id: z.string().describe('Alert ID'),
                 expectedName: z.string().optional().describe('The alert name from the preview; binds the delete to it'),
                 ...writeInputs,
+                ...waitInput,
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
         },
-        async ({ id, expectedName, confirm, confirmProduction }) => {
+        async ({ id, expectedName, confirm, confirmProduction, waitSeconds }, extra) => {
             try {
                 const orgId = await client.getDefaultOrgId();
                 const alert = await readAlertForDelete(client, orgId, id);
@@ -446,7 +486,7 @@ export function registerAlertTools(server: McpServer, client: AnypointClient) {
                 }
                 const gate = guardWrite({ orgId, env, tool: 'delete_alert', confirm, confirmProduction, preview });
                 if (gate) return gate;
-                const result = await executeDeleteAlert(client, orgId, alert);
+                const result = await executeDeleteAlert(client, orgId, alert, alertWait(waitSeconds, extra.signal));
                 return mcpText({ id, ...result, ...productionFields(orgId, env, 'delete_alert') });
             } catch (error) {
                 return failure(error);

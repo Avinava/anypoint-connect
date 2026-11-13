@@ -1,3 +1,4 @@
+import { withReview } from '../mcp/review-harness.js';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -218,10 +219,13 @@ const exchangeJar = (buffer: Buffer) => ({
 describe('MCP production writes', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
     const server = {
-        registerTool: vi.fn((name: string, _d: unknown, h: (input: any) => Promise<any>) => handlers.set(name, h)),
+        registerTool: vi.fn((name: string, _d: unknown, h: (input: any) => Promise<any>) =>
+            handlers.set(name, withReview(name, h)),
+        ),
     };
     const client = {
         getDefaultOrgId: vi.fn(),
+        getAuthMode: vi.fn().mockReturnValue('authorization_code'),
         whoami: vi.fn(),
         accessManagement: { resolveEnvironment: vi.fn() },
         runtimes: { getTarget: vi.fn() },

@@ -32,18 +32,39 @@ ordered steps, and any warnings or blockers. Applying requires a second call. In
 the second call also needs `confirmProduction: true`; without it the call is refused and nothing changes.
 
 ```jsonc
-// preview: shows the change, modifies nothing
+// preview: shows the change, modifies nothing, and returns the planDigest to send back
 update_app({ "appName": "orders-sapi", "environment": "Sandbox", "version": "1.3.0" })
 
-// apply
-update_app({ "appName": "orders-sapi", "environment": "Sandbox", "version": "1.3.0", "confirm": true })
+// apply: the digest of the preview that was reviewed
+update_app({ "appName": "orders-sapi", "environment": "Sandbox", "version": "1.3.0", "confirm": true, "planDigest": "<from the preview>" })
 
 // production needs both flags
-update_app({ "appName": "orders-sapi", "environment": "Production", "version": "1.3.0", "confirm": true, "confirmProduction": true })
+update_app({ "appName": "orders-sapi", "environment": "Production", "version": "1.3.0", "confirm": true, "confirmProduction": true, "planDigest": "<from the preview>" })
 ```
 
 MCP runs over stdio, where there is no interactive prompt, so the second call is the confirmation. The
 CLI uses a typed confirmation for production instead, and `--force` for reviewed, unattended use.
+
+### The apply is bound to what was reviewed
+
+A change to an **existing** application (`deploy_jar` and `deploy_app` for an app that exists,
+`update_app`, `update_app_artifact`, `rollback_app`, `update_app_settings`, `restart_app`) needs the
+`planDigest` its preview returned. The digest covers the organization, environment, deployment identity
+and revision, the request, the planned changes and the verified artifact. It never includes a secret
+value: it is computed from the already-redacted preview, so a secret that changes between preview and
+apply is not detected by the digest; the preview shows which keys change and where their values come from.
+The phase is left out, because it moves while the app is being looked at.
+
+`confirm: true` without a `planDigest`, or with the digest of a different change, is refused and nothing
+is written. Creating a new application has nothing to bind to and needs no digest. `scale_app`,
+`stop_app` and `start_app` are single state changes and are not bound.
+
+Before the first write, every apply, from MCP, the CLI and the library (`executeAppChange`), reads the
+deployment again and refuses if it is no longer the one that was reviewed: recreated under the same name,
+a new revision applied, or modified. It compares the deployment ID, `desiredVersion` and
+`lastModifiedDate`; when the platform returns neither, it compares the application and target state
+itself, because missing metadata is not proof that nothing changed. One race remains: a change made
+between that read and the write cannot be detected, because the platform offers no conditional write.
 
 ## Changes to an existing app are one explicit update
 

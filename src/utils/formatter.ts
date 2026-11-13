@@ -5,6 +5,11 @@
 
 import chalk from 'chalk';
 
+/** Print a machine-readable result: one JSON value on stdout. */
+export function printJson(value: unknown): void {
+    console.log(JSON.stringify(value, null, 2));
+}
+
 /**
  * Print data as an aligned table
  */

@@ -13,7 +13,7 @@ import chalk from 'chalk';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { parseDate } from '../utils/dates.js';
-import { printTable, formatMs, formatDate, formatBytes } from '../utils/formatter.js';
+import { printJson, printTable, formatMs, formatDate, formatBytes } from '../utils/formatter.js';
 import { createClient } from './shared.js';
 import {
     AMQL_MAX_LIMIT,
@@ -35,6 +35,10 @@ function resolveWindow(opts: WindowOptions): { from: number; to: number } {
     const to = opts.to ? parseDate(opts.to) : Date.now();
     const from = opts.from ? parseDate(opts.from) : to - 24 * 60 * 60 * 1000;
     return { from, to };
+}
+
+function isoPeriod(from: number, to: number): { from: string; to: string } {
+    return { from: new Date(from).toISOString(), to: new Date(to).toISOString() };
 }
 
 function periodLabel(from: number, to: number): string {
@@ -128,6 +132,7 @@ export function createMonitorCommand(): Command {
         .option('--by <grouping>', 'Group rows by app, worker or route', 'app')
         .option('--from <date>', 'Start time (default: 24h ago)')
         .option('--to <date>', 'End time (default: now)')
+        .option('--json', 'Print the rows as JSON')
         .action(async (opts) => {
             try {
                 if (!['app', 'worker', 'route'].includes(opts.by)) {
@@ -140,6 +145,16 @@ export function createMonitorCommand(): Command {
                 const scope: MetricsScope = { orgId, envId: env?.id, from, to, appName: opts.app };
                 const envColumn = env ? [] : ['Env'];
                 const envCell = (row: { envName?: string }) => (env ? [] : [row.envName ?? '-']);
+
+                if (opts.json) {
+                    // Same rows as the table, whole; an empty period is an empty list, not a notice.
+                    const rows =
+                        opts.by === 'route'
+                            ? await client.monitoring.getRouteMetrics(scope)
+                            : await client.monitoring.getMetrics(scope, opts.by);
+                    printJson({ environment: env?.name ?? null, by: opts.by, period: isoPeriod(from, to), rows });
+                    return;
+                }
 
                 log.header(`Metrics — ${env?.name ?? 'all environments'} (${periodLabel(from, to)})`);
 
@@ -216,6 +231,7 @@ export function createMonitorCommand(): Command {
         .option('-a, --app <name>', 'Filter by application name')
         .option('--from <date>', 'Start time (default: 24h ago)')
         .option('--to <date>', 'End time (default: now)')
+        .option('--json', 'Print the rows as JSON')
         .action(async (opts) => {
             try {
                 const client = createClient();
@@ -230,6 +246,10 @@ export function createMonitorCommand(): Command {
                     to,
                     appName: opts.app,
                 });
+                if (opts.json) {
+                    printJson({ environment: env.name, period: isoPeriod(from, to), rows: workers });
+                    return;
+                }
                 if (workers.length === 0) return log.warn('No runtime metrics recorded for the specified period');
 
                 log.header(`Runtime — ${env.name} (${periodLabel(from, to)})`);
@@ -272,6 +292,7 @@ export function createMonitorCommand(): Command {
         .option('-g, --granularity <interval>', `Bucket size: ${GRANULARITIES.join(', ')}`, '1h')
         .option('--from <date>', 'Start time (default: 24h ago)')
         .option('--to <date>', 'End time (default: now)')
+        .option('--json', 'Print the points as JSON')
         .action(async (opts) => {
             try {
                 if (!isGranularity(opts.granularity)) {
@@ -291,6 +312,16 @@ export function createMonitorCommand(): Command {
                     signal,
                     opts.granularity,
                 );
+                if (opts.json) {
+                    printJson({
+                        environment: env.name,
+                        signal,
+                        granularity: opts.granularity,
+                        period: isoPeriod(from, to),
+                        rows: points,
+                    });
+                    return;
+                }
                 if (points.length === 0) return log.warn('No data recorded for the specified period');
 
                 const showWorker = points.some((p) => p.workerId !== undefined);

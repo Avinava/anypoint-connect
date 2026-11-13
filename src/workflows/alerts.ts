@@ -6,6 +6,7 @@
  * and the get-merge-replace update the platform requires.
  */
 
+import { setTimeout as delay } from 'node:timers/promises';
 import type { AnypointClient } from '../client/AnypointClient.js';
 import type { Environment } from '../api/AccessManagementApi.js';
 import {
@@ -651,8 +652,50 @@ function applied(listed: MonitoringAlert, body: AlertWriteBody): boolean {
         listed.severity === body.severity &&
         same(listed.settings?.threshold, body.settings.threshold) &&
         same(listed.settings?.evaluationOperator, body.settings.evaluationOperator) &&
-        same(listed.settings?.evaluationInterval, body.settings.evaluationInterval)
+        same(listed.settings?.evaluationInterval, body.settings.evaluationInterval) &&
+        notificationDifferences(notificationsOf(listed), body.notifications).length === 0
     );
+}
+
+/** Bounded completion polling. The write is never resent; only the list is read again. */
+export interface AlertWaitOptions {
+    /** How long to keep checking after the first read; 0 or unset reads once. */
+    waitMs?: number;
+    pollIntervalMs?: number;
+    signal?: AbortSignal;
+}
+
+const DEFAULT_ALERT_POLL_MS = 5000;
+export const MAX_ALERT_WAIT_SECONDS = 300;
+
+/** Wait options from a caller's seconds; rejects values outside 0 to MAX_ALERT_WAIT_SECONDS. */
+export function alertWait(seconds: number | undefined, signal?: AbortSignal): AlertWaitOptions {
+    if (seconds === undefined) return { signal };
+    if (!Number.isFinite(seconds) || seconds < 0 || seconds > MAX_ALERT_WAIT_SECONDS) {
+        throw new Error(`wait must be between 0 and ${MAX_ALERT_WAIT_SECONDS} seconds`);
+    }
+    return { waitMs: seconds * 1000, signal };
+}
+
+/** Re-run `observe` until `done` or the deadline, sleeping between reads. Returns the last observation. */
+async function pollUntil<T>(
+    observe: () => Promise<T>,
+    done: (result: T) => boolean,
+    wait: AlertWaitOptions,
+): Promise<T> {
+    const deadline = Date.now() + (wait.waitMs ?? 0);
+    const interval = wait.pollIntervalMs ?? DEFAULT_ALERT_POLL_MS;
+    let result = await observe();
+    while (!done(result) && Date.now() < deadline && !wait.signal?.aborted) {
+        try {
+            // The last sleep is cut to the time left, so a short wait still re-reads once before the deadline.
+            await delay(Math.min(interval, deadline - Date.now()), undefined, { signal: wait.signal });
+        } catch {
+            break; // cancelled: report what was last observed
+        }
+        result = await observe();
+    }
+    return result;
 }
 
 /**
@@ -662,9 +705,21 @@ function applied(listed: MonitoringAlert, body: AlertWriteBody): boolean {
 export async function executeUpdateAlert(
     client: AnypointClient,
     plan: Pick<UpdateAlertPlan, 'orgId' | 'existing' | 'body'>,
+    wait: AlertWaitOptions = {},
+): Promise<UpdateAlertResult> {
+    await client.alerts.update(plan.orgId, plan.existing.id, plan.body);
+    return pollUntil(
+        () => observeUpdate(client, plan),
+        (result) => result.verified,
+        wait,
+    );
+}
+
+async function observeUpdate(
+    client: AnypointClient,
+    plan: Pick<UpdateAlertPlan, 'orgId' | 'existing' | 'body'>,
 ): Promise<UpdateAlertResult> {
     const id = plan.existing.id;
-    await client.alerts.update(plan.orgId, id, plan.body);
     const { alert: listed } = await findListedAlert(client, plan.orgId, {
         id,
         name: plan.body.name,
@@ -738,8 +793,22 @@ export async function executeDeleteAlert(
     client: AnypointClient,
     orgId: string,
     alert: Pick<MonitoringAlert, 'id' | 'name' | 'entity'>,
+    wait: AlertWaitOptions = {},
 ): Promise<DeleteAlertResult> {
     const outcome = await client.alerts.delete(orgId, alert.id);
+    return pollUntil(
+        () => observeDelete(client, orgId, alert, outcome),
+        (result) => result.verifiedAbsent,
+        wait,
+    );
+}
+
+async function observeDelete(
+    client: AnypointClient,
+    orgId: string,
+    alert: Pick<MonitoringAlert, 'id' | 'name' | 'entity'>,
+    outcome: Awaited<ReturnType<AnypointClient['alerts']['delete']>>,
+): Promise<DeleteAlertResult> {
     const { alert: still, complete } = await findListedAlert(client, orgId, {
         id: alert.id,
         name: alert.name,

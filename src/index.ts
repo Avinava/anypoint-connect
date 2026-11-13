@@ -10,6 +10,10 @@ export { TokenManager, type TokenManagerConfig, type AuthStatus } from './auth/T
 export { OAuthFlow, type OAuthConfig, type OAuthCallbackOptions } from './auth/OAuthFlow.js';
 export { FileStore } from './auth/FileStore.js';
 export type { TokenStore, AnypointTokens } from './auth/TokenStore.js';
+export type { TokenProvider } from './auth/TokenProvider.js';
+export { ClientCredentialsProvider, type ClientCredentialsConfig } from './auth/ClientCredentialsProvider.js';
+export { BearerProvider } from './auth/BearerProvider.js';
+export { AUTH_MODES, DEFAULT_AUTH_MODE, type AuthMode } from './config/auth-modes.js';
 
 // APIs
 export {

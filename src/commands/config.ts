@@ -9,6 +9,7 @@ import chalk from 'chalk';
 import password from '@inquirer/password';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
+import { DEFAULT_AUTH_MODE, parseAuthMode } from '../config/auth-modes.js';
 import {
     readSavedConfig,
     writeSavedConfig,
@@ -95,6 +96,9 @@ export function createConfigCommand(): Command {
                     callbackUrl,
                     baseUrl,
                     ...(defaultEnv ? { defaultEnv } : {}),
+                    // Re-running setup must not drop what it does not ask about.
+                    ...(existing?.orgId ? { orgId: existing.orgId } : {}),
+                    ...(existing?.authMode ? { authMode: existing.authMode } : {}),
                 };
 
                 writeSavedConfig(saved, profileName);
@@ -140,13 +144,17 @@ export function createConfigCommand(): Command {
             if (saved.defaultEnv) {
                 log.kv('Default Env', saved.defaultEnv);
             }
+            if (saved.orgId) {
+                log.kv('Org ID', saved.orgId);
+            }
+            log.kv('Auth mode', saved.authMode ?? DEFAULT_AUTH_MODE);
         });
 
     // ── config set ───────────────────────────────────
     config
         .command('set')
         .description('Set a single config value')
-        .argument('<key>', 'Config key: clientId, clientSecret, callbackUrl, baseUrl, defaultEnv')
+        .argument('<key>', 'Config key: clientId, clientSecret, callbackUrl, baseUrl, defaultEnv, orgId, authMode')
         .argument('<value>', 'Value to set')
         .option('-p, --profile <name>', 'Profile to update')
         .action((key: string, value: string, options: { profile?: string }) => {
@@ -158,11 +166,21 @@ export function createConfigCommand(): Command {
                 'callbackUrl',
                 'baseUrl',
                 'defaultEnv',
+                'orgId',
+                'authMode',
             ];
 
             if (!validKeys.includes(key as keyof SavedConfig)) {
                 log.error(`Invalid key "${key}". Valid keys: ${validKeys.join(', ')}`);
                 process.exit(1);
+            }
+            if (key === 'authMode') {
+                try {
+                    parseAuthMode(value, 'authMode');
+                } catch (error) {
+                    log.error(errorMessage(error));
+                    process.exit(1);
+                }
             }
 
             updateSavedConfig({ [key]: value }, profileName);

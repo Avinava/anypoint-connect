@@ -31,6 +31,7 @@ import type { RuntimeSpec } from '../safety/runtime.js';
 import { redactText } from '../safety/secrets.js';
 import { discoverProjectConfig } from '../config/profiles.js';
 import {
+    assertPlanCurrent,
     describeAppChange,
     executeAppChange,
     planAppChange,
@@ -282,6 +283,9 @@ export async function executeJarDeployment(
     }
     if (plan.blockers.length) throw new Error(plan.blockers.join('\n'));
     const { request, existing, ref, artifact } = plan;
+
+    // Before publishing anything: a deployment that changed since review must not cost a published asset.
+    if (existing && plan.change && !plan.change.noop) await assertPlanCurrent(client, plan.change);
 
     const published = await client.exchange.publishAppAsset(
         request.orgId,

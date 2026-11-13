@@ -33,7 +33,7 @@ The `mcpServers` form, used by Claude Code, Claude Desktop, Copilot CLI, and Gem
   "mcpServers": {
     "anypoint-connect": {
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.18.0", "mcp"]
     }
   }
 }
@@ -47,7 +47,7 @@ VS Code wraps the same entry in `servers` and wants an explicit transport:
     "anypoint-connect": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
+      "args": ["-y", "@sfdxy/anypoint-connect@0.18.0", "mcp"]
     }
   }
 }
@@ -59,7 +59,7 @@ extension all see it:
 ```toml
 [mcp_servers.anypoint-connect]
 command = "npx"
-args = ["-y", "@sfdxy/anypoint-connect@0.17.0", "mcp"]
+args = ["-y", "@sfdxy/anypoint-connect@0.18.0", "mcp"]
 ```
 
 Installed globally, point at the binary instead and skip the download:
@@ -105,6 +105,14 @@ Properties that matter more than the list:
   also needs `confirmProduction: true`, unless a user-level
   [production pre-approval](safety.md#production-pre-approval) covers the organization, environment and
   tool. Object Store writes and MQ publish apply on call. The [safety model](safety.md) lists every case.
+- **An apply is bound to its preview.** Changes to an existing app return a `planDigest` in the preview;
+  `confirm: true` needs it, and is refused if the app or the request differs from what was reviewed. The
+  deployment is also read again right before the write. See
+  [The apply is bound to what was reviewed](safety.md#the-apply-is-bound-to-what-was-reviewed).
+- **Read tools return structured results.** `list_apps`, `get_app_status`, `get_metrics`, `list_alerts` and
+  `get_alert` declare an output schema and send `structuredContent` next to the same JSON as text, so a
+  program can rely on the fields (`list_apps` wraps its array as `{ "apps": [...] }` in the structured form
+  and keeps the bare array as text). An application that does not exist is an error result, not a status.
 - **Production takes only production-deployable builds.** `deploy_jar` checks the local jar's build
   marker; `deploy_app`, `update_app`, `update_app_artifact` and `rollback_app` download the selected
   artifact from Exchange and check its marker. Unmarked jars need an unmarked-artifact allowance. See
@@ -120,7 +128,8 @@ Properties that matter more than the list:
   are never returned.
 - **Design Center writes need a preview token** from the matching `preview_*` tool.
 - **Readiness is checkable.** `whoami` and `list_environments` establish access before real work, which
-  stops a missing permission from being reported as an application problem. See
+  stops a missing permission from being reported as an application problem. With service authentication
+  `whoami` reports the mode, organization and visible environments. See
   [Access readiness](readiness.md).
 - **Monitoring is consolidated.** `get_metrics`, `get_runtime_metrics`, `get_metrics_timeseries`, and
   `raw_amql_query` cover traffic, JVM and host health, trends, and freeform queries. See

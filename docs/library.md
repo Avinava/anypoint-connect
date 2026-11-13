@@ -36,6 +36,7 @@ const apps = await client.cloudHub2.getDeployments(orgId, sandbox.id);
 | `TrafficMetrics`, `RouteMetrics`, `RuntimeMetrics`, `MemoryPoolMetrics`, `GcCollectorMetrics`, `TimeSeriesPoint`, `TimeSeriesSignal`, `MetricsScope`, `MetricsGroupBy`, `MetricsExport`, `MetricRow`, `Granularity` | Monitoring types |
 | `AmqlQueryError`, `errorMessage` | Monitoring query error and the shared error formatter |
 | `TokenManager`, `OAuthFlow`, `FileStore`, `TokenStore` | Authentication building blocks |
+| `ClientCredentialsProvider`, `BearerProvider`, `TokenProvider`, `AUTH_MODES`, `AuthMode` | Service authentication: an in-memory token from client credentials, or a supplied bearer token; the one interface `HttpClient` needs |
 | `HttpClient`, `Cache`, `RateLimiter` | Transport, caching, and throttling |
 
 ## Streaming logs
@@ -47,6 +48,41 @@ for await (const entries of client.logs.tailLogs(orgId, sandbox.id, 'sample-orde
   entries.forEach((e) => console.log(`[${e.priority}] ${e.message}`));
 }
 ```
+
+`tailLogs` yields only records. `tailEvents` yields typed events and accepts an `AbortSignal` and an exact
+spec:
+
+```typescript
+const controller = new AbortController();
+for await (const event of client.logs.tailEvents(orgId, sandbox.id, 'sample-orders-api', {
+  signal: controller.signal, // stops the wait and the request in flight
+  specId: 'spec-id',         // optional: follow exactly this spec, never another
+})) {
+  if (event.type === 'records') event.entries.forEach((e) => console.log(e.message));
+  else if (event.type === 'specChange') console.log(`following ${event.to}`);
+  else if (event.type === 'gap') console.warn(event.message); // lines may have been missed
+  else console.warn(event.message);                           // a read failed; following continues
+}
+```
+
+Records that share a millisecond are all delivered (identical lines are counted, not collapsed), and a
+filter never hides a record from the position tracking. Without `specId` the stream follows the current
+spec and emits `specChange` when a rollout moves it. With `specId`, a spec that is not the application's,
+or has no log file, is an error instead of being replaced by another.
+
+**How the log is read.** The stream asks the structured log endpoint only for records after the last one
+seen (epoch-millisecond `startTime`, oldest first), and a `transport` event with `mode: 'incremental'`
+says so. That endpoint returns 10 records per request whatever `limit` says and has no cursor, so a read
+walks forward by the last record's time and drops repeats by the platform's `docId`. A backlog is drained
+at once, up to 50 requests per read, and records are never skipped: a very busy app makes the tail lag
+instead of losing lines (the client's request limit allows roughly 16 records per second per stream). When
+it falls more than two minutes behind it says so with a `gap` event and skips ahead to the last 30
+seconds. More than 10 records in one millisecond cannot be paged inside; a `gap` event says so once. A 404
+means the spec has no records yet and is followed as such. If the endpoint answers 400, 405 or 501, or
+returns an unexpected shape, the stream says so with `{ type: 'transport', mode: 'file', reason }` and
+falls back to downloading the log file on each read and parsing its newest 500,000 characters, where a
+`gap` event says when more arrived between reads than that covers. A server error is reported as an
+`error` event and retried, never taken for an unsupported endpoint.
 
 ## Monitoring
 

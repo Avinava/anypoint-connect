@@ -1,3 +1,4 @@
+import { withReview } from '../review-harness.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerAppLifecycleTools } from '../../../src/mcp/tools/apps-lifecycle.js';
 
@@ -6,7 +7,7 @@ describe('lifecycle write guard', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
     const server = {
         registerTool: vi.fn((name: string, _definition: unknown, handler: (input: any) => Promise<any>) => {
-            handlers.set(name, handler);
+            handlers.set(name, withReview(name, handler));
         }),
     };
     const running = {

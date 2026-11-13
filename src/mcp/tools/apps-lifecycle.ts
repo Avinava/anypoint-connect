@@ -19,7 +19,14 @@ import {
     resolveEnvironment,
     writeInputs,
 } from './shared.js';
-import { modeInput, runAppChangeTool, settingsFromArgs, settingsInputs, waitInputs } from './app-inputs.js';
+import {
+    modeInput,
+    reviewInputs,
+    runAppChangeTool,
+    settingsFromArgs,
+    settingsInputs,
+    waitInputs,
+} from './app-inputs.js';
 import { buildApplicationDeletionPreview, deploymentIdMatches } from '../../safety/deletion.js';
 import { deploymentPhase, waitForAppPhase } from '../../workflows/app-state.js';
 
@@ -115,7 +122,7 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
             title: 'Restart Application',
             description:
                 'Restarts a CloudHub 2.0 application by stopping it, waiting until every replica is down, and starting it again, so old and new replicas never run together. Expect a short outage. Use when an app misbehaves (memory pressure, stale connections) and no new version is needed. Previews by default; pass confirm: true to apply.',
-            inputSchema: { ...appInputs, ...waitInputs, ...writeInputs },
+            inputSchema: { ...appInputs, ...waitInputs, ...writeInputs, ...reviewInputs },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
         async (args) =>
@@ -206,7 +213,14 @@ export function registerAppLifecycleTools(server: McpServer, client: AnypointCli
                 'Adds, changes, removes or moves application properties of a CloudHub 2.0 app. Untouched properties are kept; stored secure values are kept too, because the platform retains a secure value whenever it is sent back masked. ' +
                 'Pass secrets through securePropertiesFrom (a project file or environment variables read on the server) so they never appear in the conversation, and use moveToSecure to turn a plain property into a secure one without exposing its value. ' +
                 'The app references secure properties as plain ${key}. Applying restarts the app; use mode stopStart for apps with streaming or polling listeners. Previews by default; pass confirm: true to apply.',
-            inputSchema: { ...appInputs, ...settingsInputs, mode: modeInput, ...waitInputs, ...writeInputs },
+            inputSchema: {
+                ...appInputs,
+                ...settingsInputs,
+                mode: modeInput,
+                ...waitInputs,
+                ...writeInputs,
+                ...reviewInputs,
+            },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
         },
         async (args) => {

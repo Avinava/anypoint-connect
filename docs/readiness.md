@@ -47,8 +47,10 @@ These are the two most often confused, and the error text distinguishes them del
 Telling someone to log in when they never created a Connected App wastes the exchange, which is why the
 messages differ.
 
-Environment variables can satisfy the configuration check, but they do not create a user-authorized
-token on a new machine. The exact distinction is covered in
+In the default mode, environment variables can satisfy the configuration check, but they do not create a
+user-authorized token on a new machine. For a runner with no person, use `client_credentials` or `bearer`
+with an explicit `ANYPOINT_ORG_ID`; there `whoami` and `anc auth status` report the mode, the
+organization and the visible environments instead of a user. The exact distinction is covered in
 [Connected App and credentials](credentials.md#ci-and-unattended-systems).
 
 ## Entitlements are not permissions

@@ -83,6 +83,8 @@ shadows the first.
 anc config show                      # secrets masked
 anc config show --profile org-a
 anc config set defaultEnv Production
+anc config set orgId <org-id>        # choose the organization (required for service authentication)
+anc config set authMode client_credentials   # or bearer; see credentials.md
 anc config profiles                  # list all profiles
 anc config path                      # where files live
 
