@@ -6,7 +6,7 @@
 import { Command } from 'commander';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
-import { printTable } from '../utils/formatter.js';
+import { printJson, printTable } from '../utils/formatter.js';
 import { compareVersions, parseRuntimeString, resolveRuntime, suggestRuntimes } from '../safety/runtime.js';
 import { createClient } from './shared.js';
 
@@ -19,6 +19,7 @@ export function createRuntimesCommand(): Command {
         .requiredOption('-e, --env <name>', 'Environment name or ID')
         .option('-a, --app <name>', "Use this app's target and check its current runtime")
         .option('--target <id>', 'Target ID, e.g. cloudhub-us-east-2 or a private space ID')
+        .option('--json', 'Print the result as JSON')
         .action(async (opts) => {
             try {
                 const client = createClient();
@@ -33,6 +34,17 @@ export function createRuntimesCommand(): Command {
                 const targetId: string | undefined = opts.target ?? app?.target?.targetId;
                 if (!targetId) {
                     const targets = await client.runtimes.getTargets(orgId);
+                    if (opts.json) {
+                        printJson(
+                            targets.map((t) => ({
+                                id: t.id,
+                                name: t.name ?? null,
+                                type: t.type ?? null,
+                                runtimeCount: t.runtimes.length,
+                            })),
+                        );
+                        return;
+                    }
                     printTable(
                         ['Target', 'Name', 'Type', 'Versions'],
                         targets.map((t) => [t.id, t.name ?? '-', t.type ?? '-', String(t.runtimes.length)]),
@@ -45,14 +57,37 @@ export function createRuntimesCommand(): Command {
                     process.exitCode = 1;
                     return;
                 }
+                const sorted = [...target.runtimes].sort((a, b) => compareVersions(b.version, a.version));
+                const runtime = app?.target?.deploymentSettings?.runtime;
+                if (opts.json) {
+                    const current = runtime ? parseRuntimeString(runtime.version, runtime.java) : undefined;
+                    const offered = current ? Boolean(resolveRuntime(target.runtimes, current)) : undefined;
+                    printJson({
+                        target: { id: target.id, name: target.name ?? null },
+                        runtimes: sorted.map((v) => ({
+                            version: v.version,
+                            channel: v.releaseChannel ?? null,
+                            java: v.java,
+                            tag: v.tag ?? null,
+                        })),
+                        ...(app && runtime && current
+                            ? {
+                                  app: {
+                                      name: app.name,
+                                      runtime: runtime.version,
+                                      offered,
+                                      ...(offered ? {} : { suggestions: suggestRuntimes(target.runtimes, current) }),
+                                  },
+                              }
+                            : {}),
+                    });
+                    return;
+                }
                 log.header(`Runtimes on ${target.name ?? target.id}`);
                 printTable(
                     ['Version', 'Channel', 'Java', 'Tag'],
-                    [...target.runtimes]
-                        .sort((a, b) => compareVersions(b.version, a.version))
-                        .map((v) => [v.version, v.releaseChannel ?? '-', v.java.join(', ') || '-', v.tag ?? '-']),
+                    sorted.map((v) => [v.version, v.releaseChannel ?? '-', v.java.join(', ') || '-', v.tag ?? '-']),
                 );
-                const runtime = app?.target?.deploymentSettings?.runtime;
                 if (runtime) {
                     const current = parseRuntimeString(runtime.version, runtime.java);
                     if (resolveRuntime(target.runtimes, current)) {

@@ -14,13 +14,7 @@ import { AnypointClient } from '../client/AnypointClient.js';
 export function createClient(profile?: string): AnypointClient {
     const resolved = resolveProfile(profile);
     const config = getConfig({ profile: resolved.name });
-    return new AnypointClient({
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        redirectUri: config.callbackUrl,
-        baseUrl: config.baseUrl,
-        profileName: config.profile,
-    });
+    return AnypointClient.fromConfig(config);
 }
 
 /** Ask a yes/no question on the terminal; anything but "y" or "yes" declines. */

@@ -49,13 +49,7 @@ export class AnypointConnectMcpServer {
 
         console.error(`Profile: "${resolved.name}" (source: ${resolved.source})`);
 
-        this.client = new AnypointClient({
-            clientId: config.clientId,
-            clientSecret: config.clientSecret,
-            redirectUri: config.callbackUrl,
-            baseUrl: config.baseUrl,
-            profileName: config.profile,
-        });
+        this.client = AnypointClient.fromConfig(config);
 
         // Register tools by domain
         registerIdentityTools(this.server, this.client);

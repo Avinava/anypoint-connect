@@ -18,6 +18,7 @@ import {
 } from '../../workflows/app-change.js';
 import type { RuntimeSpec } from '../../safety/runtime.js';
 import { errorMessage } from '../../utils/errors.js';
+import { checkReviewedPlan } from '../../safety/plan-binding.js';
 import { guardWrite, mcpText, productionFields, resolveEnvironment } from './shared.js';
 
 export const settingsInputs = {
@@ -61,6 +62,19 @@ export const runtimeInputs = {
         .optional()
         .describe('Java version for the runtime, e.g. "17". Default: keep the current one if offered'),
     releaseChannel: z.string().optional().describe('Release channel, e.g. "LTS" or "EDGE"'),
+};
+
+/**
+ * Ties an apply to the preview that was reviewed. The preview of a change to an existing app returns a
+ * `planDigest`; confirm: true needs it, and is refused if the app or the request has changed since.
+ */
+export const reviewInputs = {
+    planDigest: z
+        .string()
+        .optional()
+        .describe(
+            'The planDigest from the preview of this exact change. Required with confirm: true when changing an existing app; the apply is refused if the app or the request differs from what was reviewed',
+        ),
 };
 
 export const waitInputs = {
@@ -121,8 +135,14 @@ export interface AppChangeToolArgs {
     environment: string;
     confirm?: boolean;
     confirmProduction?: boolean;
+    planDigest?: string;
     wait?: boolean;
     waitTimeoutSeconds?: number;
+}
+
+/** A refusal for an apply that is not bound to the preview that was reviewed. */
+export function reviewRefusal(message: string, preview: Record<string, unknown>) {
+    return { ...mcpText({ refused: true, message, ...preview }), isError: true as const };
 }
 
 /**
@@ -168,9 +188,20 @@ export async function runAppChangeTool(
             tool: labels.tool,
             confirm: args.confirm,
             confirmProduction: args.confirmProduction,
-            preview,
+            // The preview tells the caller exactly what to send back to apply this change.
+            preview: {
+                ...preview,
+                confirmation: {
+                    confirm: true,
+                    planDigest: preview.planDigest,
+                    ...(plan.production ? { confirmProduction: true } : {}),
+                },
+            },
         });
         if (gate) return gate;
+
+        const unbound = checkReviewedPlan(args.planDigest, preview.planDigest);
+        if (unbound) return reviewRefusal(unbound, preview);
 
         const result = await executeAppChange(client, plan, {
             wait: args.wait,

@@ -1,3 +1,4 @@
+import { withReview } from '../review-harness.js';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,7 +13,7 @@ describe('artifact publication handoff', () => {
     const handlers = new Map<string, (input: any) => Promise<any>>();
     const server = {
         registerTool: vi.fn((name: string, _definition: unknown, handler: (input: any) => Promise<any>) =>
-            handlers.set(name, handler),
+            handlers.set(name, withReview(name, handler)),
         ),
     };
     const client = {

@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.18.0 - 2026-11-13
+
+### Behavior change: applying a change to an existing app needs the digest of its preview
+
+- The preview of a change to an existing application (`deploy_jar` and `deploy_app` for an app that
+  exists, `update_app`, `update_app_artifact`, `rollback_app`, `update_app_settings`, `restart_app`) now
+  returns a `planDigest`, and `confirm: true` is refused without it, or with the digest of a different
+  change or an app that changed since. Callers send the preview's `planDigest` back with `confirm`.
+  Creating a new app, `scale_app`, `stop_app` and `start_app` are unchanged. The digest never includes a
+  secret value. `describeAppChange` returns the same `planDigest` for library callers.
+- Every apply (MCP, CLI and `executeAppChange`) reads the deployment again right before the first write
+  and refuses when it was recreated, got a new revision or was modified since the plan. A change between
+  that read and the write remains possible: the platform has no conditional write.
+
+### Library: `HttpClientConfig.tokenManager` is now `tokenProvider`
+
+- `HttpClient` takes a `tokenProvider` (any object with `getAccessToken()`; `TokenManager` still fits).
+  Code that built an `HttpClient` with `tokenManager` must rename the option. `AnypointClient` callers are
+  unaffected.
+
+### Added
+- Service authentication for unattended runs: `authMode` / `ANYPOINT_AUTH_MODE` selects
+  `authorization_code` (default, unchanged), `client_credentials` (a Connected App's credentials exchanged
+  for an in-memory token, shared between concurrent callers and renewed before expiry) or `bearer`
+  (`ANYPOINT_ACCESS_TOKEN`, used as is). Neither writes a token file, opens a browser or calls the user
+  profile endpoint. They need an explicit organization, and configuration fails before any request without
+  one. `whoami` and `anc auth status` report the mode, organization and visible environments.
+- `orgId` / `ANYPOINT_ORG_ID` chooses the organization in any mode (`anc config set orgId`); without it the
+  signed-in user's organization is used, as before.
+- `anc alerts update|enable|disable|delete --wait <seconds>` and `waitSeconds` on `update_alert`,
+  `set_alert_enabled` and `delete_alert` keep checking the alert list (every five seconds, at most 300
+  seconds) until the change shows. The write is never resent, and Ctrl+C stops the wait.
+- `--json` on `anc apps list`, `anc apps status`, `anc runtimes list`, `anc monitor summary`, `runtime` and
+  `trend`. Progress and notices go to standard error under `--json`, so standard output parses as one JSON
+  value. `anc apps status --json --wait` exits 1 when the app did not settle.
+- `list_apps`, `get_app_status`, `get_metrics`, `list_alerts` and `get_alert` declare an output schema and
+  return `structuredContent` next to the same JSON as text.
+- `anc logs tail --spec <id>` follows exactly one spec (an error if it is not the app's or has no log
+  file) and `--json` prints JSON Lines events: `record`, `specChange`, `gap`, `error`. Library:
+  `LogsApi.tailEvents` with an `AbortSignal`, an optional `specId` and the typed `TailEvent`; `tailLogs`
+  remains and yields records only. `ClientCredentialsProvider`, `BearerProvider`, `TokenProvider`,
+  `AUTH_MODES` and `AuthMode` are exported.
+
+### Fixed
+- An alert update changing only the notifications could report `verified: true` because the check compared
+  only name, enabled, severity, threshold, operator and window. It now compares the notifications too.
+- `anc logs tail` dropped records that shared a millisecond with the last one shown, repeated nothing but
+  could not tell identical lines apart, ignored Ctrl+C during a read, and followed a spec change silently.
+  Records at the same millisecond are all shown, a filter no longer affects the position, Ctrl+C ends the
+  command at once, a changed spec is announced, and a burst larger than one read covers is reported as a
+  `gap`.
+- A missing application is an error result from `get_app_status`, not a successful message.
+
+- `anc logs tail` and `LogsApi.tailEvents` no longer download the whole log file on every poll (an 85 MB
+  file for a busy app). They ask the structured log endpoint (`.../specs/{spec}/logs`) only for records
+  after the last one seen and drop repeats by `docId`. That endpoint returns 10 records per request, has no
+  cursor and ignores `limit`, so a backlog is read in repeated requests (at most 50 per read) and a very
+  busy app lags rather than loses lines. A new `transport` event reports `incremental` or, when the
+  endpoint is unavailable (HTTP 400, 405 or 501, or an unexpected shape), `file`, which keeps the previous
+  full-file read. A 404 means the spec has no records yet. When a busy app outruns the endpoint (about 16
+  records per second per stream under the client's request limit) the tail reports a `gap` and skips ahead
+  to the last 30 seconds instead of falling further behind. `tailLogs` entries from the incremental read
+  carry the replica, level, logger and event but no thread name. The endpoint's behaviour was observed on a live environment, not from documentation:
+  epoch-millisecond `startTime` and `endTime` (ISO values are rejected), `startTime` inclusive, at least 15
+  days of retention.
+
 ## 0.17.0 - 2026-10-27
 
 ### Behavior change: production takes only marked, production-deployable builds

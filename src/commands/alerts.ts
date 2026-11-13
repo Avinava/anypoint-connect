@@ -24,6 +24,7 @@ import {
     alertEnvironment,
     executeDeleteAlert,
     executeUpdateAlert,
+    alertWait,
     normalizeAlert,
     normalizeRuntimeManagerAlert,
     planCreateAlert,
@@ -286,7 +287,26 @@ export function createAlertsCommand(): Command {
             }
         });
 
-    async function runUpdate(id: string, patch: AlertPatch, tool: string, opts: { dryRun?: boolean; force?: boolean }) {
+    const WAIT_OPTION = [
+        '--wait <seconds>',
+        'Keep checking the list this long for the change to apply',
+        number('--wait'),
+    ] as const;
+
+    /** Ctrl-C while waiting stops the wait and reports what was last seen; the write is not repeated. */
+    function cancelOnSigint(): { signal: AbortSignal; done: () => void } {
+        const controller = new AbortController();
+        const onSigint = () => controller.abort();
+        process.once('SIGINT', onSigint);
+        return { signal: controller.signal, done: () => process.off('SIGINT', onSigint) };
+    }
+
+    async function runUpdate(
+        id: string,
+        patch: AlertPatch,
+        tool: string,
+        opts: { dryRun?: boolean; force?: boolean; wait?: number },
+    ) {
         try {
             const client = createClient();
             const plan = await planUpdateAlert(client, id, patch);
@@ -308,7 +328,10 @@ export function createAlertsCommand(): Command {
                 log.warn('Cancelled');
                 return;
             }
-            const result = await executeUpdateAlert(client, plan);
+            const cancel = cancelOnSigint();
+            const result = await executeUpdateAlert(client, plan, alertWait(opts.wait, cancel.signal)).finally(
+                cancel.done,
+            );
             if (result.verified) log.success(result.message);
             else
                 log.warn(
@@ -332,6 +355,7 @@ export function createAlertsCommand(): Command {
         .option('--threshold <n>', 'Threshold in the metric unit', number('--threshold'))
         .option('--duration <minutes>', 'Minutes the condition must hold', number('--duration'));
     addNotificationOptions(update)
+        .option(...WAIT_OPTION)
         .option('--dry-run', 'Show the change, then stop', false)
         .option('--force', 'Skip the production confirmation prompt', false)
         .action(async (id: string, opts) => {
@@ -358,6 +382,7 @@ export function createAlertsCommand(): Command {
             .command(name)
             .description(`${name === 'enable' ? 'Enable' : 'Disable'} an alert`)
             .argument('<id>', 'Alert ID')
+            .option(...WAIT_OPTION)
             .option('--dry-run', 'Show the change, then stop', false)
             .option('--force', 'Skip the production confirmation prompt', false)
             .action(async (id: string, opts) => {
@@ -371,6 +396,7 @@ export function createAlertsCommand(): Command {
         .argument('<id>', 'Alert ID')
         .option('--confirm <name>', 'Delete only if the alert has this exact name')
         .option('--allow-production', 'Explicitly allow deletion in a production environment', false)
+        .option(...WAIT_OPTION)
         .action(async (id: string, opts) => {
             try {
                 const client = createClient();
@@ -410,7 +436,13 @@ export function createAlertsCommand(): Command {
                     }
                     log.warn(`Production deletion pre-approved (${decision.preapprovalSource})`);
                 }
-                const result = await executeDeleteAlert(client, orgId, alert);
+                const cancel = cancelOnSigint();
+                const result = await executeDeleteAlert(
+                    client,
+                    orgId,
+                    alert,
+                    alertWait(opts.wait, cancel.signal),
+                ).finally(cancel.done);
                 if (result.verifiedAbsent) log.success(result.message);
                 else log.warn(`${result.message} Status: ${result.status}`);
             } catch (error) {

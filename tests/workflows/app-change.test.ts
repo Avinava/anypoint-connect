@@ -544,3 +544,71 @@ describe('secret handling', () => {
         expect((error as Error).message).toContain('The application was stopped and is still stopped');
     });
 });
+
+describe('reviewed-state binding', () => {
+    it('refuses to write when the deployment changed after the plan, with zero writes', async () => {
+        const client = makeClient();
+        const result = await plan(client, { ref: { version: '1.1.0' } });
+        // Someone else applied a new revision between review and apply.
+        client.cloudHub2.findDetailByName.mockResolvedValue({
+            ...makeExisting(),
+            desiredVersion: 'spec-9',
+            lastModifiedDate: 9_000,
+        });
+
+        const error = await executeAppChange(client as any, result).catch((e: Error) => e);
+
+        expect((error as Error).message).toContain('changed after review');
+        expect(writesOf(client)).toBe(0);
+    });
+
+    it('refuses a deployment that was recreated under the same name', async () => {
+        const client = makeClient();
+        const result = await plan(client, { ref: { version: '1.1.0' } });
+        client.cloudHub2.findDetailByName.mockResolvedValue({ ...makeExisting(), id: 'dep-2' });
+
+        const error = await executeAppChange(client as any, result).catch((e: Error) => e);
+
+        expect((error as Error).message).toContain('recreated');
+        expect(writesOf(client)).toBe(0);
+    });
+
+    it('refuses when the application is gone', async () => {
+        const client = makeClient();
+        const result = await plan(client, { ref: { version: '1.1.0' } });
+        client.cloudHub2.findDetailByName.mockResolvedValue(null);
+
+        const error = await executeAppChange(client as any, result).catch((e: Error) => e);
+
+        expect((error as Error).message).toContain('no longer exists');
+        expect(writesOf(client)).toBe(0);
+    });
+
+    it('gives the same planDigest for the same plan, a different one for a different change, and ignores the moving phase', async () => {
+        const client = makeClient();
+        const a = describeAppChange(await plan(client, { ref: { version: '1.1.0' } }));
+        const same = describeAppChange(await plan(client, { ref: { version: '1.1.0' } }));
+        const other = describeAppChange(await plan(client, { ref: { version: '1.2.0' } }));
+        expect(a.planDigest).toMatch(/^[0-9a-f]{64}$/);
+        expect(same.planDigest).toBe(a.planDigest);
+        expect(other.planDigest).not.toBe(a.planDigest);
+
+        // Same revision, but the app is mid-rollout: still the same reviewed change.
+        const busy = makeClient({ ...makeExisting(), status: 'APPLYING', replicas: [] });
+        const during = describeAppChange(await plan(busy, { ref: { version: '1.1.0' } }));
+        expect(during.planDigest).toBe(a.planDigest);
+    });
+
+    it('binds the digest to a new revision of the deployment, and never contains a secret value', async () => {
+        const client = makeClient();
+        const before = describeAppChange(await plan(client, { ref: { version: '1.1.0' } }));
+        client.cloudHub2.findDetailByName.mockResolvedValue({ ...makeExisting(), desiredVersion: 'spec-9' });
+        const after = describeAppChange(await plan(client, { ref: { version: '1.1.0' } }));
+        expect(after.planDigest).not.toBe(before.planDigest);
+
+        const secretPlan = describeAppChange(
+            await plan(makeClient(), { settings: { properties: { 'sf.password': SECRET } }, secretValues: [SECRET] }),
+        );
+        expect(JSON.stringify(secretPlan)).not.toContain(SECRET);
+    });
+});

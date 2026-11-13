@@ -3,7 +3,9 @@
  * Main facade providing unified access to all Anypoint APIs
  */
 
-import { TokenManager, type AuthStatus } from '../auth/index.js';
+import { TokenManager, type AuthStatus, type TokenProvider } from '../auth/index.js';
+import { BearerProvider } from '../auth/BearerProvider.js';
+import { ClientCredentialsProvider } from '../auth/ClientCredentialsProvider.js';
 import { HttpClient } from './HttpClient.js';
 import { Cache } from './Cache.js';
 import { AccessManagementApi, type UserProfile } from '../api/AccessManagementApi.js';
@@ -20,7 +22,8 @@ import { AnypointMQApi } from '../api/AnypointMQApi.js';
 import { ObjectStoreApi } from '../api/ObjectStoreApi.js';
 import { RuntimesApi } from '../api/RuntimesApi.js';
 import { AlertsApi } from '../api/AlertsApi.js';
-import { DEFAULT_CALLBACK_URL } from '../config/profiles.js';
+import { DEFAULT_CALLBACK_URL, type Config } from '../config/profiles.js';
+import { DEFAULT_AUTH_MODE, isServiceMode, type AuthMode } from '../config/auth-modes.js';
 
 export interface AnypointClientConfig {
     clientId: string;
@@ -29,10 +32,21 @@ export interface AnypointClientConfig {
     baseUrl?: string;
     cacheTtlMinutes?: number;
     profileName?: string;
+    /** How to authenticate. The browser login when unset, so existing callers are unchanged. */
+    authMode?: AuthMode;
+    /** The organization to operate in. Required for `client_credentials` and `bearer`. */
+    orgId?: string;
+    /** The token for `bearer` mode. */
+    accessToken?: string;
 }
 
 export class AnypointClient {
-    private readonly tokenManager: TokenManager;
+    /** Only the browser login has a token manager; service modes hold their token in memory. */
+    private readonly tokenManager: TokenManager | null;
+    private readonly authMode: AuthMode;
+    private readonly configuredOrgId: string | undefined;
+    private readonly provider: TokenProvider;
+    private userOrgId: string | undefined;
     private readonly httpClient: HttpClient;
     private readonly cache: Cache;
 
@@ -52,20 +66,53 @@ export class AnypointClient {
     public readonly runtimes: RuntimesApi;
     public readonly alerts: AlertsApi;
 
-    constructor(config: AnypointClientConfig) {
-        this.tokenManager = new TokenManager({
+    /** A client for a resolved profile configuration. */
+    static fromConfig(config: Config): AnypointClient {
+        return new AnypointClient({
             clientId: config.clientId,
             clientSecret: config.clientSecret,
-            redirectUri: config.redirectUri || DEFAULT_CALLBACK_URL,
+            redirectUri: config.callbackUrl,
             baseUrl: config.baseUrl,
-            profileName: config.profileName,
+            profileName: config.profile,
+            authMode: config.authMode,
+            orgId: config.orgId,
+            accessToken: config.accessToken,
         });
+    }
+
+    constructor(config: AnypointClientConfig) {
+        this.authMode = config.authMode ?? DEFAULT_AUTH_MODE;
+        this.configuredOrgId = config.orgId || undefined;
+        if (isServiceMode(this.authMode) && !this.configuredOrgId) {
+            throw new Error(`The ${this.authMode} mode needs an explicit organization (orgId).`);
+        }
+
+        if (this.authMode === 'client_credentials') {
+            this.tokenManager = null;
+            this.provider = new ClientCredentialsProvider({
+                clientId: config.clientId,
+                clientSecret: config.clientSecret,
+                baseUrl: config.baseUrl,
+            });
+        } else if (this.authMode === 'bearer') {
+            this.tokenManager = null;
+            this.provider = new BearerProvider(config.accessToken);
+        } else {
+            this.tokenManager = new TokenManager({
+                clientId: config.clientId,
+                clientSecret: config.clientSecret,
+                redirectUri: config.redirectUri || DEFAULT_CALLBACK_URL,
+                baseUrl: config.baseUrl,
+                profileName: config.profileName,
+            });
+            this.provider = this.tokenManager;
+        }
 
         this.cache = new Cache(config.cacheTtlMinutes || 5);
 
         this.httpClient = new HttpClient({
             baseUrl: config.baseUrl || 'https://anypoint.mulesoft.com',
-            tokenManager: this.tokenManager,
+            tokenProvider: this.provider,
         });
 
         this.accessManagement = new AccessManagementApi(this.httpClient, this.cache);
@@ -86,36 +133,65 @@ export class AnypointClient {
 
     // ── Auth ──────────────────────────────────────────
 
+    getAuthMode(): AuthMode {
+        return this.authMode;
+    }
+
+    /** The browser login's token manager; service modes have none, and say so. */
+    private browserLogin(action: string): TokenManager {
+        if (!this.tokenManager) {
+            throw new Error(
+                `${action} is not available with ${this.authMode} authentication; there is no browser login.`,
+            );
+        }
+        return this.tokenManager;
+    }
+
     async getAuthStatus(): Promise<AuthStatus> {
-        return this.tokenManager.getStatus();
+        if (this.tokenManager) return this.tokenManager.getStatus();
+        // Service modes: authenticated when a token can be obtained now.
+        try {
+            await this.provider.getAccessToken();
+            return { authenticated: true };
+        } catch {
+            return { authenticated: false };
+        }
     }
 
     getAuthorizeUrl(): string {
-        return this.tokenManager.getAuthorizeUrl();
+        return this.browserLogin('Login').getAuthorizeUrl();
     }
 
     async authenticate(): Promise<void> {
-        await this.tokenManager.authenticate();
+        await this.browserLogin('Login').authenticate();
     }
 
     async refreshToken(): Promise<void> {
-        await this.tokenManager.refresh();
+        await this.browserLogin('Token refresh').refresh();
     }
 
     async logout(): Promise<void> {
-        await this.tokenManager.logout();
+        await this.browserLogin('Logout').logout();
         this.cache.clear();
     }
 
     // ── Convenience ───────────────────────────────────
 
+    /** The signed-in person. Service identities are not people, so this is for the browser login only. */
     async whoami(): Promise<UserProfile> {
+        if (isServiceMode(this.authMode)) {
+            throw new Error(
+                `whoami is not available with ${this.authMode} authentication; the organization comes from configuration.`,
+            );
+        }
         return this.accessManagement.getMe();
     }
 
+    /** The configured organization, else the signed-in user's own (looked up once). */
     async getDefaultOrgId(): Promise<string> {
-        const me = await this.whoami();
-        return me.organization.id;
+        if (this.configuredOrgId) return this.configuredOrgId;
+        this.userOrgId ??= (await this.whoami()).organization.id;
+        return this.userOrgId;
     }
 
     clearCache(): void {

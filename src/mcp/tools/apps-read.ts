@@ -7,7 +7,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
-import { mcpError, mcpText, resolveEnvironment } from './shared.js';
+import { mcpError, mcpStructured, mcpText, resolveEnvironment } from './shared.js';
+import { appStatusOutput, listAppsOutput } from './output-schemas.js';
 import { currentSettings } from '../../safety/deployment.js';
 import { looksSecret, redactDeep, redactRecord } from '../../safety/secrets.js';
 import { parseRuntimeString, resolveRuntime, suggestRuntimes, compareVersions } from '../../safety/runtime.js';
@@ -29,6 +30,7 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
                     .string()
                     .describe('Environment name (e.g. "Development", "Production") or environment ID'),
             },
+            outputSchema: listAppsOutput,
             annotations: { readOnlyHint: true },
         },
         async ({ environment }) => {
@@ -36,17 +38,17 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
                 const { orgId, env } = await resolveEnvironment(client, environment);
                 const deployments = await client.cloudHub2.getDetailedDeployments(orgId, env.id);
 
-                return mcpText(
-                    deployments.map((d) => ({
-                        name: d.name,
-                        status: d.status,
-                        version: d.application?.ref?.version,
-                        runtime: d.target?.deploymentSettings?.runtime?.version,
-                        vCores: d.application?.vCores,
-                        replicas: d.target?.replicas,
-                        id: d.id,
-                    })),
-                );
+                const apps = deployments.map((d) => ({
+                    name: d.name,
+                    status: d.status,
+                    version: d.application?.ref?.version,
+                    runtime: d.target?.deploymentSettings?.runtime?.version,
+                    vCores: d.application?.vCores,
+                    replicas: d.target?.replicas,
+                    id: d.id,
+                }));
+                // The text stays the bare array it has always been; structuredContent must be an object.
+                return mcpStructured({ apps }, apps);
             } catch (error) {
                 return mcpError(error);
             }
@@ -70,6 +72,7 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
                     .describe('Poll until the app is settled, failed or degraded (default: false)'),
                 waitSeconds: z.number().min(10).max(1800).optional().describe('Wait limit in seconds (default 300)'),
             },
+            outputSchema: appStatusOutput,
             annotations: { readOnlyHint: true },
         },
         async ({ appName, environment, wait, waitSeconds }) => {
@@ -78,7 +81,8 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
                 let deployment = await client.cloudHub2.findDetailByName(orgId, env.id, appName);
 
                 if (!deployment) {
-                    return mcpText(`Application "${appName}" not found in ${env.name}`);
+                    // A missing app is a failure, not a status: no structured result to mistake for one.
+                    return { ...mcpText(`Application "${appName}" not found in ${env.name}`), isError: true as const };
                 }
 
                 let snapshot = deploymentPhase(deployment);
@@ -93,7 +97,7 @@ export function registerAppReadTools(server: McpServer, client: AnypointClient) 
                     timedOut = result.timedOut;
                 }
 
-                return mcpText({
+                return mcpStructured({
                     name: deployment.name,
                     phase: snapshot.phase,
                     settled: snapshot.settled,

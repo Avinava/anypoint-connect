@@ -4,25 +4,25 @@
  */
 
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios';
-import type { TokenManager } from '../auth/TokenManager.js';
+import type { TokenProvider } from '../auth/TokenProvider.js';
 import { RateLimiter, type RateLimiterConfig } from './RateLimiter.js';
 
 const DEFAULT_BASE_URL = 'https://anypoint.mulesoft.com';
 
 export interface HttpClientConfig {
     baseUrl?: string;
-    tokenManager: TokenManager;
+    tokenProvider: TokenProvider;
     rateLimiter?: RateLimiterConfig;
     timeout?: number;
 }
 
 export class HttpClient {
     private readonly client: AxiosInstance;
-    private readonly tokenManager: TokenManager;
+    private readonly tokenProvider: TokenProvider;
     private readonly rateLimiter: RateLimiter;
 
     constructor(config: HttpClientConfig) {
-        this.tokenManager = config.tokenManager;
+        this.tokenProvider = config.tokenProvider;
         this.rateLimiter = new RateLimiter(config.rateLimiter);
 
         this.client = axios.create({
@@ -35,9 +35,20 @@ export class HttpClient {
 
         // Add auth interceptor
         this.client.interceptors.request.use(async (requestConfig) => {
-            const accessToken = await this.tokenManager.getAccessToken();
+            const accessToken = await this.tokenProvider.getAccessToken();
             requestConfig.headers.Authorization = `Bearer ${accessToken}`;
             return requestConfig;
+        });
+
+        // A token that cannot be renewed (a supplied bearer or a service token) gets a plain
+        // explanation instead of the platform's bare 401.
+        this.client.interceptors.response.use(undefined, (error: unknown) => {
+            const hint = this.tokenProvider.unauthorizedMessage;
+            if (hint && axios.isAxiosError(error) && error.response?.status === 401) {
+                this.tokenProvider.invalidate?.();
+                throw new Error(`${hint} (HTTP 401)`, { cause: error });
+            }
+            throw error;
         });
     }
 

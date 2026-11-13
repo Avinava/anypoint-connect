@@ -27,6 +27,7 @@
 import { config as dotenvConfig } from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
+import { isServiceMode, parseAuthMode, type AuthMode } from './auth-modes.js';
 
 // ── Constants ───────────────────────────────────────
 
@@ -240,6 +241,10 @@ export interface SavedConfig {
     callbackUrl: string;
     baseUrl: string;
     defaultEnv?: string;
+    /** The organization to operate in. Required for service authentication. */
+    orgId?: string;
+    /** How to authenticate; the browser login when unset. */
+    authMode?: AuthMode;
 }
 
 /**
@@ -302,6 +307,10 @@ export interface Config {
     callbackUrl: string;
     baseUrl: string;
     defaultEnv?: string;
+    orgId?: string;
+    authMode: AuthMode;
+    /** The bearer token (environment only, never saved). Set for the bearer mode. */
+    accessToken?: string;
     /** The profile name this config was resolved from. */
     profile: string;
 }
@@ -341,8 +350,20 @@ export function getConfig(options?: GetConfigOptions): Config {
     // Layer 1 + 2 merge: env vars override saved config
     const clientId = process.env.ANYPOINT_CLIENT_ID || saved?.clientId;
     const clientSecret = process.env.ANYPOINT_CLIENT_SECRET || saved?.clientSecret;
+    const authMode = parseAuthMode(process.env.ANYPOINT_AUTH_MODE || saved?.authMode, 'authMode');
+    const orgId = process.env.ANYPOINT_ORG_ID || saved?.orgId || undefined;
+    const accessToken = process.env.ANYPOINT_ACCESS_TOKEN || undefined;
 
-    if (!clientId || !clientSecret) {
+    if (isServiceMode(authMode) && !orgId) {
+        throw new Error(
+            `The ${authMode} mode needs an explicit organization (profile: "${profileName}"): set ANYPOINT_ORG_ID or run: anc config set orgId <id>`,
+        );
+    }
+    if (authMode === 'bearer' && !accessToken) {
+        throw new Error('The bearer mode needs a token: set ANYPOINT_ACCESS_TOKEN.');
+    }
+
+    if (authMode !== 'bearer' && (!clientId || !clientSecret)) {
         throw new Error(
             `Anypoint Connect is not configured (profile: "${profileName}").\n\n` +
                 'Run this first:\n' +
@@ -354,11 +375,14 @@ export function getConfig(options?: GetConfigOptions): Config {
     }
 
     const config: Config = {
-        clientId,
-        clientSecret,
+        clientId: clientId ?? '',
+        clientSecret: clientSecret ?? '',
         callbackUrl: process.env.ANYPOINT_CALLBACK_URL || saved?.callbackUrl || DEFAULT_CALLBACK_URL,
         baseUrl: process.env.ANYPOINT_BASE_URL || saved?.baseUrl || 'https://anypoint.mulesoft.com',
         defaultEnv: process.env.ANYPOINT_DEFAULT_ENV || saved?.defaultEnv,
+        orgId,
+        authMode,
+        ...(accessToken ? { accessToken } : {}),
         profile: profileName,
     };
 

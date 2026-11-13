@@ -18,6 +18,7 @@ import {
     type SettingsPlan,
 } from '../safety/deployment.js';
 import { isProductionEnv } from '../safety/guards.js';
+import { assertDeploymentUnchanged, digestOf } from '../safety/plan-binding.js';
 import { describeVerification, verifySelectedArtifact, type ArtifactVerification } from './artifact-verification.js';
 import { parseRuntimeString, resolveRuntime, suggestRuntimes, type RuntimeSpec } from '../safety/runtime.js';
 import { looksSecret, redactText } from '../safety/secrets.js';
@@ -367,7 +368,26 @@ export function describeAppChange(plan: AppChangePlan) {
         ...(plan.production ? { production: true } : {}),
         preserved: 'target, replicas, resources, other settings and stored secure values',
     };
-    return JSON.parse(redactText(JSON.stringify(preview), request.secretValues ?? [])) as typeof preview;
+    const redacted = JSON.parse(redactText(JSON.stringify(preview), request.secretValues ?? [])) as typeof preview;
+    return { ...redacted, planDigest: planDigestOf(plan, redacted) };
+}
+
+/**
+ * A digest of the change as previewed, for binding an apply to it. Built from the redacted preview
+ * (so no secret value enters it) plus the identity and revision of the deployment it was made for.
+ * The phase is left out: it moves on its own while the app is being looked at.
+ */
+function planDigestOf(plan: AppChangePlan, preview: { current: { phase: unknown } }): string {
+    const { phase: _phase, ...current } = preview.current;
+    const { existing, request } = plan;
+    return digestOf({
+        orgId: request.orgId,
+        envId: request.env.id,
+        deploymentId: existing.id,
+        desiredVersion: existing.desiredVersion ?? null,
+        lastModifiedDate: existing.lastModifiedDate ?? null,
+        preview: { ...preview, current },
+    });
 }
 
 export interface AppChangeResult {
@@ -387,6 +407,23 @@ export interface ExecuteOptions {
     onStatus?: (step: string, snapshot: PhaseSnapshot) => void;
 }
 
+/**
+ * The plan was made from an earlier read. Read again and refuse if the deployment is no longer the one
+ * that was reviewed. Call it before the first side effect. (A write between this read and the PATCH
+ * remains possible: the platform offers no conditional write to close it.)
+ */
+export async function assertPlanCurrent(client: AnypointClient, plan: AppChangePlan): Promise<void> {
+    const { orgId, env } = plan.request;
+    const { existing } = plan;
+    const current = await client.cloudHub2.findDetailByName(orgId, env.id, existing.name);
+    if (!current) {
+        throw new Error(
+            `"${existing.name}" no longer exists in ${env.name}. Nothing was changed; prepare the change again.`,
+        );
+    }
+    assertDeploymentUnchanged(existing, current);
+}
+
 /** Apply a plan. Errors and results are scrubbed of the request's secret values. */
 export async function executeAppChange(
     client: AnypointClient,
@@ -398,6 +435,8 @@ export async function executeAppChange(
     const { existing } = plan;
     const performed: string[] = [];
     if (plan.noop) return { deployment: existing, performed };
+
+    await assertPlanCurrent(client, plan);
 
     // `previous` enables the staleness check, needed only when the target state looks like the
     // starting state (an in-place update of a running app). Stop and start are told apart by state.

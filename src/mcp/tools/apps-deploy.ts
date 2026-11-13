@@ -11,10 +11,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
+import { checkReviewedPlan } from '../../safety/plan-binding.js';
 import { guardWrite, mcpText, productionFields, resolveEnvironment, writeInputs } from './shared.js';
 import {
     modeInput,
     provenanceJarInput,
+    reviewInputs,
+    reviewRefusal,
     runAppChangeTool,
     runtimeFromArgs,
     runtimeInputs,
@@ -89,6 +92,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     .optional()
                     .describe('SHA-256 from the preview; rejects changed artifact bytes'),
                 ...writeInputs,
+                ...reviewInputs,
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
@@ -116,6 +120,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 });
                 secretValues = plan.secretValues;
                 const preview = describeJarDeployment(plan);
+                const planDigest = 'planDigest' in preview.deploy ? preview.deploy.planDigest : undefined;
 
                 if (plan.rejectedSettings.length > 0 || plan.blockers.length) {
                     return {
@@ -136,9 +141,18 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                     tool: 'deploy_jar',
                     confirm: args.confirm,
                     confirmProduction: args.confirmProduction,
-                    preview,
+                    preview: {
+                        ...preview,
+                        ...(planDigest ? { confirmation: { confirm: true, planDigest } } : {}),
+                    },
                 });
                 if (gate) return gate;
+
+                // A new app has nothing existing to bind to; a change to an existing one must be the reviewed change.
+                if (planDigest) {
+                    const unbound = checkReviewedPlan(args.planDigest, planDigest);
+                    if (unbound) return reviewRefusal(unbound, preview);
+                }
 
                 const result = await executeJarDeployment(client, plan, {
                     wait: args.wait,
@@ -201,6 +215,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 updateStrategy: updateStrategyInput,
                 ...waitInputs,
                 ...writeInputs,
+                ...reviewInputs,
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
@@ -361,6 +376,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 wait: z.boolean().optional().describe('Wait until every replica runs the new spec (default: true)'),
                 waitTimeoutSeconds: waitInputs.waitTimeoutSeconds,
                 ...writeInputs,
+                ...reviewInputs,
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
@@ -402,6 +418,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 mode: modeInput,
                 ...waitInputs,
                 ...writeInputs,
+                ...reviewInputs,
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },
@@ -440,6 +457,7 @@ export function registerAppDeployTools(server: McpServer, client: AnypointClient
                 mode: modeInput,
                 ...waitInputs,
                 ...writeInputs,
+                ...reviewInputs,
             },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         },

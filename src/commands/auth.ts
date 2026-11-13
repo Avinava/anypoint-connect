@@ -9,6 +9,7 @@ import ora from 'ora';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { resolveProfile } from '../config/profiles.js';
+import { isServiceMode } from '../config/auth-modes.js';
 import { createClient } from './shared.js';
 
 export function createAuthCommand(): Command {
@@ -72,6 +73,26 @@ export function createAuthCommand(): Command {
                 const status = await client.getAuthStatus();
 
                 log.kv('Profile', `${profileName} (resolved via ${source})`);
+                log.kv('Auth mode', client.getAuthMode());
+
+                if (isServiceMode(client.getAuthMode())) {
+                    // A service identity has no user profile: report what it can see in its organization.
+                    const orgId = await client.getDefaultOrgId();
+                    log.kv('Org ID', orgId);
+                    if (!status.authenticated) {
+                        log.error('Could not obtain a token. Check the credentials and the Connected App.');
+                        process.exitCode = 1;
+                        return;
+                    }
+                    log.success('Authenticated');
+                    try {
+                        const envs = await client.accessManagement.getEnvironments(orgId);
+                        log.kv('Environments', envs.length ? envs.map((e) => e.name).join(', ') : 'none visible');
+                    } catch (error) {
+                        log.warn(`Could not list environments: ${errorMessage(error)}`);
+                    }
+                    return;
+                }
 
                 if (!status.authenticated) {
                     log.warn(

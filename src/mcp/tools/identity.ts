@@ -7,6 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import { errorMessage } from '../../utils/errors.js';
 import { readApprovalState } from '../../safety/preapproval.js';
+import { isServiceMode } from '../../config/auth-modes.js';
 import { describeProductionPolicy } from './profile.js';
 import { mcpError, mcpText } from './shared.js';
 
@@ -16,19 +17,42 @@ export function registerIdentityTools(server: McpServer, client: AnypointClient)
         {
             title: 'Who Am I',
             description:
-                'Returns the currently authenticated Anypoint Platform user, their username, email, organization name, and org ID, plus the user-level production pre-approvals and unmarked-artifact allowances for this organization. Use this first to confirm authentication is working and to obtain the org context needed by other tools.',
+                'Returns the currently authenticated Anypoint Platform user, their username, email, organization name, and org ID, plus the user-level production pre-approvals and unmarked-artifact allowances for this organization. With service authentication (client_credentials or bearer) there is no user: it returns the auth mode, the configured org ID and the environments that identity can see. Use this first to confirm authentication is working and to obtain the org context needed by other tools.',
             annotations: { readOnlyHint: true },
         },
         async () => {
             try {
+                if (isServiceMode(client.getAuthMode())) {
+                    // A service identity is not a person: report the configured organization and what it can see.
+                    const orgId = await client.getDefaultOrgId();
+                    const environments = await client.accessManagement.getEnvironments(orgId);
+                    return mcpText({
+                        authMode: client.getAuthMode(),
+                        orgId,
+                        environments: environments.map((e) => ({
+                            id: e.id,
+                            name: e.name,
+                            isProduction: e.isProduction,
+                        })),
+                        productionPolicy: describeProductionPolicy(readApprovalState(), orgId),
+                    });
+                }
                 const me = await client.whoami();
+                // Tools act on the configured organization when one is set, not always the user's own.
+                const actingOrgId = await client.getDefaultOrgId();
                 return mcpText({
                     user: `${me.firstName} ${me.lastName}`,
                     username: me.username,
                     email: me.email,
                     organization: me.organization.name,
-                    orgId: me.organization.id,
-                    productionPolicy: describeProductionPolicy(readApprovalState(), me.organization.id),
+                    orgId: actingOrgId,
+                    ...(actingOrgId !== me.organization.id
+                        ? {
+                              homeOrgId: me.organization.id,
+                              note: 'Tools act on the configured organization, not the home one.',
+                          }
+                        : {}),
+                    productionPolicy: describeProductionPolicy(readApprovalState(), actingOrgId),
                 });
             } catch (error) {
                 return {

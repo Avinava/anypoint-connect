@@ -17,6 +17,7 @@ import { createDesignCenterCommand } from './commands/design-center.js';
 import { createRuntimesCommand } from './commands/runtimes.js';
 import { createAlertsCommand } from './commands/alerts.js';
 import { VERSION } from './version.js';
+import { log } from './utils/logger.js';
 import { migrateIfNeeded } from './config/profiles.js';
 
 // Auto-migrate legacy config to profiles/default/ if needed
@@ -32,6 +33,11 @@ program
     .version(VERSION)
     // Program options only before the subcommand, so `apps update --version 1.2.0` reaches the subcommand
     .enablePositionalOptions();
+
+// Under --json, stdout carries only the result; progress and notices go to stderr.
+program.hook('preAction', (_program, action) => {
+    if (action.opts().json) log.toStderr();
+});
 
 program.addCommand(createConfigCommand());
 program.addCommand(createAuthCommand());

@@ -1,6 +1,6 @@
 /**
  * Logs CLI Commands
- * anc logs tail <appName> --env <envName> [--level <level>] [--search <text>]
+ * anc logs tail <appName> --env <envName> [--level <level>] [--search <text>] [--spec <id>] [--json]
  * anc logs search <appName> --env <envName> [--grep <text>] [--regex] [--logger <name>] [--since <1h|ISO>] [--previous-specs <n>]
  * anc logs download <appName> --env <envName> --from <date> [--to <date>] [--grep <text>] [--summary] [--output <path>] [--previous-specs <n>]
  * anc logs credentials <appName> --env <envName> [--since <date>] [--until <date>] [--previous-specs <n>] [--json]
@@ -13,7 +13,7 @@ import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { parseDate } from '../utils/dates.js';
 import { printTable } from '../utils/formatter.js';
-import { MAX_PREVIOUS_SPECS, type LogSource } from '../api/LogsApi.js';
+import { MAX_PREVIOUS_SPECS, type LogSource, type TailEvent } from '../api/LogsApi.js';
 import type { EnrichedLogEntry } from '../analysis/types.js';
 import { MAX_LOG_LINES } from '../analysis/filter.js';
 import { BUCKETS, type Bucket } from '../analysis/stats.js';
@@ -51,6 +51,24 @@ function warnFallback(source: LogSource): void {
             `Spec ${source.fallbackFromSpecId} has no log lines yet; showing the last successful spec ${source.specId}`,
         );
     }
+}
+
+/** The JSON Lines for one tail event: a line per record, one line for anything else. */
+function tailJsonLines(event: TailEvent): string[] {
+    if (event.type !== 'records') return [JSON.stringify(event)];
+    return event.entries.map((entry) =>
+        JSON.stringify({
+            type: 'record',
+            specId: event.specId,
+            timestamp: new Date(entry.timestamp).toISOString(),
+            level: entry.priority,
+            logger: entry.loggerName ?? null,
+            thread: entry.threadName ?? null,
+            instanceId: entry.instanceId ?? null,
+            message: entry.message,
+            ...(entry.stackTrace ? { stackTrace: entry.stackTrace } : {}),
+        }),
+    );
 }
 
 function printEntry(entry: EnrichedLogEntry): void {
@@ -110,7 +128,16 @@ export function createLogsCommand(): Command {
         .option('-s, --search <text>', 'Search filter')
         .option('--regex', 'Treat --search as a regular expression')
         .option('--logger <name>', 'Only entries whose logger name contains this text')
+        .option(
+            '--spec <id>',
+            'Follow exactly this deployment spec (it must belong to the app); without it the current spec is followed',
+        )
+        .option('--json', 'Print JSON Lines: one event per line (record, specChange, gap, error, transport)')
         .action(async (appName: string, opts) => {
+            // Ctrl+C stops the wait and the request in flight, then the command ends normally.
+            const controller = new AbortController();
+            const onSigint = () => controller.abort();
+            process.once('SIGINT', onSigint);
             try {
                 const client = createClient();
                 const orgId = await client.getDefaultOrgId();
@@ -119,24 +146,50 @@ export function createLogsCommand(): Command {
                 log.info(`Tailing logs for ${chalk.bold(appName)} in ${env.name}...`);
                 log.dim('  Press Ctrl+C to stop\n');
 
-                for await (const entries of client.logs.tailLogs(orgId, env.id, appName, {
+                let lastError: string | undefined;
+                for await (const event of client.logs.tailEvents(orgId, env.id, appName, {
                     level: opts.level,
                     search: opts.search,
                     regex: opts.regex,
                     logger: opts.logger,
+                    specId: opts.spec,
+                    signal: controller.signal,
                 })) {
-                    for (const entry of entries) {
-                        const ts = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
-                        log.logLine(entry.priority, entry.message, ts);
+                    if (opts.json) {
+                        for (const line of tailJsonLines(event)) console.log(line);
+                        continue;
+                    }
+                    if (event.type === 'records') {
+                        lastError = undefined;
+                        for (const entry of event.entries) {
+                            const ts = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
+                            log.logLine(entry.priority, entry.message, ts);
+                        }
+                    } else if (event.type === 'specChange') {
+                        log.info(
+                            event.from === null
+                                ? `Following spec ${event.to}${event.fallbackFromSpecId ? ` (spec ${event.fallbackFromSpecId} has no log lines yet)` : ''}`
+                                : `Now following spec ${event.to} (was ${event.from})`,
+                        );
+                    } else if (event.type === 'gap') {
+                        log.warn(event.message);
+                    } else if (event.type === 'transport') {
+                        if (event.mode === 'file') {
+                            log.warn(
+                                `Incremental log reads are unavailable (${event.reason}); downloading the whole log file on each poll.`,
+                            );
+                        }
+                    } else if (event.message !== lastError) {
+                        // A failing read repeats every poll; say it once until something else happens.
+                        lastError = event.message;
+                        log.warn(`Log read failed, retrying: ${event.message}`);
                     }
                 }
             } catch (error) {
-                if ((error as NodeJS.ErrnoException).code === 'ERR_USE_AFTER_CLOSE') {
-                    // Normal exit via Ctrl+C
-                    return;
-                }
                 log.error(`Log tailing failed: ${errorMessage(error)}`);
-                process.exit(1);
+                process.exitCode = 1;
+            } finally {
+                process.off('SIGINT', onSigint);
             }
         });
 

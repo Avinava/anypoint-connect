@@ -54,8 +54,9 @@ Credential resolution, highest priority first:
 2. The active profile's `config.json`.
 3. A project-local `.env` file as a legacy fallback.
 
-Environment variables change where the app credentials come from; they do not remove the browser
-authorization step or create an OAuth token.
+In the default mode, environment variables change where the app credentials come from; they do not remove
+the browser authorization step or create an OAuth token. See
+[CI and unattended systems](#ci-and-unattended-systems) for the service modes.
 
 ## Administrator handoff
 
@@ -90,13 +91,26 @@ remove only the local tokens, run `anc auth logout`. Logout does not delete `con
 
 ## CI and unattended systems
 
-This release implements the user Authorization Code flow, not the `client_credentials` grant. Supplying
-only `ANYPOINT_CLIENT_ID` and `ANYPOINT_CLIENT_SECRET` to a new CI runner is therefore insufficient: the
-runner has no authorized OAuth session, and the machine-bound token file is not a supported secret to
-copy between hosts.
+The default is the user Authorization Code flow, which needs a person and a browser once. A CI runner with
+only `ANYPOINT_CLIENT_ID` and `ANYPOINT_CLIENT_SECRET` has no authorized session, and the machine-bound
+token file is not a supported secret to copy between hosts. For unattended runs, choose a service mode
+with `ANYPOINT_AUTH_MODE` (or `anc config set authMode <mode>`):
 
-Use the CLI, MCP server, and library with a locally authorized profile. Treat true service-account CI
-authentication as unsupported until a dedicated client-credentials mode is added and tested.
+| Mode | Credentials | Behavior |
+| --- | --- | --- |
+| `authorization_code` (default) | Client ID and Secret, then `anc auth login` | A person authorizes once; tokens are stored encrypted and refreshed |
+| `client_credentials` | `ANYPOINT_CLIENT_ID` and `ANYPOINT_CLIENT_SECRET` of a Connected App that acts on its own behalf | The runner exchanges them for a token, kept in memory only and renewed shortly before it expires; nothing is written to disk |
+| `bearer` | `ANYPOINT_ACCESS_TOKEN` | The supplied token is used as is, in memory only. Its lifetime is unknown, so it is never refreshed; a rejected token is reported as such |
+
+Service modes have no user, so they need an explicit organization: set `ANYPOINT_ORG_ID` (or `anc config
+set orgId <id>`). Configuration fails before any request when it is missing. `whoami` and `anc auth
+status` then report the mode, the organization and the environments the identity can see, and `anc auth
+login` is not available. A service identity needs its own Connected App with the scopes and
+environment access the work requires; a visible environment does not mean Monitoring, alerts, Design
+Center or Anypoint MQ access, which are checked per endpoint.
+
+`ANYPOINT_ORG_ID` also works in the default mode, to choose the organization for a user who belongs to
+several; without it the user's own organization is used.
 
 ## Credential troubleshooting
 
@@ -108,3 +122,6 @@ authentication as unsupported until a dedicated client-credentials mode is added
 | Authorization is refused by policy | The organization restricts Connected Apps | Ask an administrator to review or allowlist the internal app |
 | Login works but an operation returns 403 | The user lacks a platform permission or entitlement | Check [Access readiness](readiness.md); logging in again does not add permission |
 | Refresh repeatedly fails after rotation | Saved app secret or authorization is stale | Re-run `anc config init`, then `anc auth login` |
+| `needs an explicit organization` | A service mode is set without `ANYPOINT_ORG_ID` | Set `ANYPOINT_ORG_ID` or `anc config set orgId <id>` |
+| `Service token request failed (HTTP 401)` | The Connected App credentials are wrong, or the app is not valid for client credentials | Check the Client ID and Secret and that the app acts on its own behalf |
+| `The bearer token was rejected` | The supplied token expired or is invalid | Supply a new `ANYPOINT_ACCESS_TOKEN` |

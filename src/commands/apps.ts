@@ -7,7 +7,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { log } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
-import { printTable } from '../utils/formatter.js';
+import { printJson, printTable } from '../utils/formatter.js';
 import { isProductionEnv, confirmProductionWrite } from '../safety/guards.js';
 import { buildApplicationDeletionPreview, deploymentIdMatches } from '../safety/deletion.js';
 import { currentSettings } from '../safety/deployment.js';
@@ -121,6 +121,7 @@ export function createAppsCommand(): Command {
     apps.command('list')
         .description('List deployed applications')
         .requiredOption('-e, --env <name>', 'Environment name or ID')
+        .option('--json', 'Print the applications as JSON')
         .action(async (opts) => {
             try {
                 const client = createClient();
@@ -128,6 +129,21 @@ export function createAppsCommand(): Command {
                 const env = await client.accessManagement.resolveEnvironment(orgId, opts.env);
 
                 const deployments = await client.cloudHub2.getDetailedDeployments(orgId, env.id);
+
+                if (opts.json) {
+                    // A projection, never the raw deployment: it can carry application properties.
+                    printJson(
+                        deployments.map((d) => ({
+                            id: d.id,
+                            name: d.name,
+                            status: d.status,
+                            version: d.application?.ref?.version ?? null,
+                            runtime: d.target?.deploymentSettings?.runtime?.version ?? null,
+                            replicas: d.target?.replicas ?? 0,
+                        })),
+                    );
+                    return;
+                }
 
                 if (deployments.length === 0) {
                     log.info(`No applications deployed in ${env.name}`);
@@ -158,6 +174,7 @@ export function createAppsCommand(): Command {
         .requiredOption('-e, --env <name>', 'Environment name or ID')
         .option('--wait', 'Poll until the app settles or fails', false)
         .option('--timeout <seconds>', 'Wait limit in seconds (default 300)')
+        .option('--json', 'Print the status as JSON; exits nonzero when --wait ends before the app settles')
         .action(async (appName: string, opts) => {
             try {
                 const client = createClient();
@@ -172,6 +189,7 @@ export function createAppsCommand(): Command {
                 }
 
                 let snapshot = deploymentPhase(deployment);
+                let timedOut = false;
                 if (opts.wait && !snapshot.terminal) {
                     const { spinner, onStatus } = rolloutSpinner(`Waiting for ${appName}...`);
                     const result = await waitForAppPhase(client.cloudHub2, orgId, env.id, deployment.id, {
@@ -182,6 +200,33 @@ export function createAppsCommand(): Command {
                     spinner.stop();
                     deployment = result.deployment;
                     snapshot = result.snapshot;
+                    timedOut = Boolean(result.timedOut);
+                }
+
+                if (opts.json) {
+                    printJson({
+                        id: deployment.id,
+                        name: deployment.name,
+                        phase: snapshot.phase,
+                        reason: snapshot.reason ?? null,
+                        settled: snapshot.settled,
+                        ...(opts.wait ? { timedOut } : {}),
+                        status: deployment.status,
+                        desiredState: deployment.application?.desiredState ?? null,
+                        version: deployment.application?.ref?.version ?? null,
+                        runtime: deployment.target?.deploymentSettings?.runtime?.version ?? null,
+                        groupId: deployment.application?.ref?.groupId ?? null,
+                        artifactId: deployment.application?.ref?.artifactId ?? null,
+                        replicas: (deployment.replicas ?? []).map((r) => ({
+                            id: r.id ?? null,
+                            state: r.state,
+                            location: r.deploymentLocation ?? null,
+                        })),
+                        publicUrl: deployment.target?.deploymentSettings?.http?.inbound?.publicUrl ?? null,
+                    });
+                    // The wait was asked for and the app did not settle: a script must see that.
+                    if (opts.wait && !snapshot.settled) process.exitCode = 1;
+                    return;
                 }
 
                 log.header(`${deployment.name}`);

@@ -9,6 +9,11 @@ described in [Profiles](profiles.md). Environments are accepted by name or ID.
 Times (`--from`, `--to`) accept a relative duration ending now (`30m`, `6h`, `7d`) or an ISO 8601
 timestamp (`2026-02-01T00:00:00Z`).
 
+Commands marked `--json` print their result as JSON on standard output and send progress and notices to
+standard error, so the output parses as one JSON value (`logs tail` prints JSON Lines). A failure prints
+nothing on standard output and exits nonzero. An empty period is an empty list, not a notice. Existing JSON
+shapes are unchanged.
+
 ## Command summary
 
 | Command | Purpose |
@@ -32,7 +37,7 @@ timestamp (`2026-02-01T00:00:00Z`).
 | --- | --- |
 | `anc config init` | Interactive setup of Client ID, Client Secret (masked), callback URL, base URL, default environment. `-p, --profile <name>` |
 | `anc config show` | Saved configuration with the secret masked, and how the profile was resolved. `-p, --profile <name>` |
-| `anc config set <key> <value>` | Set one value. Keys: `clientId`, `clientSecret`, `callbackUrl`, `baseUrl`, `defaultEnv`. `-p, --profile <name>` |
+| `anc config set <key> <value>` | Set one value. Keys: `clientId`, `clientSecret`, `callbackUrl`, `baseUrl`, `defaultEnv`, `orgId`, `authMode` (`authorization_code`, `client_credentials`, `bearer`; see [credentials](credentials.md#ci-and-unattended-systems)). `-p, --profile <name>` |
 | `anc config path` | Print the configuration directory. `-p, --profile <name>` |
 | `anc config profiles` | List configured profiles |
 | `anc config use <profile>` | Bind the current directory to a profile (writes `.anypoint-connect.json`) |
@@ -59,8 +64,8 @@ Enter the Client Secret through `anc config init`, not `anc config set`, so it s
 
 | Command | Arguments and options |
 | --- | --- |
-| `anc apps list` | `-e, --env <name>` (required) |
-| `anc apps status <appName>` | `-e, --env <name>` (required), `--wait` polls until the app settles or fails, `--timeout <seconds>` |
+| `anc apps list` | `-e, --env <name>` (required), `--json` prints id, name, status, version, runtime and replicas as one JSON array |
+| `anc apps status <appName>` | `-e, --env <name>` (required), `--wait` polls until the app settles or fails, `--timeout <seconds>`, `--json` prints the status as one JSON object (with `--wait` it also reports `timedOut` and exits 1 when the app did not settle) |
 | `anc apps update <appName>` | `-e, --env <name>` (required), `--version`, `--artifact-id`, `--group-id`, `--jar <path>` (the change is refused unless this jar's SHA-256 equals the Exchange artifact being deployed; production changes always check the Exchange artifact's build marker), runtime flags, settings flags, rollout flags, `--dry-run`, `--force` |
 | `anc apps settings get <appName>` | `-e, --env <name>` (required), `--reveal` shows secret-looking plain values |
 | `anc apps settings set <appName>` | `-e, --env <name>` (required), settings flags, `--stop-start`, `--no-wait`, `--timeout`, `--dry-run`, `--force` |
@@ -97,7 +102,7 @@ when it does not settle.
 
 | Command | Options |
 | --- | --- |
-| `anc runtimes list` | `-e, --env <name>` (required), `-a, --app <name>` uses the app's target and checks its current runtime, `--target <id>` |
+| `anc runtimes list` | `-e, --env <name>` (required), `-a, --app <name>` uses the app's target and checks its current runtime, `--target <id>`, `--json` |
 
 ```bash
 anc runtimes list -e Sandbox --app orders-sapi
@@ -163,7 +168,7 @@ for the rollout and exits non-zero when it fails or times out. See the
 
 | Command | Arguments and options |
 | --- | --- |
-| `anc logs tail <appName>` | `-e, --env <name>` (required), `-l, --level <level>` (ERROR, WARN, INFO, DEBUG), `-s, --search <text>`, `--regex`, `--logger <name>` |
+| `anc logs tail <appName>` | `-e, --env <name>` (required), `-l, --level <level>` (ERROR, WARN, INFO, DEBUG), `-s, --search <text>`, `--regex`, `--logger <name>`, `--spec <id>` follows exactly that spec (an error if it is not the app's or has no log file), `--json` prints JSON Lines: one event per line (`record`, `specChange`, `gap`, `error`, `transport`). Reads only records after the last one shown (a warning says when it has to fall back to downloading the whole file). Ctrl+C ends it with exit 0. Records that share a millisecond are all shown |
 | `anc logs search <appName>` | `-e, --env <name>` (required), `-g, --grep <text>`, `--regex`, `--logger <name>`, `-l, --level <level>`, `--since <1h\|ISO>`, `--until <date>`, `-n, --limit <n>` (default 100, max 1000), `--previous-specs <n>` (max 10), `--json` |
 | `anc logs download <appName>` | `-e, --env <name>` (required), `--from <date>` (required), `--to <date>`, `-l, --level <level>`, `-g, --grep <text>`, `--regex`, `--logger <name>`, `--summary`, `--bucket 5m\|15m\|1h`, `-o, --output <path>`, `--previous-specs <n>` (max 10) |
 | `anc logs credentials <appName>` | `-e, --env <name>` (required), `--since <1h\|ISO>`, `--until <date>`, `--previous-specs <n>` (max 10), `--json`. Counts lines with session or bearer credential markers per marker, spec and replica; never prints lines or values. Exit code 2 when any marker is found |
@@ -185,9 +190,9 @@ Downloaded logs are production data; keep them out of repositories.
 
 | Command | Arguments and options |
 | --- | --- |
-| `anc monitor summary` | `-e, --env <name>` (omit to compare every environment), `-a, --app <name>`, `--by app\|worker\|route` (default `app`), `--from`, `--to` |
-| `anc monitor runtime` | `-e, --env <name>` (required), `-a, --app <name>`, `--from`, `--to` |
-| `anc monitor trend` | `-e, --env <name>` (required), `-s, --signal traffic\|latency\|memory\|cpu\|gc` (default `traffic`), `-a, --app <name>`, `-g, --granularity 1m\|5m\|15m\|30m\|1h\|1d` (default `1h`), `--from`, `--to` |
+| `anc monitor summary` | `-e, --env <name>` (omit to compare every environment), `-a, --app <name>`, `--by app\|worker\|route` (default `app`), `--from`, `--to`, `--json` |
+| `anc monitor runtime` | `-e, --env <name>` (required), `-a, --app <name>`, `--from`, `--to`, `--json` |
+| `anc monitor trend` | `-e, --env <name>` (required), `-s, --signal traffic\|latency\|memory\|cpu\|gc` (default `traffic`), `-a, --app <name>`, `-g, --granularity 1m\|5m\|15m\|30m\|1h\|1d` (default `1h`), `--from`, `--to`, `--json` |
 | `anc monitor query <amql>` | `--limit <n>` (default 200, maximum 2000), `--offset <n>` |
 | `anc monitor download` | `-e, --env <name>` (required), `--from <date>` (required), `--to`, `-o, --output <path>`, `-f, --format json\|csv` (default `json`) |
 
@@ -215,9 +220,9 @@ anc monitor download --env Sandbox --from 7d --format csv --output metrics.csv
 | `anc alerts list` | `-e, --env <name>` (needed for Runtime Manager alerts), `--app <name>`, `--api-instance <id>`, `--name <text>`, `--status PENDING\|ACTIVE` (deleted alerts never appear), `--source monitoring\|runtime-manager\|all` (default `all`), `--reveal`, `--json` |
 | `anc alerts get <id>` | `--reveal`, `--json` |
 | `anc alerts create` | `-e, --env <name>`, `--name`, `--app <name>` or `--api-instance <id>`, `--metric`, `--operator`, `--threshold`, `--duration <minutes>`, `--severity 0-3\|LOW\|MEDIUM\|HIGH\|CRITICAL`, `--email <address>` (repeatable) with `--subject`, or `--slack-channel <id>` (`--slack-carrier <id>`), `--message`, `--response-codes`, `--policies`, `--enabled`, `--allow-duplicate`, `--dry-run`, `--force` |
-| `anc alerts update <id>` | `--name`, `--severity`, `--operator`, `--threshold`, `--duration`; `--email` (repeatable) with `--subject`, or `--slack-channel` (`--slack-carrier`), with `--message`, replace every notification; `--dry-run`, `--force` |
+| `anc alerts update <id>` | `--name`, `--severity`, `--operator`, `--threshold`, `--duration`; `--email` (repeatable) with `--subject`, or `--slack-channel` (`--slack-carrier`), with `--message`, replace every notification; `--wait <seconds>` (max 300) keeps checking the list for the change to apply; `--dry-run`, `--force` |
 | `anc alerts enable <id>` / `anc alerts disable <id>` | `--dry-run`, `--force` |
-| `anc alerts delete <id>` | `--confirm <name>` (dry run without it), `--allow-production` (not needed when a pre-approval names `delete_alert`) |
+| `anc alerts delete <id>` | `--confirm <name>` (dry run without it), `--allow-production` (not needed when a pre-approval names `delete_alert`), `--wait <seconds>` (max 300) keeps checking a complete list for the alert to be gone |
 
 The API behind these commands is undocumented; see [Alerts](alerts.md).
 

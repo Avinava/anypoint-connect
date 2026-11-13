@@ -7,7 +7,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AnypointClient } from '../../client/AnypointClient.js';
 import { AMQL_MAX_LIMIT, GRANULARITIES, TIME_SERIES_SIGNALS } from '../../api/MonitoringApi.js';
-import { mcpError, mcpText, resolveEnvironment, timeWindow } from './shared.js';
+import { mcpError, mcpStructured, mcpText, resolveEnvironment, timeWindow } from './shared.js';
+import { metricsOutput } from './output-schemas.js';
 
 const hoursBackSchema = z
     .number()
@@ -33,6 +34,7 @@ export function registerMonitoringTools(server: McpServer, client: AnypointClien
                 appName: appNameSchema,
                 groupBy: z.enum(['app', 'worker', 'route']).optional().describe('Row grouping (default: "app").'),
             },
+            outputSchema: metricsOutput,
             annotations: { readOnlyHint: true },
         },
         async ({ environment, hoursBack, appName, groupBy = 'app' }) => {
@@ -43,13 +45,13 @@ export function registerMonitoringTools(server: McpServer, client: AnypointClien
                 const scope = { orgId, envId: resolved?.env.id, from, to, appName };
 
                 if (groupBy === 'route') {
-                    return mcpText({
+                    return mcpStructured({
                         environment: resolved?.env.name ?? 'all',
                         period,
                         routes: await client.monitoring.getRouteMetrics(scope),
                     });
                 }
-                return mcpText({
+                return mcpStructured({
                     environment: resolved?.env.name ?? 'all',
                     period,
                     groupBy,
